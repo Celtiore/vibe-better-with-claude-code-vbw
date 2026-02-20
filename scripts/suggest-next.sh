@@ -26,6 +26,14 @@ TARGET_PHASE_ARG="${3:-}"
 PLANNING_DIR=".vbw-planning"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+list_child_dirs_sorted() {
+  local parent="$1"
+  [ -d "$parent" ] || return 0
+
+  find "$parent" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null |
+    (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-)
+}
+
 # --- State detection ---
 has_project=false
 phase_count=0
@@ -108,9 +116,14 @@ if [ -d "$PLANNING_DIR" ]; then
   # Scan phases
   if [ -d "$PHASES_DIR" ]; then
     # Sort phase dirs numerically (prevents 100 sorting before 11)
-    # Fallback: extract numeric prefix from basename for systems without sort -V
-    phase_dirs_sorted=$(ls -d "$PHASES_DIR"/*/ 2>/dev/null | (sort -V 2>/dev/null || awk -F/ '{n=$(NF-1); gsub(/[^0-9].*/,"",n); print (n+0)"\t"$0}' | sort -n | cut -f2-))
-    for dir in $phase_dirs_sorted; do
+    SN_PHASE_DIRS=()
+    while IFS= read -r _sn_dir; do
+      [ -n "$_sn_dir" ] || continue
+      SN_PHASE_DIRS+=("${_sn_dir%/}/")
+    done < <(list_child_dirs_sorted "$PHASES_DIR")
+
+    if [ ${#SN_PHASE_DIRS[@]} -gt 0 ]; then
+    for dir in "${SN_PHASE_DIRS[@]}"; do
       [ -d "$dir" ] || continue
       phase_count=$((phase_count + 1))
       phase_num=$(basename "$dir" | sed 's/[^0-9].*//')
@@ -139,6 +152,7 @@ if [ -d "$PLANNING_DIR" ]; then
       last_phase_name="$phase_slug"
       last_phase_plans="$plans"
     done
+    fi  # end SN_PHASE_DIRS length check
 
     # If no unplanned/unbuilt, use the last phase (most recently completed)
     if [ -z "$active_phase_dir" ] && [ -n "$last_phase_dir" ]; then
@@ -240,7 +254,13 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
     done
   else
     # No phase arg — find the first phase with UAT issues (numeric order, matching phase-detect.sh)
-    for dir in $(ls -d "$PHASES_DIR"/*/ 2>/dev/null | (sort -V 2>/dev/null || awk -F/ '{n=$(NF-1); gsub(/[^0-9].*/,"",n); print (n+0)"\t"$0}' | sort -n | cut -f2-)); do
+    SN_VERIFY_DIRS=()
+    while IFS= read -r _sv_dir; do
+      [ -n "$_sv_dir" ] || continue
+      SN_VERIFY_DIRS+=("${_sv_dir%/}/")
+    done < <(list_child_dirs_sorted "$PHASES_DIR")
+
+    for dir in ${SN_VERIFY_DIRS[@]+"${SN_VERIFY_DIRS[@]}"}; do
       [ -d "$dir" ] || continue
       # Guard: skip phases without execution artifacts (matching phase-detect.sh)
       _plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')

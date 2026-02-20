@@ -112,6 +112,8 @@ if is_archive_vibe_prompt "$PROMPT"; then
     if [ "$GUARD_RC" -eq 2 ]; then
       BLOCK_MSG="${GUARD_OUTPUT:-Archive blocked: unresolved UAT issues must be remediated before archiving.}"
     fi
+  else
+    WARNING="UAT guard script not found; archive safety check skipped."
   fi
 
   if [ -f "$PLANNING_DIR/STATE.md" ]; then

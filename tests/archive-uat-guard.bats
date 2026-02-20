@@ -411,3 +411,57 @@ EOF
   [ "$status" -eq 2 ]
   echo "$output" | jq -e '.hookSpecificOutput.additionalContext | contains("VBW pre-flight block")' >/dev/null
 }
+
+# --- Bash 3.2 empty array regression tests (QA round 3) ---
+
+@test "phase-detect emits all keys when milestones dir exists but is empty" {
+  mkdir -p .vbw-planning/milestones
+  mkdir -p .vbw-planning/phases
+  echo "# Project" > .vbw-planning/PROJECT.md
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  # Count output keys — must emit all 33 keys even with empty milestones dir
+  key_count=$(echo "$output" | grep -c '=')
+  [ "$key_count" -ge 33 ]
+  echo "$output" | grep -q "milestone_uat_issues=false"
+  echo "$output" | grep -q "config_effort="
+  echo "$output" | grep -q "brownfield="
+}
+
+@test "phase-detect emits all keys when shipped milestone has empty phases dir" {
+  mkdir -p .vbw-planning/phases
+  mkdir -p .vbw-planning/milestones/01-foundation/phases
+  echo "# Shipped" > .vbw-planning/milestones/01-foundation/SHIPPED.md
+  echo "# Project" > .vbw-planning/PROJECT.md
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  key_count=$(echo "$output" | grep -c '=')
+  [ "$key_count" -ge 33 ]
+  echo "$output" | grep -q "milestone_uat_issues=false"
+  echo "$output" | grep -q "config_effort="
+  echo "$output" | grep -q "execution_state="
+}
+
+@test "phase-detect emits all keys when active phases dir is empty" {
+  mkdir -p .vbw-planning/phases
+  echo "# Project" > .vbw-planning/PROJECT.md
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  key_count=$(echo "$output" | grep -c '=')
+  [ "$key_count" -ge 33 ]
+  echo "$output" | grep -q "phase_count=0"
+  echo "$output" | grep -q "next_phase_state=no_phases"
+  echo "$output" | grep -q "config_effort="
+}
+
+@test "archive-uat-guard allows archive when milestones dir is empty" {
+  echo "# Project" > .vbw-planning/PROJECT.md
+  mkdir -p .vbw-planning/milestones
+  mkdir -p .vbw-planning/phases
+
+  run bash "$SCRIPTS_DIR/archive-uat-guard.sh"
+  [ "$status" -eq 0 ]
+}

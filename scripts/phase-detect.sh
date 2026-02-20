@@ -99,6 +99,7 @@ if [ -d "$PLANNING_DIR/milestones" ]; then
     MILESTONE_DIRS+=("${_ms_dir%/}/")
   done < <(list_child_dirs_sorted "$PLANNING_DIR/milestones")
 
+  if [ ${#MILESTONE_DIRS[@]} -gt 0 ]; then
   for _ms_dir in "${MILESTONE_DIRS[@]}"; do
     [ -d "$_ms_dir" ] || continue
 
@@ -116,6 +117,7 @@ if [ -d "$PLANNING_DIR/milestones" ]; then
       MILESTONE_SCAN_DIRS+=("$_ms_dir")
     fi
   done
+  fi  # end MILESTONE_DIRS length check
   [ -d "$PLANNING_DIR/milestones/default" ] && NEEDS_MILESTONE_RENAME=true
 fi
 echo "has_shipped_milestones=$HAS_SHIPPED_MILESTONES"
@@ -145,7 +147,7 @@ if [ -d "$PHASES_DIR" ]; then
 
   if [ "$PHASE_COUNT" -eq 0 ]; then
     NEXT_PHASE_STATE="no_phases"
-  else
+  elif [ ${#PHASE_DIRS[@]} -gt 0 ]; then
     # Priority override: unresolved UAT issues should route first for no-arg /vbw:vibe.
     # Guard: only consider phases that have at least one PLAN and one SUMMARY (i.e., executed).
     for DIR in "${PHASE_DIRS[@]}"; do
@@ -190,6 +192,7 @@ if [ -d "$PHASES_DIR" ]; then
       NEXT_PHASE_SUMMARIES=$(ls "$TARGET_DIR"[0-9]*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
     else
       ALL_DONE=true
+      if [ ${#PHASE_DIRS[@]} -gt 0 ]; then
       for DIR in "${PHASE_DIRS[@]}"; do
         DIRNAME=$(basename "$DIR")
         # Extract numeric prefix (e.g., "01" from "01-context-diet")
@@ -225,6 +228,8 @@ if [ -d "$PHASES_DIR" ]; then
         # This phase is complete, continue scanning
       done
 
+      fi  # end PHASE_DIRS length check (all_done scan)
+
       if [ "$ALL_DONE" = true ] && [ "$NEXT_PHASE" = "none" ]; then
         NEXT_PHASE_STATE="all_done"
       fi
@@ -256,7 +261,7 @@ MILESTONE_UAT_SLUG="none"
 MILESTONE_UAT_MAJOR_OR_HIGHER=false
 MILESTONE_UAT_PHASE_DIR="none"
 
-if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] || [ "$NEXT_PHASE_STATE" = "no_phases" ]; } && [ "$HAS_SHIPPED_MILESTONES" = true ]; then
+if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] || [ "$NEXT_PHASE_STATE" = "no_phases" ]; } && [ "$HAS_SHIPPED_MILESTONES" = true ] && [ ${#MILESTONE_SCAN_DIRS[@]} -gt 0 ]; then
   for _ms_dir in "${MILESTONE_SCAN_DIRS[@]}"; do
     [ -d "$_ms_dir" ] || continue
     [ -d "${_ms_dir}phases" ] || continue
@@ -273,6 +278,7 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
     _ms_issue_phase_dir="none"
     _ms_issue_major_or_higher=false
 
+    if [ ${#MS_PHASE_DIRS[@]} -gt 0 ]; then
     for _ms_phase_dir in "${MS_PHASE_DIRS[@]}"; do
       [ -d "$_ms_phase_dir" ] || continue
       _ms_dirname=$(basename "$_ms_phase_dir")
@@ -305,6 +311,7 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
         fi
       fi
     done
+    fi  # end MS_PHASE_DIRS length check
 
     if [ "$_ms_issue_found" = true ]; then
       # Keep scanning: last match wins, so we surface the latest milestone with issues.
