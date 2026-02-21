@@ -30,7 +30,7 @@ fi
 # Milestone path guard: refuse to init/advance remediation in archived milestones.
 # Archived milestones are read-only; remediation must happen in active phases.
 case "$PHASE_DIR" in
-  */milestones/*)
+  */.vbw-planning/milestones/*|.vbw-planning/milestones/*)
     echo "Error: refusing to operate on archived milestone path: $PHASE_DIR" >&2
     echo "Remediation must target active phases in .vbw-planning/phases/" >&2
     echo "Use create-remediation-phase.sh to create active remediation phases from milestone UAT." >&2

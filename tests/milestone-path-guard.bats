@@ -67,6 +67,20 @@ EOF
   [[ "$output" == *"create-remediation-phase.sh"* ]]
 }
 
+@test "uat-remediation-state no false positive when parent dir named milestones" {
+  # Workspace path contains 'milestones' but phase is an active phase, not archived
+  MILESTONES_WORKSPACE=$(mktemp -d "${TMPDIR:-/tmp}/milestones-project.XXXXXX")
+  mkdir -p "$MILESTONES_WORKSPACE/.vbw-planning/phases/01-test"
+  cat > "$MILESTONES_WORKSPACE/.vbw-planning/phases/01-test/01-UAT.md" <<'EOF'
+# UAT
+- Issue
+EOF
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$MILESTONES_WORKSPACE/.vbw-planning/phases/01-test" "major"
+  [ "$status" -eq 0 ]
+  [ "$output" = "plan" ]
+  rm -rf "$MILESTONES_WORKSPACE"
+}
+
 # --- compile-context.sh guards ---
 
 @test "compile-context refuses milestone phases_dir" {
@@ -88,14 +102,30 @@ EOF
   [[ "$output" != *"refusing to compile context for archived milestone"* ]]
 }
 
+@test "compile-context no false positive when parent dir named milestones" {
+  MILESTONES_WORKSPACE=$(mktemp -d "${TMPDIR:-/tmp}/milestones-project.XXXXXX")
+  mkdir -p "$MILESTONES_WORKSPACE/.vbw-planning/phases/01-test"
+  cat > "$MILESTONES_WORKSPACE/.vbw-planning/ROADMAP.md" <<'EOF'
+## Phase 1: Test
+**Goal:** Test goal
+**Reqs:** REQ-01
+**Success:** Tests pass
+EOF
+  cd "$MILESTONES_WORKSPACE"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 lead ".vbw-planning/phases"
+  [[ "$output" != *"refusing to compile context for archived milestone"* ]]
+  cd "$TEST_TEMP_DIR"
+  rm -rf "$MILESTONES_WORKSPACE"
+}
+
 # --- file-guard.sh guards ---
 
-@test "file-guard blocks writes to milestone directories" {
+@test "file-guard blocks writes to milestone phase artifacts" {
   # file-guard reads JSON from stdin
   INPUT='{"tool_input":{"file_path":".vbw-planning/milestones/01-shipped/phases/08-feature/08-04-PLAN.md"}}'
   run bash -c "echo '$INPUT' | bash '$SCRIPTS_DIR/file-guard.sh'"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"archived milestones"* ]]
+  [[ "$output" == *"archived milestone phases"* ]]
 }
 
 @test "file-guard allows writes to active planning dir" {
@@ -104,9 +134,27 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "file-guard blocks writes to deeply nested milestone paths" {
+@test "file-guard blocks writes to deeply nested milestone phase paths" {
   INPUT='{"tool_input":{"file_path":".vbw-planning/milestones/02-v2/phases/03-auth/03-01-SUMMARY.md"}}'
   run bash -c "echo '$INPUT' | bash '$SCRIPTS_DIR/file-guard.sh'"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"archived milestones"* ]]
+  [[ "$output" == *"archived milestone phases"* ]]
+}
+
+@test "file-guard allows SHIPPED.md writes to milestone root (archive mode)" {
+  INPUT='{"tool_input":{"file_path":".vbw-planning/milestones/01-shipped/SHIPPED.md"}}'
+  run bash -c "echo '$INPUT' | bash '$SCRIPTS_DIR/file-guard.sh'"
+  [ "$status" -eq 0 ]
+}
+
+@test "file-guard allows STATE.md writes to milestone root (archive mode)" {
+  INPUT='{"tool_input":{"file_path":".vbw-planning/milestones/01-shipped/STATE.md"}}'
+  run bash -c "echo '$INPUT' | bash '$SCRIPTS_DIR/file-guard.sh'"
+  [ "$status" -eq 0 ]
+}
+
+@test "file-guard allows ROADMAP.md writes to milestone root (archive mode)" {
+  INPUT='{"tool_input":{"file_path":".vbw-planning/milestones/01-shipped/ROADMAP.md"}}'
+  run bash -c "echo '$INPUT' | bash '$SCRIPTS_DIR/file-guard.sh'"
+  [ "$status" -eq 0 ]
 }
