@@ -27,15 +27,15 @@ versions_removed=0
 # --- 1. Plugin cache ---
 if [[ -d "$PLUGIN_CACHE_DIR" ]]; then
   if [[ "$KEEP_LATEST" == true ]]; then
-    VERSIONS=$(ls -d "$PLUGIN_CACHE_DIR"/*/ 2>/dev/null | sort -V || true)
+    # Only consider real directories for keep-latest — symlinks are left untouched.
+    VERSIONS=$(ls -d "$PLUGIN_CACHE_DIR"/*/ 2>/dev/null | while IFS= read -r _d; do
+      [ -L "${_d%/}" ] || echo "$_d"
+    done | sort -V || true)
     COUNT=$(echo "$VERSIONS" | grep -c '/' || true)
     if [[ "$COUNT" -gt 1 ]]; then
       TO_REMOVE=$(echo "$VERSIONS" | head -n $((COUNT - 1)))
       versions_removed=$((COUNT - 1))
-      echo "$TO_REMOVE" | while IFS= read -r dir; do
-        [ -L "${dir%/}" ] && continue  # Skip local dev symlinks
-        rm -rf "$dir" 2>/dev/null
-      done
+      echo "$TO_REMOVE" | while IFS= read -r dir; do rm -rf "$dir" 2>/dev/null; done
       wiped_plugin_cache=true
     fi
   else

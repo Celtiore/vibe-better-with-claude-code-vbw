@@ -240,8 +240,16 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "$CLAUDE_PLUGIN_ROOT" ]; then
 else
   # Not in local dev mode — remove stale local symlink to prevent prod sessions
   # from silently resolving scripts from a developer's repo checkout.
+  # Only remove if real cache entries exist, to avoid leaving an empty cache.
   if [ -L "$CACHE_DIR/local" ]; then
-    rm -f "$CACHE_DIR/local"
+    _real_cache=false
+    for _d in "$CACHE_DIR"/*/; do
+      [ -L "${_d%/}" ] && continue
+      [ -d "$_d" ] && _real_cache=true && break
+    done
+    if [ "$_real_cache" = true ]; then
+      rm -f "$CACHE_DIR/local"
+    fi
   fi
 fi
 
@@ -281,15 +289,20 @@ fi
 # --- Auto-sync stale marketplace checkout ---
 MKT_DIR="$CLAUDE_DIR/plugins/marketplaces/vbw-marketplace"
 if [ -d "$MKT_DIR/.git" ] && [ -d "$CACHE_DIR" ]; then
-  MKT_VER=$(jq -r '.version // "0"' "$MKT_DIR/.claude-plugin/plugin.json" 2>/dev/null)
-  CACHE_VER=$(jq -r '.version // "0"' "$(ls -d "$CACHE_DIR"/*/.claude-plugin/plugin.json 2>/dev/null | sort -V | tail -1)" 2>/dev/null)
-  if [ "$MKT_VER" != "$CACHE_VER" ] && [ -n "$CACHE_VER" ] && [ "$CACHE_VER" != "0" ]; then
-    (cd "$MKT_DIR" && git fetch origin --quiet 2>/dev/null && \
-      if git diff --quiet 2>/dev/null; then
-        git merge --ff-only origin/main --quiet 2>/dev/null
-      else
-        echo "VBW: marketplace checkout has local modifications — skipping reset" >&2
-      fi) &
+  _SYNC_LATEST=$(ls -d "$CACHE_DIR"/*/ 2>/dev/null | sort -V | tail -1)
+  # Skip version-driven sync when latest cache entry is a local dev symlink —
+  # local repo version differences should not drive marketplace checkout behavior.
+  if [ -n "$_SYNC_LATEST" ] && [ ! -L "${_SYNC_LATEST%/}" ]; then
+    MKT_VER=$(jq -r '.version // "0"' "$MKT_DIR/.claude-plugin/plugin.json" 2>/dev/null)
+    CACHE_VER=$(jq -r '.version // "0"' "${_SYNC_LATEST}.claude-plugin/plugin.json" 2>/dev/null)
+    if [ "$MKT_VER" != "$CACHE_VER" ] && [ -n "$CACHE_VER" ] && [ "$CACHE_VER" != "0" ]; then
+      (cd "$MKT_DIR" && git fetch origin --quiet 2>/dev/null && \
+        if git diff --quiet 2>/dev/null; then
+          git merge --ff-only origin/main --quiet 2>/dev/null
+        else
+          echo "VBW: marketplace checkout has local modifications — skipping reset" >&2
+        fi) &
+    fi
   fi
   # Content staleness: compare command counts
   if [ -d "$MKT_DIR/commands" ] && [ -d "$CACHE_DIR" ]; then
