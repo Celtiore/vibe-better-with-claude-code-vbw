@@ -92,12 +92,7 @@ Think of it as project management for the post-dignity era of software developme
 - [Quick Tutorial](#quick-tutorial)
 - [Commands](#commands)
 - [The Agents](#the-agents)
-- [Effort Profiles](#effort-profiles)
-- [Autonomy Levels](#autonomy-levels)
-- [Planning & Git](#planning--git)
-- [Settings Reference](#settings-reference)
-- [Feature Flags (Graduated)](#feature-flags-graduated)
-- [Cost Optimization](#cost-optimization)
+- [Configuration](#configuration)
 - [Project Structure](#project-structure)
 - [Requirements](#requirements)
 - [Contributing](#contributing)
@@ -531,9 +526,23 @@ Here's when each one shows up to work:
 
 <br>
 
-## Effort Profiles
+## Configuration
 
-Not every task deserves the same level of scrutiny. Most of yours don't. VBW provides four effort profiles that control how much your agents think before they act.
+Every setting lives in `.vbw-planning/config.json` and can be changed with `/vbw:config <key> <value>`. Settings are created during `/vbw:init` and backfilled automatically when new ones are added in plugin updates.
+
+### Effort profiles
+
+<a id="effort-profiles"></a>
+
+Not every task deserves the same level of scrutiny. Most of yours don't. Four effort profiles control how much your agents think before they act.
+
+| Setting | Type | Default | Values |
+| :--- | :--- | :--- | :--- |
+| `effort` | string | `balanced` | `thorough` / `balanced` / `fast` / `turbo` |
+| `verification_tier` | string | `standard` | `quick` / `standard` / `deep` |
+
+- **`effort`** — Controls how deeply agents plan, execute, and verify.
+- **`verification_tier`** — Controls QA depth. `quick` runs 5–10 checks (artifact existence, frontmatter validity). `standard` runs 15–25 (structure, imports, cross-consistency). `deep` runs 30+ (anti-patterns, requirement mapping, completeness audit). Effort profiles map to tiers automatically (`turbo`→skip, `fast`→quick, `balanced`→standard, `thorough`→deep), but this setting overrides that default. Forced to `deep` when >15 requirements or on the final phase.
 
 | Profile | What It Does | When To Use It |
 | :--- | :--- | :--- |
@@ -557,13 +566,15 @@ Or switch effort, autonomy, and verification together with `/vbw:profile`:
 
 <br>
 
----
+### Autonomy levels
 
-<br>
-
-## Autonomy Levels
+<a id="autonomy-levels"></a>
 
 Effort controls how hard your agents think. Autonomy controls how often they stop to ask you about it.
+
+| Setting | Type | Default | Values |
+| :--- | :--- | :--- | :--- |
+| `autonomy` | string | `standard` | `cautious` / `standard` / `confident` / `pure-vibe` |
 
 Four levels, from "review everything" to "just build the whole thing while I get coffee":
 
@@ -591,15 +602,21 @@ Autonomy interacts with effort profiles. At `cautious`, plan approval expands to
 
 <br>
 
----
+### Commits, push, and planning artifacts
 
-<br>
+<a id="planning--git"></a>
 
-## Planning & Git
+VBW generates 15+ files in `.vbw-planning/` during bootstrap, planning, execution, and QA — but by default none of them are committed. The Dev agent only commits source code files listed in each task's `Files:` section.
 
-VBW generates 15+ files in `.vbw-planning/` during bootstrap, planning, execution, and QA — but by default none of them are committed. The Dev agent only commits source code files listed in each task's `Files:` section. Two settings control what happens to planning artifacts and when code gets pushed.
+| Setting | Type | Default | Values |
+| :--- | :--- | :--- | :--- |
+| `auto_commit` | boolean | `true` | `true` / `false` |
+| `planning_tracking` | string | `manual` | `manual` / `ignore` / `commit` |
+| `auto_push` | string | `never` | `never` / `after_phase` / `always` |
 
-### `planning_tracking`
+- **`auto_commit`** — When `true`, the Dev agent auto-commits after each task with format `{type}({phase}-{plan}): {task-name}`, staging files individually. When `false`, changes accumulate uncommitted. **This only controls source-code commits during execution** — planning artifact commits are controlled by `planning_tracking`.
+
+#### `planning_tracking`
 
 Controls whether `.vbw-planning/` artifacts are committed, gitignored, or left for you to manage.
 
@@ -613,9 +630,7 @@ Controls whether `.vbw-planning/` artifacts are committed, gitignored, or left f
 | **`ignore`** | Adds `.vbw-planning/` to `.gitignore` during `/vbw:init`. Planning files exist locally but never enter version control. Clean `git status`. | Solo projects, prototyping, or when planning history doesn't matter. |
 | **`commit`** | Auto-commits `.vbw-planning/` artifacts at lifecycle boundaries — after bootstrap, after planning, after archive. Commit format: `chore(vbw): {action}`. Transient files (`.execution-state.json`, `.contracts/`, `.locks/`, `.token-state/`, compiled context) are excluded via `.vbw-planning/.gitignore`. | Teams that want an audit trail of planning decisions in version control. |
 
-> **Note:** `auto_commit` (the existing boolean) only controls source-task commits during Execute mode. It has no effect on planning artifacts — that's what `planning_tracking` is for.
-
-### `auto_push`
+#### `auto_push`
 
 Controls whether VBW pushes commits automatically, and when.
 
@@ -631,38 +646,6 @@ Controls whether VBW pushes commits automatically, and when.
 
 <br>
 
----
-
-<br>
-
-## Settings Reference
-
-Every setting below lives in `.vbw-planning/config.json` and can be changed with `/vbw:config <key> <value>`. Settings are created during `/vbw:init` and backfilled automatically when new ones are added in plugin updates.
-
-### Core workflow
-
-| Setting | Type | Default | Values |
-| :--- | :--- | :--- | :--- |
-| `effort` | string | `balanced` | `thorough` / `balanced` / `fast` / `turbo` |
-| `autonomy` | string | `standard` | `cautious` / `standard` / `confident` / `pure-vibe` |
-| `verification_tier` | string | `standard` | `quick` / `standard` / `deep` |
-
-- **`effort`** — Controls how deeply agents plan, execute, and verify. See [Effort Profiles](#effort-profiles).
-- **`autonomy`** — Controls how often agents stop to ask for confirmation. See [Autonomy Levels](#autonomy-levels).
-- **`verification_tier`** — Controls QA depth. `quick` runs 5–10 checks (artifact existence, frontmatter validity). `standard` runs 15–25 (structure, imports, cross-consistency). `deep` runs 30+ (anti-patterns, requirement mapping, completeness audit). Effort profiles map to tiers automatically (`turbo`→skip, `fast`→quick, `balanced`→standard, `thorough`→deep), but this setting overrides that default. Forced to `deep` when >15 requirements or on the final phase.
-
-### Commit and push
-
-| Setting | Type | Default | Values |
-| :--- | :--- | :--- | :--- |
-| `auto_commit` | boolean | `true` | `true` / `false` |
-| `planning_tracking` | string | `manual` | `manual` / `ignore` / `commit` |
-| `auto_push` | string | `never` | `never` / `after_phase` / `always` |
-
-- **`auto_commit`** — When `true`, the Dev agent auto-commits after each task with format `{type}({phase}-{plan}): {task-name}`, staging files individually. When `false`, changes accumulate uncommitted. **This only controls source-code commits during execution** — planning artifact commits are controlled by `planning_tracking`.
-- **`planning_tracking`** — Controls `.vbw-planning/` artifact handling. See [Planning & Git](#planning--git).
-- **`auto_push`** — Controls automatic pushing. See [Planning & Git](#planning--git).
-
 ### Agent behavior
 
 | Setting | Type | Default | Values |
@@ -671,11 +654,19 @@ Every setting below lives in `.vbw-planning/config.json` and can be changed with
 | `max_tasks_per_plan` | number | `5` | `1`–`7` |
 | `context_compiler` | boolean | `true` | `true` / `false` |
 | `plain_summary` | boolean | `true` | `true` / `false` |
+| `worktree_isolation` | string | `off` | `off` / `on` |
+| `qa_skip_agents` | array | `["docs"]` | Array of agent role names |
+| `require_phase_discussion` | boolean | `false` | `true` / `false` |
 
 - **`prefer_teams`** — Controls when VBW creates Agent Teams (multiple color-coded agents working together) vs spawning a single subagent. `always` creates teams for every operation — maximum agent visibility but higher token cost. `when_parallel` (and `auto`, which behaves identically) creates teams only when parallelism adds value: 2+ plans in execute, Scout needed in planning, ambiguous bugs in debug. Use `always` unless you're optimizing for token cost.
 - **`max_tasks_per_plan`** — Maximum number of tasks the Lead agent should include in a single plan. Communicated to agents via session context. Lower values (2–3) produce more focused, easier-to-verify plans. Higher values (5–7) reduce planning overhead but increase blast radius per plan. Not enforced by a hard gate — it's an advisory constraint.
 - **`context_compiler`** — When `true`, runs `compile-context.sh` to produce role-specific `.context-{role}.md` files so each agent gets curated context (Lead gets requirements, Dev gets phase goal + conventions, QA gets verification targets). When `false`, agents read project files directly without curation. Leave this on unless you're debugging context issues.
 - **`plain_summary`** — When `true`, appends 2–4 plain-English sentences after QA completes in Execute mode, summarizing what happened in the phase without jargon. When `false`, output shows only the structured QA result.
+- **`worktree_isolation`** — When `on`, each Dev agent gets its own git worktree — physical filesystem isolation, not just file-list enforcement. Six scripts handle the full lifecycle: create, merge, cleanup, status, targeting, and agent mapping. When `off`, Dev agents share the main working directory with `file-guard.sh` enforcing plan file boundaries. Default `off` for backward compatibility.
+- **`qa_skip_agents`** — Array of agent role names that are exempt from QA verification gates. Valid names: `scout`, `architect`, `lead`, `dev`, `qa`, `debugger`, `docs`. By default, `["docs"]` — the Docs agent can complete tasks without triggering QA checks.
+- **`require_phase_discussion`** — When `true`, phases without a `CONTEXT.md` are routed through the discussion engine before planning. Prevents planning until phase context is explicitly discussed and decisions are captured. When `false`, phases proceed directly to planning. Useful for teams that want to ensure design decisions are explored before implementation.
+
+<br>
 
 ### Skills and discovery
 
@@ -689,7 +680,13 @@ Every setting below lives in `.vbw-planning/config.json` and can be changed with
 - **`auto_install_skills`** — When `true`, suggested skills are installed automatically without asking. When `false`, VBW shows the install commands but lets you run them yourself. Has no effect if `skill_suggestions` is `false`.
 - **`discovery_questions`** — When `true`, the discussion engine runs during bootstrap and `/vbw:discuss`, with depth controlled by your active profile (`default`→3–5 gray areas, `production`→4–6, `prototype`→2–3, `yolo`→skip). When `false`, skips the discussion engine entirely. Set this to `false` if you're bootstrapping projects where you already know what you want.
 
-### Model routing
+<br>
+
+### Model routing and cost
+
+<a id="cost-optimization"></a>
+
+VBW spawns specialized agents for planning, development, and verification. Model profiles let you control which Claude model each agent uses, trading cost for quality based on your needs.
 
 | Setting | Type | Default | Values |
 | :--- | :--- | :--- | :--- |
@@ -698,50 +695,12 @@ Every setting below lives in `.vbw-planning/config.json` and can be changed with
 | `active_profile` | string | `default` | `default` / `prototype` / `production` / `yolo` / `custom` |
 | `custom_profiles` | object | `{}` | User-defined profile presets |
 
-- **`model_profile`** — Which Claude models agents use. See [Cost Optimization](#cost-optimization).
+- **`model_profile`** — Which Claude models agents use. See preset details below.
 - **`model_overrides`** — Per-agent model overrides that take precedence over the profile. See [Per-Agent Overrides](#per-agent-overrides).
 - **`active_profile`** — Bundles effort, autonomy, and verification tier into a switchable preset. `default` (balanced/standard/standard), `prototype` (fast/confident/quick), `production` (thorough/cautious/deep), `yolo` (turbo/pure-vibe/skip). Set automatically to `custom` when individual settings drift from their profile. Manage with `/vbw:profile`.
 - **`custom_profiles`** — Stores user-created profile presets (name → effort/autonomy/verification_tier). Create, list, switch, and delete via `/vbw:profile`.
 
-### Safety
-
-| Setting | Type | Default | Values |
-| :--- | :--- | :--- | :--- |
-| `bash_guard` | boolean | `true` | `true` / `false` |
-
-- **`bash_guard`** — When `true`, a PreToolUse hook blocks known destructive Bash commands (database drops, migration resets, volume wipes) before they execute. Covers 40+ patterns across all major frameworks and databases. Override per-command with `VBW_ALLOW_DESTRUCTIVE=1` env var, or disable entirely with `false`. Project-specific patterns can be added to `.vbw-planning/destructive-commands.local.txt`.
-
-### Display
-
-| Setting | Type | Default | Values |
-| :--- | :--- | :--- | :--- |
-| `visual_format` | string | `unicode` | `unicode` / `ascii` |
-| `branch_per_milestone` | boolean | `false` | `true` / `false` |
-
-- **`visual_format`** — Intended to switch between Unicode symbols (✓ ✗ ◆ ○ ⚡ ➜, box-drawing characters) and ASCII equivalents. Currently declared but not yet wired into agent output — agents always use Unicode.
-- **`branch_per_milestone`** — Intended to auto-create a git branch per milestone during Bootstrap. Currently declared but not yet implemented — has no runtime effect.
-
-<br>
-
----
-
-<br>
-
-## Feature Flags (Graduated)
-
-All V2 and V3 feature flags have graduated to always-on behavior as of v1.31.0. They are no longer configurable and have been removed from `config/defaults.json`.
-
-Previously, these flags controlled staged rollout of runtime features (delta context, contract enforcement, lease locks, validation gates, role isolation, token budgets, etc.). All gated behavior is now unconditionally active.
-
-Brownfield configs may still contain these keys — they are ignored at runtime and cleaned up automatically by `migrate-config.sh`.
-
-<br>
-
-## Cost Optimization
-
-VBW spawns specialized agents for planning, development, and verification. Model profiles let you control which Claude model each agent uses, trading cost for quality based on your needs.
-
-### Three Preset Profiles
+#### Three preset profiles
 
 | Profile | Use Case | Lead | Dev | QA | Scout | Est. Cost/Phase |
 | :--- | :--- | :--- | :--- | :--- | :--- | ---: |
@@ -757,7 +716,7 @@ VBW spawns specialized agents for planning, development, and verification. Model
 
 **Budget** keeps Dev and core agents on Sonnet (quality baseline) but drops QA to Haiku. Good for exploratory work where you're iterating fast and verification can be lighter.
 
-### Switching Profiles
+#### Switching profiles
 
 ```bash
 /vbw:config model_profile quality
@@ -767,7 +726,7 @@ VBW spawns specialized agents for planning, development, and verification. Model
 
 Each switch shows before/after cost impact. Changes apply to the next phase.
 
-### Per-Agent Overrides
+#### Per-agent overrides
 
 Need Opus for one agent without switching the whole profile?
 
@@ -781,7 +740,7 @@ Common patterns:
 - Balanced profile + Lead override to Opus for strategic planning phases
 - Quality profile + QA override to Haiku when verification is straightforward
 
-### Agent Turn Limits
+#### Agent turn limits
 
 Each agent has a default turn budget that scales with your effort level (thorough = 1.5×, balanced = 1×, fast = 0.8×, turbo = 0.6×). Defaults:
 
@@ -815,7 +774,7 @@ Set a value to `false` or `0` to give an agent unlimited turns (no turn cap is e
 }
 ```
 
-### Effort vs Model
+#### Effort vs model
 
 **Model profile** controls which Claude model agents use (cost).
 **Effort** controls how deeply agents think (workflow depth).
@@ -833,6 +792,49 @@ Switch both at once with work profiles:
 ```
 
 See **[Model Profiles Reference](references/model-profiles.md)** for preset definitions, cost breakdown, and implementation details.
+
+<br>
+
+### Safety
+
+| Setting | Type | Default | Values |
+| :--- | :--- | :--- | :--- |
+| `bash_guard` | boolean | `true` | `true` / `false` |
+
+- **`bash_guard`** — When `true`, a PreToolUse hook blocks known destructive Bash commands (database drops, migration resets, volume wipes) before they execute. Covers 40+ patterns across all major frameworks and databases. Override per-command with `VBW_ALLOW_DESTRUCTIVE=1` env var, or disable entirely with `false`. Project-specific patterns can be added to `.vbw-planning/destructive-commands.local.txt`.
+
+<br>
+
+### Display
+
+| Setting | Type | Default | Values |
+| :--- | :--- | :--- | :--- |
+| `visual_format` | string | `unicode` | `unicode` / `ascii` |
+| `branch_per_milestone` | boolean | `false` | `true` / `false` |
+
+- **`visual_format`** — Intended to switch between Unicode symbols (✓ ✗ ◆ ○ ⚡ ➜, box-drawing characters) and ASCII equivalents. Currently declared but not yet wired into agent output — agents always use Unicode.
+- **`branch_per_milestone`** — Intended to auto-create a git branch per milestone during Bootstrap. Currently declared but not yet implemented — has no runtime effect.
+
+<br>
+
+### Feature flags
+
+These flags control optional runtime features introduced during staged rollout. Most default to `true` (on). They can be toggled with `/vbw:config <key> <value>`.
+
+| Flag | Default | What It Controls |
+| :--- | :--- | :--- |
+| `token_budgets` | `true` | Character-budget enforcement for context truncation. When `false`, passes all content unmodified. |
+| `two_phase_completion` | `true` | Two-phase validation and artifact registry checks on task completion. |
+| `metrics` | `true` | Session metrics collection to `.metrics/run-metrics.jsonl`. |
+| `smart_routing` | `true` | Effort-based agent routing — skips Scout/Architect at lower effort levels. When `false`, always includes all agents. |
+| `validation_gates` | `true` | Graduated — exists only for migration tracking. No runtime effect. |
+| `snapshot_resume` | `true` | Phase snapshot resumption logic for recovering interrupted builds. |
+| `lease_locks` | `false` | Distributed lock acquisition for concurrent agent coordination. |
+| `event_recovery` | `false` | State recovery from event log after crashes or interruptions. |
+| `monorepo_routing` | `true` | Monorepo scope detection — routes agents to the correct package directory. |
+| `rolling_summary` | `false` | Cross-phase context continuity. When `true` and phase > 1, injects prior phase's rolling context into the current agent's context window. |
+
+Brownfield configs from older versions may contain additional keys — these are cleaned up automatically by `migrate-config.sh`.
 
 <br>
 
