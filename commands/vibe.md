@@ -468,7 +468,11 @@ Run 7-point audit matrix:
 FAIL -> STOP with remediation suggestions. WARN -> proceed with warnings.
 
 **Steps:**
-1. Derive milestone slug from ROADMAP.md phase names (kebab-case, max 60 chars). Override with --tag if provided.
+1. **Derive milestone slug (deterministic — do NOT invent a slug):**
+   ```bash
+   MILESTONE_SLUG=$(bash ${CLAUDE_PLUGIN_ROOT}/scripts/derive-milestone-slug.sh .vbw-planning)
+   ```
+   This reads ROADMAP.md phase names and outputs a numbered kebab-case slug (e.g., `01-setup-api-layer`). Override with `--tag` if provided. **Never use a hardcoded slug like "default" — always use the script output.**
 2. Parse args: --tag=vN.N.N (custom tag), --no-tag (skip), --force (skip non-UAT audit).
 3. Compute summary: from ROADMAP (phases), SUMMARY.md files (tasks/commits/deviations), REQUIREMENTS.md (satisfied count).
 4. **Rolling summary (conditional):** If `rolling_summary=true` in config:

@@ -264,12 +264,14 @@ EOF
   echo "$output" | grep -q "has_shipped_milestones=false"
 }
 
-@test "outputs needs_milestone_rename=true when milestones/default/ exists" {
+@test "auto-renames milestones/default during phase-detect" {
   mkdir -p .vbw-planning/milestones/default
+  mkdir -p .vbw-planning/milestones/default/phases/01-legacy-phase
 
   run bash "$SCRIPTS_DIR/phase-detect.sh"
   [ "$status" -eq 0 ]
-  echo "$output" | grep -q "needs_milestone_rename=true"
+  echo "$output" | grep -q "needs_milestone_rename=false"
+  [ ! -d .vbw-planning/milestones/default ]
 }
 
 @test "outputs needs_milestone_rename=false when no milestones/default/" {

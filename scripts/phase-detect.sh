@@ -78,6 +78,15 @@ else
   exit 0
 fi
 
+# --- Rename legacy milestones/default (brownfield hardening) ---
+# SessionStart normally performs this migration, but hooks can be unavailable
+# in some local-dev setups. Running it here keeps command routing grounded in
+# canonical milestone slugs even when SessionStart didn't run.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -d "$PLANNING_DIR/milestones/default" ] && [ -f "$SCRIPT_DIR/rename-default-milestone.sh" ]; then
+  bash "$SCRIPT_DIR/rename-default-milestone.sh" "$PLANNING_DIR" 2>/dev/null || true
+fi
+
 # --- Project existence ---
 PROJECT_EXISTS=false
 if [ -f "$PLANNING_DIR/PROJECT.md" ]; then
