@@ -8,11 +8,7 @@
 
 *At least do it properly.*
 
-<br>
-
-<img src="assets/abraham.jpeg" width="300" />
-
-<br>
+<img src="assets/abraham.jpeg" alt="Abraham Lincoln portrait" width="300"/>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-v1.0.33+-blue.svg)](https://code.claude.com)
@@ -20,8 +16,6 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/zh6pV53SaP)
 
 </div>
-
-<br>
 
 ## VBW Token Efficiency vs Stock Opus 4.6 Agent Teams
 
@@ -50,7 +44,6 @@ Every new capability is shell-only — 85 scripts run as bash subprocesses at ze
 | Pro / Max subscription | baseline capacity | ~3x phases per cycle | **200% more work done** |
 
 *Budget profile ($0.70/phase) doubles API savings. Quality profile ($2.80/phase) matches stock cost but adds V2/V3 enforcement at zero premium. Based on [current API pricing](https://claude.com/pricing).*
-<br>
 
 ## Manifesto
 
@@ -66,8 +59,6 @@ This project exists to make AI coding better for everyone, and "everyone" means 
 
 **[Join the Discord](https://discord.gg/zh6pV53SaP)** -- whether you want to help build VBW or just want VBW to help you build.
 
-<br>
-
 ## What Is This
 
 > **Platform:** macOS and Linux only. Windows is not supported natively — all hooks, scripts, and context blocks require bash. If you're on Windows, run Claude Code inside [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
@@ -79,8 +70,6 @@ VBW is a Claude Code plugin that bolts an actual development lifecycle onto your
 You describe what you want. VBW breaks it into phases. Agents plan, write, and verify the code. Commits are atomic. Verification is goal-backward. State persists across sessions. It's the entire software development lifecycle, except you replaced the engineering team with a plugin and a prayer.
 
 Think of it as project management for the post-dignity era of software development.
-
-<br>
 
 ## Table of Contents
 
@@ -99,11 +88,7 @@ Think of it as project management for the post-dignity era of software developme
 - [Contributors](#contributors)
 - [License](#license)
 
-<br>
-
 ---
-
-<br>
 
 ## Features
 
@@ -121,8 +106,6 @@ Most Claude Code plugins were built for the subagent era, one main session spawn
 
 - **Structured handoff schemas.** Agents communicate via JSON-structured SendMessage with typed schemas (`scout_findings`, `dev_progress`, `dev_blocker`, `qa_result`, `debugger_report`). No more hoping the receiving agent can parse free-form markdown. Schema definitions live in a single reference document with backward-compatible fallback to plain text.
 
-<br>
-
 ### Solves Agent Teams limitations out of the box
 
 Agent Teams are [experimental with known limitations](https://code.claude.com/docs/en/agent-teams#limitations). VBW handles them so you don't have to:
@@ -139,8 +122,6 @@ Agent Teams are [experimental with known limitations](https://code.claude.com/do
 
 Agent Teams ship with seven known limitations. VBW addresses all of them. The eighth... that you're using AI to write software doesn't need a fix. It needs an intervention.
 
-<br>
-
 ### Skills.sh integration
 
 VBW integrates with [Skills.sh](https://skills.sh), the open-source skill registry for AI agents with 20+ supported platforms and thousands of community-contributed skills:
@@ -149,31 +130,25 @@ VBW integrates with [Skills.sh](https://skills.sh), the open-source skill regist
 
 - **On-demand skill discovery.** Run `/vbw:skills` anytime to detect your stack, browse curated suggestions, search the Skills.sh registry, and install skills in one step. Use `--search <query>` for direct registry lookups.
 
-<br>
-
 ### Real-time statusline that knows more about your project than you do
 
-<img src="assets/statusline.png" width="100%" />
+<img src="assets/statusline.png" alt="VBW statusline example" width="100%" />
 
 Five or six lines of pure situational awareness, rendered after every response. Phase progress, plan completion, effort profile, QA status... everything a senior engineer would track on a whiteboard, except the whiteboard has been replaced by a terminal and the senior engineer has been replaced by you.
 
-<br>
-
 ---
-
-<br>
 
 ## Installation
 
 Open Claude Code and run these two commands inside the Claude Code session, **one at a time**:
 
 **Step 1:** Add the marketplace
-```
+```text
 /plugin marketplace add yidakee/vibe-better-with-claude-code-vbw
 ```
 
 **Step 2:** Install the plugin
-```
+```text
 /plugin install vbw@vbw-marketplace
 ```
 
@@ -181,7 +156,7 @@ That's it. Two commands, two separate inputs. Do not paste them together — Cla
 
 To update later, inside Claude Code:
 
-```
+```text
 /vbw:update
 ```
 
@@ -207,17 +182,13 @@ This is how most vibe coders run it. The agents work longer, the flow stays unbr
 
 > **Disclaimer:** The `--dangerously-skip-permissions` flag is called that for a reason. It is not called `--everything-will-be-fine` or `--trust-the-AI-it-knows-what-its-doing`. By using it, you are giving an AI unsupervised write access to your filesystem. VBW does its best to keep agents on a leash, but at the end of the day you are trusting software written by an AI, managed by an AI, and verified by a different AI. If this arrangement doesn't concern you, you are exactly the target audience for this plugin.
 
-<br>
-
 ---
-
-<br>
 
 ## How It Works
 
 VBW operates on a simple loop that will feel familiar to anyone who's ever shipped software. Or read about it on Reddit.
 
-```
+```text
                         ┌─────────────────────────────┐
                         │  YOU HAVE AN IDEA           │
                         │  (dangerous, but continue)  │
@@ -287,11 +258,7 @@ VBW operates on a simple loop that will feel familiar to anyone who's ever shipp
                                       └──────────────────┘
 ```
 
-<br>
-
 ---
-
-<br>
 
 ## Quick Tutorial
 
@@ -299,13 +266,13 @@ You only need to remember two commands. Seriously. VBW auto-detects where your p
 
 ### Starting a brand new project
 
-```
+```text
 /vbw:init
 ```
 
 Run this once. VBW sets up your environment — Agent Teams, statusline, git hooks — and scaffolds a `.vbw-planning/` directory. It detects your tech stack and suggests relevant Claude Code skills. You answer a few questions, and you're ready to build.
 
-```
+```text
 /vbw:vibe
 ```
 
@@ -318,19 +285,19 @@ This is the one command. Run it, and VBW figures out what to do next:
 
 You don't need to know which state your project is in. VBW knows. Just keep running `/vbw:vibe` and it handles the rest — planning, building, verifying — one phase at a time. Or if you're feeling brave, set your autonomy to `pure-vibe` and it'll loop through every remaining phase without stopping.
 
-```
+```text
 /vbw:vibe
 ```
 
 Yes, the same command again. When Phase 1 finishes, run it again for Phase 2. And again for Phase 3. Each invocation picks up where the last one left off. State persists in `.vbw-planning/` across sessions, so you can close your terminal, come back tomorrow, and `/vbw:vibe` still knows exactly where you are.
 
-```
+```text
 /vbw:vibe --archive
 ```
 
 When all phases are built, archive the work. VBW runs a completion audit, archives state to `.vbw-planning/milestones/`, tags the git release, and updates project docs. In hook-enabled/archive-flow execution, unresolved UAT is script-blocked (active or milestone) and is not bypassed by `--skip-audit`/`--force`. You shipped. With actual verification. Your future self won't want to set the codebase on fire. Probably.
 
-```
+```text
 /vbw:release
 ```
 
@@ -342,7 +309,7 @@ That's it. `init` → `vibe` (repeat) → `vibe --archive` → `release`. Three 
 
 Same flow, one difference:
 
-```
+```text
 /vbw:init
 ```
 
@@ -352,7 +319,7 @@ From there, it's the same loop: `/vbw:vibe` until done, `/vbw:vibe --archive`, `
 
 ### Coming back to a project
 
-```
+```text
 /vbw:resume
 ```
 
@@ -368,11 +335,7 @@ Closed your terminal? Switched branches? Came back after a weekend of pretending
 
 > **For advanced users:** The [full command reference](#commands) below has 24 commands for granular control — `/vbw:vibe` with flags for explicit mode selection (`--plan`, `--execute`, `--discuss`, `--assumptions`), `/vbw:discuss` for standalone phase discussions, `/vbw:qa` for on-demand verification, `/vbw:debug` for systematic bug investigation, and more. But you never *need* the flags. `/vbw:vibe` with no arguments handles the entire lifecycle on its own.
 
-<br>
-
 ---
-
-<br>
 
 ## Commands
 
@@ -386,8 +349,6 @@ These are the commands you'll use every day. This is the job now.
 | `/vbw:vibe [intent or flags]` | The one command. Auto-detects project state, parses natural language intent, or accepts explicit flags. 13 modes: bootstrap, scope, discuss, assumptions, **UAT remediation**, **milestone UAT recovery**, plan, execute, add/insert/remove phase, archive. Discussion mode uses the unified discussion engine (auto-calibrates Builder/Architect, generates phase-specific gray areas). If a phase has unresolved UAT issues (`status: issues_found`), plain `/vbw:vibe` automatically loads `{phase}-UAT.md` and continues remediation without requiring `--discuss` or `--plan`—major/critical issues auto-chain **discuss → plan → execute**; minor-only issues use quick-fix remediation. Milestone recovery scans archived milestones deterministically (including legacy milestones missing `SHIPPED.md`) and surfaces unresolved UAT for recovery. Archive mode includes a 7-point audit plus a script-level UAT guard in the archive flow/hook path — unresolved UAT issues block archiving and are not bypassed by `--skip-audit`/`--force`. Flags: `--plan`, `--execute`, `--discuss`, `--assumptions`, `--scope`, `--add`, `--insert`, `--remove`, `--archive`, `--yolo`, `--effort`, `--skip-qa`, `--skip-audit`. Phase numbers optional -- auto-detected when omitted. |
 | `/vbw:release` | Bump version, finalize changelog, tag, commit, push, and create a GitHub release. Runs a pre-release audit that checks changelog completeness against commits since last release and detects stale README counts, offering to fix issues before shipping. Runs `bump-version.sh` across all 4 version files, renames `[Unreleased]` to the new version in CHANGELOG.md, creates an annotated git tag, pushes, and creates a GitHub release with changelog notes via `gh`. Supports `--dry-run`, `--no-push`, `--major`, `--minor`, `--skip-audit`. |
 
-<br>
-
 ### Monitoring -- Trust But Verify
 
 | Command | Description |
@@ -395,8 +356,6 @@ These are the commands you'll use every day. This is the job now.
 | `/vbw:status` | Progress dashboard showing all phases, completion bars, velocity metrics, and suggested next action. Add `--metrics` for token consumption breakdown per agent. |
 | `/vbw:qa [phase]` | Deep verification on demand. Three tiers (Quick, Standard, Deep) with goal-backward methodology. Continuous QA runs automatically via hooks during builds -- this command is for thorough, on-demand verification. Produces VERIFICATION.md. Phase is auto-detected when omitted. |
 | `/vbw:verify [phase]` | Human acceptance testing with per-test CHECKPOINT prompts. Presents success criteria one at a time, collects pass/fail/partial verdicts, supports resume if interrupted. Produces UAT.md. |
-
-<br>
 
 ### Supporting -- The Safety Net
 
@@ -416,8 +375,6 @@ These are the commands you'll use every day. This is the job now.
 | `/vbw:doctor` | Run 10 health checks on your VBW installation: jq, VERSION sync, plugin cache, hooks validity, agent files, config, script permissions, gh CLI, sort -V support. Diagnoses issues before they become mysteries. |
 | `/vbw:help` | Command reference with usage examples. You are reading its output's spiritual ancestor right now. |
 
-<br>
-
 ### Advanced -- For When You're Feeling Ambitious
 
 | Command | Description |
@@ -428,11 +385,7 @@ These are the commands you'll use every day. This is the job now.
 | `/vbw:update` | Update VBW to the latest version with automatic cache refresh. |
 | `/vbw:uninstall` | Clean removal of VBW -- statusline, settings, and project data. For when you want to go back to prompting manually like it's 2024. |
 
-<br>
-
 ---
-
-<br>
 
 ## The Agents
 
@@ -450,11 +403,9 @@ VBW uses 7 specialized agents, each with native tool permissions enforced via YA
 
 **Denied** = `disallowedTools` -- platform-enforced denial. These tools are blocked by Claude Code itself, not by instructions an agent might ignore during compaction. **Mode** = `permissionMode` -- `plan` means read-only exploration (Scout, QA), `acceptEdits` means the agent can propose and apply changes.
 
-<br>
-
 Here's when each one shows up to work:
 
-```
+```text
   /vbw:map                        /vbw:vibe --plan       /vbw:vibe --execute (or /vbw:vibe)
   ┌─────────┐                     ┌─────────┐                     ┌─────────┐
   │         │                     │         │                     │         │
@@ -520,19 +471,13 @@ Here's when each one shows up to work:
   └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<br>
-
 ---
-
-<br>
 
 ## Configuration
 
 Every setting lives in `.vbw-planning/config.json` and can be changed with `/vbw:config <key> <value>`. Settings are created during `/vbw:init` and backfilled automatically when new ones are added in plugin updates.
 
 ### Effort profiles
-
-<a id="effort-profiles"></a>
 
 Not every task deserves the same level of scrutiny. Most of yours don't. Four effort profiles control how much your agents think before they act.
 
@@ -551,24 +496,20 @@ Not every task deserves the same level of scrutiny. Most of yours don't. Four ef
 | **Fast** | Lighter planning, quicker verification. | Straightforward phases where the path is obvious. |
 | **Turbo** | Single Dev agent, no Lead or QA. Just builds. | Trivial changes. Adding a config value. Fixing a typo. Things that don't need a committee. |
 
-```
+```text
 /vbw:vibe --plan 3 --effort=turbo
 /vbw:vibe --effort=thorough
 ```
 
 Or switch effort, autonomy, and verification together with `/vbw:profile`:
 
-```
+```text
 /vbw:profile prototype    → fast + confident + quick
 /vbw:profile production   → thorough + cautious + deep
 /vbw:profile yolo         → turbo + pure-vibe + skip
 ```
 
-<br>
-
 ### Autonomy levels
-
-<a id="autonomy-levels"></a>
 
 Effort controls how hard your agents think. Autonomy controls how often they stop to ask you about it.
 
@@ -585,7 +526,7 @@ Four levels, from "review everything" to "just build the whole thing while I get
 | **Confident** | Skips "already complete" confirmations. Plan approval OFF even at Thorough. QA warnings non-blocking. | Experienced with VBW, rebuilding known-good phases, iteration speed matters more than gate checks. |
 | **Pure Vibe** | Loops ALL remaining phases in a single `/vbw:vibe`. No confirmations. No plan approval. Only error guards (missing roadmap, uninitialized project) stop execution. | When you want to walk away and come back to a finished project. Full autonomy with VBW's safety nets still active. |
 
-```
+```text
 /vbw:config autonomy confident
 /vbw:config autonomy pure-vibe
 ```
@@ -599,8 +540,6 @@ Autonomy interacts with effort profiles. At `cautious`, plan approval expands to
 | "Already complete" warning | Confirm | Confirm | Skip | Skip |
 | Plan approval (Thorough) | Required | Required | Off | Off |
 | Plan approval (Balanced) | Required | Off | Off | Off |
-
-<br>
 
 ### Commits, push, and planning artifacts
 
@@ -620,7 +559,7 @@ VBW generates 15+ files in `.vbw-planning/` during bootstrap, planning, executio
 
 Controls whether `.vbw-planning/` artifacts are committed, gitignored, or left for you to manage.
 
-```
+```text
 /vbw:config planning_tracking commit
 ```
 
@@ -634,7 +573,7 @@ Controls whether `.vbw-planning/` artifacts are committed, gitignored, or left f
 
 Controls whether VBW pushes commits automatically, and when.
 
-```
+```text
 /vbw:config auto_push after_phase
 ```
 
@@ -643,8 +582,6 @@ Controls whether VBW pushes commits automatically, and when.
 | **`never`** | Default. Never pushes. Commits stay local until you explicitly run `git push`. Follows the "do not push until asked" rule. | When you review commits before sharing, or work on protected branches. |
 | **`after_phase`** | Pushes once after phase execution completes, batching all task commits from that phase into a single push. | Power users who want remote backup after each phase without per-commit noise. |
 | **`always`** | Pushes after every commit — both source-task commits and planning commits (if `planning_tracking=commit`). | CI/CD pipelines, pair programming setups, or when you want real-time remote visibility. |
-
-<br>
 
 ### Agent behavior
 
@@ -666,8 +603,6 @@ Controls whether VBW pushes commits automatically, and when.
 - **`qa_skip_agents`** — Array of agent role names that are exempt from QA verification gates. Valid names: `scout`, `architect`, `lead`, `dev`, `qa`, `debugger`, `docs`. By default, `["docs"]` — the Docs agent can complete tasks without triggering QA checks.
 - **`require_phase_discussion`** — When `true`, phases without a `CONTEXT.md` are routed through the discussion engine before planning. Prevents planning until phase context is explicitly discussed and decisions are captured. When `false`, phases proceed directly to planning. Useful for teams that want to ensure design decisions are explored before implementation.
 
-<br>
-
 ### Skills and discovery
 
 | Setting | Type | Default | Values |
@@ -679,8 +614,6 @@ Controls whether VBW pushes commits automatically, and when.
 - **`skill_suggestions`** — When `true`, `/vbw:init` detects your tech stack and suggests relevant skills to install. When `false`, the entire skill suggestion flow is skipped during init.
 - **`auto_install_skills`** — When `true`, suggested skills are installed automatically without asking. When `false`, VBW shows the install commands but lets you run them yourself. Has no effect if `skill_suggestions` is `false`.
 - **`discovery_questions`** — When `true`, the discussion engine runs during bootstrap and `/vbw:discuss`, with depth controlled by your active profile (`default`→3–5 gray areas, `production`→4–6, `prototype`→2–3, `yolo`→skip). When `false`, skips the discussion engine entirely. Set this to `false` if you're bootstrapping projects where you already know what you want.
-
-<br>
 
 ### Model routing and cost
 
@@ -793,8 +726,6 @@ Switch both at once with work profiles:
 
 See **[Model Profiles Reference](references/model-profiles.md)** for preset definitions, cost breakdown, and implementation details.
 
-<br>
-
 ### Safety
 
 | Setting | Type | Default | Values |
@@ -802,8 +733,6 @@ See **[Model Profiles Reference](references/model-profiles.md)** for preset defi
 | `bash_guard` | boolean | `true` | `true` / `false` |
 
 - **`bash_guard`** — When `true`, a PreToolUse hook blocks known destructive Bash commands (database drops, migration resets, volume wipes) before they execute. Covers 40+ patterns across all major frameworks and databases. Override per-command with `VBW_ALLOW_DESTRUCTIVE=1` env var, or disable entirely with `false`. Project-specific patterns can be added to `.vbw-planning/destructive-commands.local.txt`.
-
-<br>
 
 ### Display
 
@@ -814,8 +743,6 @@ See **[Model Profiles Reference](references/model-profiles.md)** for preset defi
 
 - **`visual_format`** — Intended to switch between Unicode symbols (✓ ✗ ◆ ○ ⚡ ➜, box-drawing characters) and ASCII equivalents. Currently declared but not yet wired into agent output — agents always use Unicode.
 - **`branch_per_milestone`** — Intended to auto-create a git branch per milestone during Bootstrap. Currently declared but not yet implemented — has no runtime effect.
-
-<br>
 
 ### Feature flags
 
@@ -836,15 +763,11 @@ These flags control optional runtime features introduced during staged rollout. 
 
 Brownfield configs from older versions may contain additional keys — these are cleaned up automatically by `migrate-config.sh`.
 
-<br>
-
 ---
-
-<br>
 
 ## Project Structure
 
-```
+```text
 .claude-plugin/    Plugin manifest (plugin.json)
 agents/            7 agent definitions with native tool permissions
 commands/          24 slash commands (commands/*.md)
@@ -856,11 +779,9 @@ templates/         Artifact templates (PLAN.md, SUMMARY.md, etc.)
 assets/            Images and static files
 ```
 
-<br>
-
 When you run `/vbw:init` in your project, it creates:
 
-```
+```text
 .vbw-planning/
   PROJECT.md       Project definition, core value, requirements, decisions
   REQUIREMENTS.md  Versioned requirements with traceability
@@ -873,11 +794,7 @@ When you run `/vbw:init` in your project, it creates:
 
 Your AI-managed project now has more structure than most startups that raised a Series A.
 
-<br>
-
 ---
-
-<br>
 
 ## Requirements
 
@@ -892,7 +809,7 @@ That last one is the real barrier to entry.
 ### Version Requirements
 
 | Feature | Minimum Claude Code Version | Reason |
-|---------|------------------------------|--------|
+| ------- | ---------------------------- | ------ |
 | Baseline VBW | 2.1.32+ | Core plugin system, hooks, agent teams |
 | Agent Teams Model Routing | 2.1.47+ | Fixed silently broken model routing for team teammates |
 | Plan Mode Native Support | 2.1.47+ | Compaction workarounds removed, native plan mode context |
@@ -900,25 +817,15 @@ That last one is the real barrier to entry.
 
 **Recommended:** Claude Code 2.1.47 or later for full VBW feature compatibility.
 
-<br>
-
 ---
-
-<br>
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on local development, project structure, and pull requests.
 
-<br>
-
 ## Contributors
 
-<a href="https://github.com/yidakee/vibe-better-with-claude-code-vbw/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=yidakee/vibe-better-with-claude-code-vbw" />
-</a>
-
-<br>
+[![Contributors](https://contrib.rocks/image?repo=yidakee/vibe-better-with-claude-code-vbw)](https://github.com/yidakee/vibe-better-with-claude-code-vbw/graphs/contributors)
 
 ## License
 
