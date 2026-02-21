@@ -201,3 +201,146 @@ STATE
   recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
   [ "$recovered_status" = "running" ]
 }
+
+# --- QA Round 1 edge-case tests ---
+
+@test "session-start: skips recovery when event log is empty (0 bytes)" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '.event_recovery = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+
+  # Create empty event log file
+  mkdir -p .vbw-planning/.events
+  : > .vbw-planning/.events/event-log.jsonl
+
+  # No execution state — if recovery runs it would create one
+  run bash "$SCRIPTS_DIR/session-start.sh"
+  [ "$status" -eq 0 ]
+
+  # No execution state should have been created from empty event log
+  [ ! -f .vbw-planning/.execution-state.json ]
+}
+
+@test "session-start: recovers when STATE.md has no Phase line (fallback to exec-state phase)" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '.event_recovery = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+
+  # STATE.md with no Phase: line
+  cat > .vbw-planning/STATE.md <<'STATE'
+Status: in-progress
+Progress: 50%
+STATE
+
+  # Stale execution state with phase info
+  cat > .vbw-planning/.execution-state.json <<'EXEC'
+{"phase":1,"status":"running","plans":[{"id":"01-01","status":"pending"}]}
+EXEC
+
+  # Newer event log with completion
+  mkdir -p .vbw-planning/.events
+  sleep 1
+  echo '{"event":"plan_end","phase":1,"plan":1,"data":{"status":"complete"}}' > .vbw-planning/.events/event-log.jsonl
+  echo "# Summary" > .vbw-planning/phases/01-setup/01-01-SUMMARY.md
+
+  run bash "$SCRIPTS_DIR/session-start.sh"
+  [ "$status" -eq 0 ]
+
+  recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
+  [ "$recovered_status" = "complete" ]
+}
+
+@test "session-start: recovers when STATE.md has non-numeric Phase (fallback to dir detect)" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '.event_recovery = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+
+  # STATE.md with non-numeric phase
+  cat > .vbw-planning/STATE.md <<'STATE'
+Phase: X of 2 (Setup)
+Status: in-progress
+Progress: 50%
+STATE
+
+  # No existing execution state — force dir-based detection
+  mkdir -p .vbw-planning/.events
+  echo '{"event":"plan_end","phase":1,"plan":1,"data":{"status":"complete"}}' > .vbw-planning/.events/event-log.jsonl
+  echo "# Summary" > .vbw-planning/phases/01-setup/01-01-SUMMARY.md
+
+  run bash "$SCRIPTS_DIR/session-start.sh"
+  [ "$status" -eq 0 ]
+
+  # Should have recovered using directory-detected phase 1
+  [ -f .vbw-planning/.execution-state.json ]
+  recovered_phase=$(jq -r '.phase' .vbw-planning/.execution-state.json 2>/dev/null)
+  [ "$recovered_phase" = "1" ]
+  recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
+  [ "$recovered_status" = "complete" ]
+}
+
+@test "session-start: rejects recovery when recovered phase differs from requested phase" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '.event_recovery = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+
+  # STATE.md says phase 2
+  cat > .vbw-planning/STATE.md <<'STATE'
+Phase: 2 of 2 (Build)
+Status: in-progress
+Progress: 60%
+STATE
+
+  # But only phase 1 directory exists with plans
+  # Phase 2 dir exists but has no plans — recover-state.sh returns {} for it
+  mkdir -p .vbw-planning/phases/02-build
+
+  # Stale execution state for phase 1
+  cat > .vbw-planning/.execution-state.json <<'EXEC'
+{"phase":1,"status":"running","plans":[{"id":"01-01","status":"pending"}]}
+EXEC
+
+  # Events only for phase 1
+  mkdir -p .vbw-planning/.events
+  sleep 1
+  echo '{"event":"plan_end","phase":1,"plan":1,"data":{"status":"complete"}}' > .vbw-planning/.events/event-log.jsonl
+
+  run bash "$SCRIPTS_DIR/session-start.sh"
+  [ "$status" -eq 0 ]
+
+  # State should NOT have been overwritten (recover-state.sh for phase 2 returns {}
+  # or a phase-2 result which matches; either way the phase-1 running state should
+  # not be replaced with wrong-phase data)
+  recovered_phase=$(jq -r '.phase' .vbw-planning/.execution-state.json 2>/dev/null)
+  # Phase should still be 1 (original) — not overwritten with phase-2 data
+  [ "$recovered_phase" = "1" ]
+}
+
+@test "session-start: auto-recovery skips reconcile block" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '.event_recovery = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+
+  # Stale execution state showing running
+  cat > .vbw-planning/.execution-state.json <<'STATE'
+{"phase":1,"status":"running","plans":[{"id":"01-01","status":"pending"}]}
+STATE
+
+  # Newer event log triggering auto-recovery
+  mkdir -p .vbw-planning/.events
+  sleep 1
+  echo '{"event":"plan_end","phase":1,"plan":1,"data":{"status":"complete"}}' > .vbw-planning/.events/event-log.jsonl
+  echo "# Summary" > .vbw-planning/phases/01-setup/01-01-SUMMARY.md
+
+  run bash "$SCRIPTS_DIR/session-start.sh"
+  [ "$status" -eq 0 ]
+
+  # Auto-recovery should have set status to "complete" and reconcile should
+  # not have touched it further (reconcile only runs on status=running)
+  recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
+  [ "$recovered_status" = "complete" ]
+}

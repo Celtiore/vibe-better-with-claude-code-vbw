@@ -311,11 +311,13 @@ fi
 # If event-log.jsonl is newer than .execution-state.json (or state is missing
 # while events exist), call recover-state.sh to rebuild the state file.
 # Gates on event_recovery config flag (recover-state.sh checks internally too).
+_auto_recovered=false
 if [ -d "$PLANNING_DIR" ] && [ -f "$PLANNING_DIR/config.json" ]; then
   _er_flag=$(jq -r 'if .event_recovery != null then .event_recovery elif .v3_event_recovery != null then .v3_event_recovery else false end' "$PLANNING_DIR/config.json" 2>/dev/null || echo "false")
   _events_file="$PLANNING_DIR/.events/event-log.jsonl"
 
-  if [ "$_er_flag" = "true" ] && [ -f "$_events_file" ]; then
+  # Fix QA#3: require non-empty event log (-s), not just existence (-f)
+  if [ "$_er_flag" = "true" ] && [ -s "$_events_file" ]; then
     _exec_state="$PLANNING_DIR/.execution-state.json"
     _needs_recovery=false
 
@@ -343,11 +345,45 @@ if [ -d "$PLANNING_DIR" ] && [ -f "$PLANNING_DIR/config.json" ]; then
         _phase_line=$(grep -m1 "^Phase:" "$PLANNING_DIR/STATE.md" 2>/dev/null || true)
         _phase_num=$(echo "$_phase_line" | sed 's/Phase: *\([0-9]*\).*/\1/')
       fi
+
+      # Fix QA#1: fallback to .execution-state.json phase, then directory detection
+      if ! [ -n "$_phase_num" ] 2>/dev/null || ! [ "$_phase_num" -gt 0 ] 2>/dev/null; then
+        _phase_num=""
+        # Try existing execution state
+        if [ -f "$_exec_state" ]; then
+          _phase_num=$(jq -r '.phase // ""' "$_exec_state" 2>/dev/null || true)
+        fi
+        # Still empty? Detect from highest phase directory
+        if ! [ -n "$_phase_num" ] 2>/dev/null || ! [ "$_phase_num" -gt 0 ] 2>/dev/null; then
+          _phase_num=""
+          if [ -d "$PLANNING_DIR/phases" ]; then
+            # Find highest-numbered phase dir with a PLAN.md
+            for _pd in "$PLANNING_DIR"/phases/*/; do
+              [ -d "$_pd" ] || continue
+              _pd_base=$(basename "$_pd")
+              _pd_num=$(echo "$_pd_base" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
+              if [ -n "$_pd_num" ] && [ "$_pd_num" -gt 0 ] 2>/dev/null; then
+                # Use this phase if it has plan files
+                if ls "$_pd"*-PLAN.md &>/dev/null; then
+                  _phase_num="$_pd_num"
+                fi
+              fi
+            done
+          fi
+        fi
+      fi
+
       if [ -n "$_phase_num" ] && [ "$_phase_num" -gt 0 ] 2>/dev/null; then
         _recovered=$(bash "$SCRIPT_DIR/recover-state.sh" "$_phase_num" "$PLANNING_DIR/phases" 2>/dev/null)
         # Only write if we got a non-empty, non-{} result
         if [ -n "$_recovered" ] && [ "$_recovered" != "{}" ]; then
-          echo "$_recovered" > "$PLANNING_DIR/.execution-state.json"
+          # Fix QA#2: validate recovered phase matches requested phase and has plans
+          _recovered_phase=$(echo "$_recovered" | jq -r '.phase // 0' 2>/dev/null || echo 0)
+          _recovered_plan_count=$(echo "$_recovered" | jq -r '.plans | length // 0' 2>/dev/null || echo 0)
+          if [ "$_recovered_phase" = "$_phase_num" ] && [ "${_recovered_plan_count:-0}" -gt 0 ] 2>/dev/null; then
+            echo "$_recovered" > "$PLANNING_DIR/.execution-state.json"
+            _auto_recovered=true
+          fi
         fi
       fi
     fi
@@ -355,8 +391,9 @@ if [ -d "$PLANNING_DIR" ] && [ -f "$PLANNING_DIR/config.json" ]; then
 fi
 
 # --- Reconcile orphaned execution state ---
+# Fix QA#4: skip reconcile if auto-recovery already wrote state this session
 EXEC_STATE="$PLANNING_DIR/.execution-state.json"
-if [ -f "$EXEC_STATE" ]; then
+if [ "$_auto_recovered" = false ] && [ -f "$EXEC_STATE" ]; then
   EXEC_STATUS=$(jq -r '.status // ""' "$EXEC_STATE" 2>/dev/null)
   if [ "$EXEC_STATUS" = "running" ]; then
     PHASE_NUM=$(jq -r '.phase // ""' "$EXEC_STATE" 2>/dev/null)
