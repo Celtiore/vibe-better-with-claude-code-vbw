@@ -405,3 +405,43 @@ EOF
   echo "$output" | grep -q "next_phase=02"
   echo "$output" | grep -q "next_phase_slug=02-second"
 }
+
+# --- non-canonical directory handling ---
+
+@test "non-canonical phase dir without numeric prefix is skipped" {
+  mkdir -p .vbw-planning/phases/misc-notes/
+  mkdir -p .vbw-planning/phases/01-real/
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "phase_count=2"
+  echo "$output" | grep -q "next_phase=01"
+  echo "$output" | grep -q "next_phase_slug=01-real"
+  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
+}
+
+@test "non-canonical CONTEXT.md does not satisfy discussion requirement" {
+  local tmp
+  tmp=$(mktemp)
+  jq '.require_phase_discussion = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+  mkdir -p .vbw-planning/phases/01-test/
+  # Non-canonical — should NOT satisfy the CONTEXT.md check
+  touch .vbw-planning/phases/01-test/NOTES-CONTEXT.md
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "next_phase_state=needs_discussion"
+}
+
+@test "canonical CONTEXT.md satisfies discussion requirement" {
+  local tmp
+  tmp=$(mktemp)
+  jq '.require_phase_discussion = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+  mkdir -p .vbw-planning/phases/01-test/
+  # Canonical phase-prefixed CONTEXT.md
+  touch .vbw-planning/phases/01-test/01-CONTEXT.md
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
+}

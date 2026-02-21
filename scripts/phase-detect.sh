@@ -165,6 +165,11 @@ if [ -d "$PHASES_DIR" ]; then
       DIRNAME=$(basename "$DIR")
       NUM=$(echo "$DIRNAME" | sed 's/^\([0-9]*\).*/\1/')
 
+      # Skip non-canonical dirs whose basename doesn't start with digits
+      if [ -z "$NUM" ] || ! echo "$NUM" | grep -qE '^[0-9]+$'; then
+        continue
+      fi
+
       # Skip phases without execution artifacts — a UAT file in a never-executed phase is orphaned/stale.
       # Also skip mid-execution phases (SUMMARY < PLAN) — UAT from a prior run is stale until re-execution completes.
       DIR_PLANS=$(ls "$DIR"[0-9]*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
@@ -209,6 +214,11 @@ if [ -d "$PHASES_DIR" ]; then
         # Extract numeric prefix (e.g., "01" from "01-context-diet")
         NUM=$(echo "$DIRNAME" | sed 's/^\([0-9]*\).*/\1/')
 
+        # Skip non-canonical dirs whose basename doesn't start with digits
+        if [ -z "$NUM" ] || ! echo "$NUM" | grep -qE '^[0-9]+$'; then
+          continue
+        fi
+
         # Count PLAN and SUMMARY files
         P_COUNT=$(ls "$DIR"[0-9]*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
         S_COUNT=$(ls "$DIR"[0-9]*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
@@ -216,8 +226,8 @@ if [ -d "$PHASES_DIR" ]; then
         if [ "$P_COUNT" -eq 0 ]; then
           # Check if discussion is required before planning
           if [ "$CFG_REQUIRE_PHASE_DISCUSSION" = true ]; then
-            # Check for CONTEXT.md (any file matching *-CONTEXT.md or *CONTEXT.md)
-            C_COUNT=$(ls "$DIR"*CONTEXT.md 2>/dev/null | wc -l | tr -d ' ')
+            # Check for CONTEXT.md (canonical phase-prefixed pattern only)
+            C_COUNT=$(ls "$DIR"[0-9]*-CONTEXT.md 2>/dev/null | wc -l | tr -d ' ')
             if [ "$C_COUNT" -eq 0 ]; then
               if [ "$NEXT_PHASE" = "none" ]; then
                 NEXT_PHASE="$NUM"
@@ -312,6 +322,11 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
       [ -d "$_ms_phase_dir" ] || continue
       _ms_dirname=$(basename "$_ms_phase_dir")
       _ms_num=$(echo "$_ms_dirname" | sed 's/^\([0-9]*\).*/\1/')
+
+      # Skip non-canonical dirs whose basename doesn't start with digits
+      if [ -z "$_ms_num" ] || ! echo "$_ms_num" | grep -qE '^[0-9]+$'; then
+        continue
+      fi
 
       # Skip phases already remediated (marker written by create-remediation-phase.sh)
       [ -f "${_ms_phase_dir}.remediated" ] && continue

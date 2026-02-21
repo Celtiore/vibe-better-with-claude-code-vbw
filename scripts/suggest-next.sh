@@ -148,7 +148,7 @@ if [ -d "$PLANNING_DIR" ]; then
       if [ "$plans" -eq 0 ] && [ -z "$next_unplanned" ]; then
         # Track first undiscussed phase (for require_phase_discussion suggestions)
         if [ "$cfg_require_phase_discussion" = "true" ] && [ -z "$next_undiscussed" ]; then
-          context_files=$(find "$dir" -maxdepth 1 ! -name '.*' -name '*CONTEXT.md' 2>/dev/null | wc -l | tr -d ' ')
+          context_files=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | wc -l | tr -d ' ')
           if [ "$context_files" -eq 0 ]; then
             next_undiscussed="$phase_num"
           fi
@@ -558,6 +558,10 @@ case "$CMD" in
       fi
     elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
       target="${next_unbuilt:-$next_unplanned}"
+      # If next phase needs discussion, suggest discuss first
+      if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
+        suggest "/vbw:discuss $target -- Discuss phase before planning"
+      fi
       for dir in "$PHASES_DIR"/*/; do
         [ -d "$dir" ] || continue
         pn=$(basename "$dir" | sed 's/[^0-9].*//')
