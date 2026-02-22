@@ -47,7 +47,6 @@ for vf in "${verif_files[@]}"; do
       fi
     fi
     if [[ "$in_frontmatter" == true ]]; then
-      # shellcheck disable=SC2034  # failed: parsed for frontmatter completeness
       case "$line" in
         result:*) result=$(echo "$line" | sed 's/^result: *//') ;;
         passed:*) passed=$(echo "$line" | sed 's/^passed: *//') ;;
@@ -135,7 +134,7 @@ for vf in "${verif_files[@]}"; do
   # Print summary from frontmatter (works for both formats)
   if [[ -n "$result" && -n "$total" ]]; then
     echo ""
-    echo "  QA: $result (${passed:-0}/${total} passed${tier:+, tier: $tier})"
+    echo "  QA: $result (${passed:-0}/${total} passed${failed:+, ${failed} failed}${tier:+, tier: $tier})"
   else
     # Last resort: grep for Verdict line
     verdict=$(grep -i 'Verdict' "$vf" 2>/dev/null | sed 's/^#* *//; s/\*\*//g' | head -1)
