@@ -30,6 +30,30 @@ extract_status_value() {
   ' "$file" 2>/dev/null || true
 }
 
+latest_non_source_uat() {
+  local dir="$1"
+  local f
+  local latest=""
+
+  case "$dir" in
+    */) ;;
+    *) dir="$dir/" ;;
+  esac
+
+  for f in "${dir}"[0-9]*-UAT.md; do
+    [ -e "$f" ] || continue
+    case "$f" in
+      *SOURCE-UAT.md) continue ;;
+    esac
+    latest="$f"
+  done
+
+  if [ -n "$latest" ]; then
+    printf '%s\n' "$latest"
+  fi
+  return 0
+}
+
 # --- jq availability ---
 JQ_AVAILABLE=false
 if command -v jq &>/dev/null; then
@@ -71,10 +95,20 @@ else
   echo "config_prefer_teams=always"
   echo "config_max_tasks_per_plan=5"
   echo "config_context_compiler=true"
+  echo "config_require_phase_discussion=false"
   echo "has_codebase_map=false"
   echo "brownfield=false"
   echo "execution_state=none"
   exit 0
+fi
+
+# --- Rename legacy milestones/default (brownfield hardening) ---
+# SessionStart normally performs this migration, but hooks can be unavailable
+# in some local-dev setups. Running it here keeps command routing grounded in
+# canonical milestone slugs even when SessionStart didn't run.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -d "$PLANNING_DIR/milestones/default" ] && [ -f "$SCRIPT_DIR/rename-default-milestone.sh" ]; then
+  bash "$SCRIPT_DIR/rename-default-milestone.sh" "$PLANNING_DIR" 2>/dev/null || true
 fi
 
 # --- Project existence ---
@@ -125,6 +159,14 @@ fi
 echo "has_shipped_milestones=$HAS_SHIPPED_MILESTONES"
 echo "needs_milestone_rename=$NEEDS_MILESTONE_RENAME"
 
+# --- Early config read: require_phase_discussion (needed before phase scanning) ---
+CFG_REQUIRE_PHASE_DISCUSSION="false"
+CONFIG_FILE_EARLY="$PLANNING_DIR/config.json"
+if [ "$JQ_AVAILABLE" = true ] && [ -f "$CONFIG_FILE_EARLY" ]; then
+  _rpd=$(jq -r 'if .require_phase_discussion == null then false else .require_phase_discussion end' "$CONFIG_FILE_EARLY" 2>/dev/null) || true
+  [ -n "${_rpd:-}" ] && CFG_REQUIRE_PHASE_DISCUSSION="$_rpd"
+fi
+
 # --- Phase scanning ---
 PHASE_COUNT=0
 NEXT_PHASE="none"
@@ -145,7 +187,15 @@ if [ -d "$PHASES_DIR" ]; then
     PHASE_DIRS+=("${_phase_dir%/}/")
   done < <(list_child_dirs_sorted "$PHASES_DIR")
 
-  PHASE_COUNT=${#PHASE_DIRS[@]}
+  # Count only canonical (numeric-prefixed) directories
+  PHASE_COUNT=0
+  for _dir in ${PHASE_DIRS[@]+"${PHASE_DIRS[@]}"}; do
+    _bname=$(basename "$_dir")
+    _num=$(echo "$_bname" | sed 's/^\([0-9]*\).*/\1/')
+    if [ -n "$_num" ] && echo "$_num" | grep -qE '^[0-9]+$'; then
+      PHASE_COUNT=$((PHASE_COUNT + 1))
+    fi
+  done
 
   if [ "$PHASE_COUNT" -eq 0 ]; then
     NEXT_PHASE_STATE="no_phases"
@@ -156,15 +206,20 @@ if [ -d "$PHASES_DIR" ]; then
       DIRNAME=$(basename "$DIR")
       NUM=$(echo "$DIRNAME" | sed 's/^\([0-9]*\).*/\1/')
 
+      # Skip non-canonical dirs whose basename doesn't start with digits
+      if [ -z "$NUM" ] || ! echo "$NUM" | grep -qE '^[0-9]+$'; then
+        continue
+      fi
+
       # Skip phases without execution artifacts — a UAT file in a never-executed phase is orphaned/stale.
       # Also skip mid-execution phases (SUMMARY < PLAN) — UAT from a prior run is stale until re-execution completes.
-      DIR_PLANS=$(ls "$DIR"[0-9]*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
-      DIR_SUMMARIES=$(ls "$DIR"[0-9]*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
+      DIR_PLANS=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+      DIR_SUMMARIES=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
       if [ "$DIR_PLANS" -eq 0 ] || [ "$DIR_SUMMARIES" -lt "$DIR_PLANS" ]; then
         continue
       fi
 
-      UAT_FILE=$(ls "$DIR"[0-9]*-UAT.md 2>/dev/null | sort | tail -1 || true)
+      UAT_FILE=$(latest_non_source_uat "$DIR")
       if [ -f "$UAT_FILE" ]; then
         UAT_STATUS=$(extract_status_value "$UAT_FILE")
         if [ "$UAT_STATUS" = "issues_found" ]; then
@@ -190,8 +245,8 @@ if [ -d "$PHASES_DIR" ]; then
       NEXT_PHASE="$UAT_ISSUES_PHASE"
       NEXT_PHASE_SLUG="$UAT_ISSUES_SLUG"
       NEXT_PHASE_STATE="needs_uat_remediation"
-      NEXT_PHASE_PLANS=$(ls "$TARGET_DIR"[0-9]*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
-      NEXT_PHASE_SUMMARIES=$(ls "$TARGET_DIR"[0-9]*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
+      NEXT_PHASE_PLANS=$(find "$TARGET_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+      NEXT_PHASE_SUMMARIES=$(find "$TARGET_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
     else
       ALL_DONE=true
       if [ ${#PHASE_DIRS[@]} -gt 0 ]; then
@@ -200,11 +255,32 @@ if [ -d "$PHASES_DIR" ]; then
         # Extract numeric prefix (e.g., "01" from "01-context-diet")
         NUM=$(echo "$DIRNAME" | sed 's/^\([0-9]*\).*/\1/')
 
+        # Skip non-canonical dirs whose basename doesn't start with digits
+        if [ -z "$NUM" ] || ! echo "$NUM" | grep -qE '^[0-9]+$'; then
+          continue
+        fi
+
         # Count PLAN and SUMMARY files
-        P_COUNT=$(ls "$DIR"[0-9]*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
-        S_COUNT=$(ls "$DIR"[0-9]*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
+        P_COUNT=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+        S_COUNT=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
 
         if [ "$P_COUNT" -eq 0 ]; then
+          # Check if discussion is required before planning
+          if [ "$CFG_REQUIRE_PHASE_DISCUSSION" = true ]; then
+            # Check for CONTEXT.md (canonical phase-prefixed pattern only)
+            C_COUNT=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$C_COUNT" -eq 0 ]; then
+              if [ "$NEXT_PHASE" = "none" ]; then
+                NEXT_PHASE="$NUM"
+                NEXT_PHASE_SLUG="$DIRNAME"
+                NEXT_PHASE_STATE="needs_discussion"
+                NEXT_PHASE_PLANS="$P_COUNT"
+                NEXT_PHASE_SUMMARIES="$S_COUNT"
+              fi
+              ALL_DONE=false
+              break
+            fi
+          fi
           # Needs plan and execute
           if [ "$NEXT_PHASE" = "none" ]; then
             NEXT_PHASE="$NUM"
@@ -288,17 +364,22 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
       _ms_dirname=$(basename "$_ms_phase_dir")
       _ms_num=$(echo "$_ms_dirname" | sed 's/^\([0-9]*\).*/\1/')
 
+      # Skip non-canonical dirs whose basename doesn't start with digits
+      if [ -z "$_ms_num" ] || ! echo "$_ms_num" | grep -qE '^[0-9]+$'; then
+        continue
+      fi
+
       # Skip phases already remediated (marker written by create-remediation-phase.sh)
       [ -f "${_ms_phase_dir}.remediated" ] && continue
 
       # Skip phases without execution artifacts
-      _ms_plans=$(ls "$_ms_phase_dir"[0-9]*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
-      _ms_summaries=$(ls "$_ms_phase_dir"[0-9]*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
+      _ms_plans=$(find "$_ms_phase_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+      _ms_summaries=$(find "$_ms_phase_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
       if [ "$_ms_plans" -eq 0 ] || [ "$_ms_summaries" -lt "$_ms_plans" ]; then
         continue
       fi
 
-      _ms_uat=$(ls "$_ms_phase_dir"[0-9]*-UAT.md 2>/dev/null | sort | tail -1 || true)
+      _ms_uat=$(latest_non_source_uat "$_ms_phase_dir")
       if [ -f "$_ms_uat" ]; then
         _ms_uat_status=$(extract_status_value "$_ms_uat")
         if [ "$_ms_uat_status" = "issues_found" ]; then
@@ -384,6 +465,7 @@ echo "config_verification_tier=$CFG_VERIFICATION_TIER"
 echo "config_prefer_teams=$CFG_PREFER_TEAMS"
 echo "config_max_tasks_per_plan=$CFG_MAX_TASKS"
 echo "config_context_compiler=$CFG_CONTEXT_COMPILER"
+echo "config_require_phase_discussion=$CFG_REQUIRE_PHASE_DISCUSSION"
 echo "config_compaction_threshold=$CFG_COMPACTION"
 
 # --- Codebase map status ---

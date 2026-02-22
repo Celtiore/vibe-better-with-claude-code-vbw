@@ -62,6 +62,9 @@ milestone_uat_issues=false
 milestone_uat_phase="none"
 milestone_uat_slug="none"
 milestone_uat_count=0
+cfg_require_phase_discussion=false
+next_undiscussed=""
+next_preseeded=""
 
 read_status_field() {
   local file="$1"
@@ -79,6 +82,30 @@ read_status_field() {
   ' "$file" 2>/dev/null || true
 }
 
+latest_non_source_uat() {
+  local dir="$1"
+  local f
+  local latest=""
+
+  case "$dir" in
+    */) ;;
+    *) dir="$dir/" ;;
+  esac
+
+  for f in "${dir}"[0-9]*-UAT.md; do
+    [ -e "$f" ] || continue
+    case "$f" in
+      *SOURCE-UAT.md) continue ;;
+    esac
+    latest="$f"
+  done
+
+  if [ -n "$latest" ]; then
+    printf '%s\n' "$latest"
+  fi
+  return 0
+}
+
 if [ -d "$PLANNING_DIR" ]; then
 
   # Canonical post-archive UAT recovery state from phase-detect.sh
@@ -93,6 +120,9 @@ if [ -d "$PLANNING_DIR" ]; then
     [ -n "${_pd_milestone_phase:-}" ] && milestone_uat_phase="$_pd_milestone_phase"
     [ -n "${_pd_milestone_slug:-}" ] && milestone_uat_slug="$_pd_milestone_slug"
     [ -n "${_pd_milestone_count:-}" ] && milestone_uat_count="$_pd_milestone_count"
+
+    _pd_require_discuss=$(echo "$_pd_out" | grep -m1 '^config_require_phase_discussion=' | sed 's/^[^=]*=//' || true)
+    [ -n "${_pd_require_discuss:-}" ] && cfg_require_phase_discussion="$_pd_require_discuss"
   fi
 
   # Root-canonical phases directory (no ACTIVE indirection)
@@ -133,14 +163,41 @@ if [ -d "$PLANNING_DIR" ]; then
     if [ ${#SN_PHASE_DIRS[@]} -gt 0 ]; then
     for dir in "${SN_PHASE_DIRS[@]}"; do
       [ -d "$dir" ] || continue
-      phase_count=$((phase_count + 1))
       phase_num=$(basename "$dir" | sed 's/[^0-9].*//')
+      # Skip non-canonical dirs without numeric prefix
+      if [ -z "$phase_num" ] || ! echo "$phase_num" | grep -qE '^[0-9]+$'; then
+        continue
+      fi
+      phase_count=$((phase_count + 1))
       phase_slug=$(basename "$dir" | sed 's/^[0-9]*-//')
 
       plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
       summaries=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
 
       if [ "$plans" -eq 0 ] && [ -z "$next_unplanned" ]; then
+        # Track first undiscussed phase (for require_phase_discussion suggestions)
+        if [ "$cfg_require_phase_discussion" = "true" ] && [ -z "$next_undiscussed" ]; then
+          context_files=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$context_files" -eq 0 ]; then
+            next_undiscussed="$phase_num"
+          elif [ -z "$next_preseeded" ]; then
+            # Check ALL context files (sorted) for pre_seeded: true to avoid
+            # order-dependent detection when multiple CONTEXT.md files exist.
+            while IFS= read -r ctx_file; do
+              [ -n "$ctx_file" ] || continue
+              if awk '
+              BEGIN { in_fm=0; found=0 }
+              NR==1 && /^---[[:space:]]*$/ { in_fm=1; next }
+              in_fm && /^---[[:space:]]*$/ { exit }
+              in_fm && /^pre_seeded[[:space:]]*:[[:space:]]*"?true"?[[:space:]]*$/ { found=1; exit }
+              END { exit !found }
+            ' "$ctx_file" 2>/dev/null; then
+                next_preseeded="$phase_num"
+                break
+              fi
+            done < <(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | sort)
+          fi
+        fi
         next_unplanned="$phase_num"
         active_phase_dir="$dir"
         active_phase_num="$phase_num"
@@ -276,7 +333,7 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
       if [ "$_plans" -eq 0 ] || [ "$_summaries" -lt "$_plans" ]; then
         continue
       fi
-      _uat=$(ls -1 "$dir"[0-9]*-UAT.md 2>/dev/null | sort | tail -1 || true)
+      _uat=$(latest_non_source_uat "$dir")
       if [ -f "$_uat" ]; then
         _us=$(read_status_field "$_uat")
         if [ "$_us" = "issues_found" ]; then
@@ -292,7 +349,7 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
   fi
 
   if [ -n "$verify_target_phase_dir" ]; then
-    verify_target_uat=$(ls -1 "$verify_target_phase_dir"/[0-9]*-UAT.md 2>/dev/null | sort | tail -1 || true)
+    verify_target_uat=$(latest_non_source_uat "$verify_target_phase_dir")
   fi
 
   if [ -f "$verify_target_uat" ]; then
@@ -388,7 +445,20 @@ case "$CMD" in
           fi
         elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
           target="${next_unbuilt:-$next_unplanned}"
-          if [ -n "$active_phase_name" ] && [ "$target" != "$active_phase_num" ]; then
+          # If next phase needs discussion, suggest discuss (suppress continue)
+          if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
+            suggest "/vbw:discuss $target -- Discuss phase before planning"
+          elif [ -n "$next_preseeded" ] && [ "$next_preseeded" = "$target" ]; then
+            for dir in "$PHASES_DIR"/*/; do
+              [ -d "$dir" ] || continue
+              pn=$(basename "$dir" | sed 's/[^0-9].*//')
+              if [ "$pn" = "$target" ]; then
+                tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+                suggest "/vbw:vibe -- Plan Phase $target: $(fmt_phase_name "$tname") (discussion pre-seeded from UAT)"
+                break
+              fi
+            done
+          elif [ -n "$active_phase_name" ] && [ "$target" != "$active_phase_num" ]; then
             for dir in "$PHASES_DIR"/*/; do
               [ -d "$dir" ] || continue
               pn=$(basename "$dir" | sed 's/[^0-9].*//')
@@ -436,7 +506,19 @@ case "$CMD" in
           fi
         else
           target="${next_unbuilt:-$next_unplanned}"
-          if [ -n "$target" ]; then
+          if [ -n "$next_undiscussed" ] && [ -n "$target" ] && [ "$next_undiscussed" = "$target" ]; then
+            suggest "/vbw:discuss $target -- Discuss phase before planning"
+          elif [ -n "$next_preseeded" ] && [ -n "$target" ] && [ "$next_preseeded" = "$target" ]; then
+            for dir in "$PHASES_DIR"/*/; do
+              [ -d "$dir" ] || continue
+              pn=$(basename "$dir" | sed 's/[^0-9].*//')
+              if [ "$pn" = "$target" ]; then
+                tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+                suggest "/vbw:vibe -- Plan Phase $target: $(fmt_phase_name "$tname") (discussion pre-seeded from UAT)"
+                break
+              fi
+            done
+          elif [ -n "$target" ]; then
             for dir in "$PHASES_DIR"/*/; do
               [ -d "$dir" ] || continue
               pn=$(basename "$dir" | sed 's/[^0-9].*//')
@@ -539,15 +621,30 @@ case "$CMD" in
       fi
     elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
       target="${next_unbuilt:-$next_unplanned}"
-      for dir in "$PHASES_DIR"/*/; do
-        [ -d "$dir" ] || continue
-        pn=$(basename "$dir" | sed 's/[^0-9].*//')
-        if [ "$pn" = "$target" ]; then
-          tname=$(basename "$dir" | sed 's/^[0-9]*-//')
-          suggest "/vbw:vibe -- Continue Phase $target: $(fmt_phase_name "$tname")"
-          break
-        fi
-      done
+      # If next phase needs discussion, suggest discuss (suppress continue)
+      if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
+        suggest "/vbw:discuss $target -- Discuss phase before planning"
+      elif [ -n "$next_preseeded" ] && [ "$next_preseeded" = "$target" ]; then
+        for dir in "$PHASES_DIR"/*/; do
+          [ -d "$dir" ] || continue
+          pn=$(basename "$dir" | sed 's/[^0-9].*//')
+          if [ "$pn" = "$target" ]; then
+            tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+            suggest "/vbw:vibe -- Plan Phase $target: $(fmt_phase_name "$tname") (discussion pre-seeded from UAT)"
+            break
+          fi
+        done
+      else
+        for dir in "$PHASES_DIR"/*/; do
+          [ -d "$dir" ] || continue
+          pn=$(basename "$dir" | sed 's/[^0-9].*//')
+          if [ "$pn" = "$target" ]; then
+            tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+            suggest "/vbw:vibe -- Continue Phase $target: $(fmt_phase_name "$tname")"
+            break
+          fi
+        done
+      fi
     else
       suggest "/vbw:vibe -- Start building"
     fi
