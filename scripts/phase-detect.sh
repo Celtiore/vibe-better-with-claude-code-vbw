@@ -41,7 +41,7 @@ latest_non_source_uat() {
   esac
 
   for f in "${dir}"[0-9]*-UAT.md; do
-    [ -e "$f" ] || continue
+    [ -f "$f" ] || continue
     case "$f" in
       *SOURCE-UAT.md) continue ;;
     esac
@@ -96,6 +96,8 @@ else
   echo "config_max_tasks_per_plan=5"
   echo "config_context_compiler=true"
   echo "config_require_phase_discussion=false"
+  echo "config_auto_uat=false"
+  echo "has_unverified_phases=false"
   echo "has_codebase_map=false"
   echo "brownfield=false"
   echo "execution_state=none"
@@ -315,15 +317,62 @@ if [ -d "$PHASES_DIR" ]; then
   fi
 fi
 
+# --- Unverified phases detection (for auto_uat routing) ---
+# A phase is "unverified" if it has at least one SUMMARY.md but no UAT.md
+# (excluding SOURCE-UAT.md which are verbatim copies from milestone remediation).
+HAS_UNVERIFIED_PHASES=false
+if [ "$NEXT_PHASE_STATE" = "all_done" ] && [ ${#PHASE_DIRS[@]} -gt 0 ]; then
+  for _uv_dir in ${PHASE_DIRS[@]+"${PHASE_DIRS[@]}"}; do
+    [ -d "$_uv_dir" ] || continue
+    _uv_has_summary=false
+    for _uv_s in "$_uv_dir"[0-9]*-SUMMARY.md; do
+      [ -f "$_uv_s" ] || continue
+      _uv_has_summary=true
+      break
+    done
+    [ "$_uv_has_summary" = true ] || continue
+    _uv_uat=$(latest_non_source_uat "$_uv_dir")
+    if [ -z "$_uv_uat" ]; then
+      HAS_UNVERIFIED_PHASES=true
+      break
+    fi
+  done
+fi
+
 echo "phase_count=$PHASE_COUNT"
 echo "next_phase=$NEXT_PHASE"
 echo "next_phase_slug=$NEXT_PHASE_SLUG"
 echo "next_phase_state=$NEXT_PHASE_STATE"
 echo "next_phase_plans=$NEXT_PHASE_PLANS"
 echo "next_phase_summaries=$NEXT_PHASE_SUMMARIES"
+echo "has_unverified_phases=$HAS_UNVERIFIED_PHASES"
 echo "uat_issues_phase=$UAT_ISSUES_PHASE"
 echo "uat_issues_slug=$UAT_ISSUES_SLUG"
 echo "uat_issues_major_or_higher=$UAT_ISSUES_MAJOR_OR_HIGHER"
+
+# --- Brownfield cross-reference: active remediation → milestone phases ---
+# Build a set of milestone phase paths already covered by active remediation
+# phases. This handles the case where create-remediation-phase.sh wasn't used
+# (or ran before. .remediated markers existed), so .remediated files are missing.
+REMEDIATED_MS_PATHS=""
+if [ -d "$PHASES_DIR" ] && [ ${#PHASE_DIRS[@]} -gt 0 ]; then
+  for _rx_dir in ${PHASE_DIRS[@]+"${PHASE_DIRS[@]}"}; do
+    [ -d "$_rx_dir" ] || continue
+    _rx_ctx=""
+    for _rx_f in "$_rx_dir"[0-9]*-CONTEXT.md; do
+      [ -f "$_rx_f" ] || continue
+      _rx_ctx="$_rx_f"
+      break
+    done
+    [ -f "$_rx_ctx" ] || continue
+    _rx_src_ms=$(awk '/^source_milestone:/{gsub(/^source_milestone:[[:space:]]*/,""); gsub(/[[:space:]]*$/,""); print; exit}' "$_rx_ctx" 2>/dev/null || true)
+    _rx_src_ph=$(awk '/^source_phase:/{gsub(/^source_phase:[[:space:]]*/,""); gsub(/[[:space:]]*$/,""); print; exit}' "$_rx_ctx" 2>/dev/null || true)
+    if [ -n "$_rx_src_ms" ] && [ -n "$_rx_src_ph" ]; then
+      _rx_resolved="$PLANNING_DIR/milestones/$_rx_src_ms/phases/$_rx_src_ph"
+      REMEDIATED_MS_PATHS="${REMEDIATED_MS_PATHS:+${REMEDIATED_MS_PATHS}|}$_rx_resolved"
+    fi
+  done
+fi
 
 # --- Milestone UAT scanning (post-archive recovery) ---
 # When active phases have no work (all_done or no_phases) and no active UAT remediation,
@@ -371,6 +420,12 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
 
       # Skip phases already remediated (marker written by create-remediation-phase.sh)
       [ -f "${_ms_phase_dir}.remediated" ] && continue
+
+      # Skip phases covered by active remediation (brownfield: no .remediated marker)
+      _ms_phase_canonical="${_ms_phase_dir%/}"
+      if [ -n "$REMEDIATED_MS_PATHS" ] && echo "$REMEDIATED_MS_PATHS" | grep -qF "$_ms_phase_canonical"; then
+        continue
+      fi
 
       # Skip phases without execution artifacts
       _ms_plans=$(find "$_ms_phase_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
@@ -439,6 +494,7 @@ CFG_PREFER_TEAMS="always"
 CFG_MAX_TASKS="5"
 CFG_COMPACTION="130000"
 CFG_CONTEXT_COMPILER="true"
+CFG_AUTO_UAT="false"
 
 if [ "$JQ_AVAILABLE" = true ] && [ -f "$CONFIG_FILE" ]; then
   # Single jq call to extract all config values (reduces subprocesses to 1)
@@ -452,7 +508,8 @@ if [ "$JQ_AVAILABLE" = true ] && [ -f "$CONFIG_FILE" ]; then
     "CFG_PREFER_TEAMS=\(.prefer_teams // "always")",
     "CFG_MAX_TASKS=\(.max_tasks_per_plan // 5)",
     "CFG_CONTEXT_COMPILER=\(if .context_compiler == null then true else .context_compiler end)",
-    "CFG_COMPACTION=\(.compaction_threshold // 130000)"
+    "CFG_COMPACTION=\(.compaction_threshold // 130000)",
+    "CFG_AUTO_UAT=\(if .auto_uat == null then false else .auto_uat end)"
   ' "$CONFIG_FILE" 2>/dev/null)" || true
 fi
 
@@ -466,6 +523,7 @@ echo "config_prefer_teams=$CFG_PREFER_TEAMS"
 echo "config_max_tasks_per_plan=$CFG_MAX_TASKS"
 echo "config_context_compiler=$CFG_CONTEXT_COMPILER"
 echo "config_require_phase_discussion=$CFG_REQUIRE_PHASE_DISCUSSION"
+echo "config_auto_uat=$CFG_AUTO_UAT"
 echo "config_compaction_threshold=$CFG_COMPACTION"
 
 # --- Codebase map status ---
