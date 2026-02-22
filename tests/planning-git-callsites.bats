@@ -12,9 +12,9 @@ load test_helper
   [ "$status" -eq 1 ]
 }
 
-@test "planning-git callsites use temp-file fallback where expected" {
+@test "planning-git callsites use deterministic echo path where expected" {
   local count
-  count=$(grep -R -c 'cat.*/tmp/.vbw-plugin-root.*planning-git' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
+  count=$(grep -R -c 'echo /tmp/.vbw-plugin-root-link-.*planning-git' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
   [[ "$count" =~ ^[0-9]+$ ]]
   [ "$count" -ge 6 ]
 }
@@ -39,13 +39,13 @@ load test_helper
 @test "planning-git callsites use deterministic pre-resolved root path counts" {
   local c
 
-  c=$(grep -c 'PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/config.md")
+  c=$(grep -c 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/config.md")
   [ "$c" -eq 1 ]
 
-  c=$(grep -c 'PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/init.md")
+  c=$(grep -c 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/init.md")
   [ "$c" -eq 2 ]
 
-  c=$(grep -c 'PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/vibe.md")
+  c=$(grep -c 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/vibe.md")
   [ "$c" -eq 3 ]
 
   c=$(grep -c 'PG_SCRIPT="${VBW_PLUGIN_ROOT}/scripts/planning-git.sh"' "$PROJECT_ROOT/references/execute-protocol.md")
@@ -60,7 +60,7 @@ load test_helper
 
 @test "planning-git callsite count is exact" {
   local fallback_count
-  fallback_count=$(grep -R -cE 'PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"|PG_SCRIPT="\$\{VBW_PLUGIN_ROOT\}/scripts/planning-git.sh"' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
+  fallback_count=$(grep -R -cE 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-\$\{CLAUDE_SESSION_ID:-default\}`/scripts/planning-git.sh"|PG_SCRIPT="\$\{VBW_PLUGIN_ROOT\}/scripts/planning-git.sh"' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
   [ "$fallback_count" -eq 8 ] || { echo "Unexpected planning-git callsite count: $fallback_count"; false; }
 }
 
@@ -72,6 +72,26 @@ load test_helper
 @test "plugin-root callsites avoid runtime command substitution" {
   run bash -c "grep -R -n '\\\$\\(cat /tmp/.vbw-plugin-root\\)' \"$PROJECT_ROOT/commands\" \"$PROJECT_ROOT/references\" 2>/dev/null"
   [ "$status" -eq 1 ]
+}
+
+@test "no legacy cat /tmp/.vbw-plugin-root readers in commands" {
+  run bash -c "grep -R -n 'cat /tmp/.vbw-plugin-root' \"$PROJECT_ROOT/commands\" 2>/dev/null | grep -v 'vbw-plugin-root-link-'"
+  [ "$status" -eq 1 ]
+}
+
+@test "no legacy temp file writes in commands" {
+  run bash -c "grep -R -n 'printf.*> /tmp/.vbw-plugin-root' \"$PROJECT_ROOT/commands\" 2>/dev/null"
+  [ "$status" -eq 1 ]
+}
+
+@test "all commands with readers have a preamble" {
+  for file in \"$PROJECT_ROOT/commands\"/*.md; do
+    local reader_count
+    reader_count=$(grep -c 'echo /tmp/.vbw-plugin-root-link-' "$file" 2>/dev/null || echo 0)
+    if [ "$reader_count" -gt 0 ]; then
+      grep -q 'LINK="/tmp/.vbw-plugin-root-link-' "$file" || { echo "$(basename "$file"): $reader_count readers but no preamble"; return 1; }
+    fi
+  done
 }
 
 @test "plugin-root resolver emits canonical link path" {

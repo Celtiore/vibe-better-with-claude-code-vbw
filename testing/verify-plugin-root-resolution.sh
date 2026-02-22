@@ -8,16 +8,17 @@ set -euo pipefail
 # Model-executed bash commands that reference ${CLAUDE_PLUGIN_ROOT} expand to empty.
 #
 # Fix: Each command file resolves the plugin root ONCE at load time (via !` backtick with
-# a fallback ls chain), creates a canonical no-space symlink path, and writes that symlink
-# to /tmp/.vbw-plugin-root. Subsequent load-time references read from this file.
+# a fallback ls chain), creates a per-session symlink at a deterministic path:
+#   /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}
+# Subsequent load-time references construct this same path independently via echo — no
+# shared mutable temp file is involved.
 #
 # Safe contexts (all refs must be in one of these):
-#   - cat /tmp/.vbw-plugin-root           (temp file read — standard pattern)
-#   - LINK="/tmp/.vbw-plugin-root-link-*" (canonical no-space symlink)
+#   - echo /tmp/.vbw-plugin-root-link-... (deterministic path construction — standard reader)
+#   - LINK="/tmp/.vbw-plugin-root-link-*" (canonical no-space symlink in preamble)
 #   - !`...${CLAUDE_PLUGIN_ROOT:-...}...` (resolve line with fallback)
 #   - @${CLAUDE_PLUGIN_ROOT}/...         (file inclusion at load time)
 #   - Plugin root: ...                   (preamble resolve+write line)
-#   - printf.*vbw-plugin-root            (write to temp file)
 #   - Runtime resolver guard line in execute-protocol.md:
 #       if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}" ]
 #       VBW_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
@@ -25,6 +26,8 @@ set -euo pipefail
 # Unsafe (must not exist):
 #   - bare ${CLAUDE_PLUGIN_ROOT} in model-executed text (resolves to empty in bash)
 #   - `!`echo $CLAUDE_PLUGIN_ROOT` without fallback (resolves to empty in subshell)
+#   - cat /tmp/.vbw-plugin-root (legacy shared temp file read — eliminated)
+#   - printf.*> /tmp/.vbw-plugin-root (legacy shared temp file write — eliminated)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COMMANDS_DIR="$ROOT/commands"
@@ -160,6 +163,7 @@ echo "=== Runtime Resolver Safety Verification ==="
 EXECUTE_PROTOCOL="$REFERENCES_DIR/execute-protocol.md"
 PHASE_DETECTION="$REFERENCES_DIR/phase-detection.md"
 
+# Check 1: No direct $(cat /tmp/.vbw-plugin-root) execution path
 if grep -R -n '\$(cat /tmp/.vbw-plugin-root)' "$COMMANDS_DIR" "$REFERENCES_DIR" >/tmp/.vbw-plugin-runtime-grep 2>/dev/null; then
   fail "runtime docs contain direct \$(cat /tmp/.vbw-plugin-root) execution path"
   while IFS= read -r line; do echo "      $line"; done </tmp/.vbw-plugin-runtime-grep
@@ -167,6 +171,23 @@ else
   pass "runtime docs avoid direct \$(cat /tmp/.vbw-plugin-root) execution path"
 fi
 
+# Check 2: No legacy cat /tmp/.vbw-plugin-root reader pattern (eliminated)
+if grep -R -n 'cat /tmp/.vbw-plugin-root' "$COMMANDS_DIR" | grep -v 'vbw-plugin-root-link-' >/tmp/.vbw-plugin-legacy-cat 2>/dev/null; then
+  fail "commands still use legacy cat /tmp/.vbw-plugin-root reader"
+  while IFS= read -r line; do echo "      $line"; done </tmp/.vbw-plugin-legacy-cat
+else
+  pass "no legacy cat /tmp/.vbw-plugin-root readers in commands"
+fi
+
+# Check 3: No legacy temp file write (printf to /tmp/.vbw-plugin-root)
+if grep -R -n "printf.*> /tmp/.vbw-plugin-root" "$COMMANDS_DIR" >/tmp/.vbw-plugin-legacy-write 2>/dev/null; then
+  fail "commands still write to legacy /tmp/.vbw-plugin-root temp file"
+  while IFS= read -r line; do echo "      $line"; done </tmp/.vbw-plugin-legacy-write
+else
+  pass "no legacy temp file writes in commands"
+fi
+
+# Check 4: Canonical no-space link path exists in resolver preambles
 canonical_count=$(grep -R -c 'LINK="/tmp/.vbw-plugin-root-link-' "$COMMANDS_DIR" "$REFERENCES_DIR" 2>/dev/null | awk -F: '{s+=$NF} END{print s+0}')
 if [ "$canonical_count" -ge 1 ]; then
   pass "resolver preambles emit canonical no-space link path"
@@ -174,6 +195,29 @@ else
   fail "resolver preambles missing canonical no-space link path"
 fi
 
+# Check 5: All command files with reader callsites have a preamble
+for file in "$COMMANDS_DIR"/*.md; do
+  base="$(basename "$file" .md)"
+  reader_count=$(grep -c 'echo /tmp/.vbw-plugin-root-link-' "$file" 2>/dev/null || true)
+  if [ "$reader_count" -gt 0 ]; then
+    if grep -q 'LINK="/tmp/.vbw-plugin-root-link-' "$file"; then
+      pass "$base: has preamble for $reader_count reader callsites"
+    else
+      fail "$base: $reader_count reader callsites but NO preamble"
+    fi
+  fi
+done
+
+# Check 6: Deterministic reader pattern uses CLAUDE_SESSION_ID
+reader_without_session=$(grep -R -n 'echo /tmp/.vbw-plugin-root-link-' "$COMMANDS_DIR" | grep -v 'CLAUDE_SESSION_ID' || true)
+if [ -z "$reader_without_session" ]; then
+  pass "all readers use CLAUDE_SESSION_ID for session isolation"
+else
+  fail "readers missing CLAUDE_SESSION_ID"
+  echo "$reader_without_session" | while IFS= read -r line; do echo "      $line"; done
+fi
+
+# Check 7: execute-protocol.md resolver policy checks
 for needle in \
   'if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}" ]; then' \
   'elif [ -d "${VBW_CACHE_ROOT}/local" ]; then' \
