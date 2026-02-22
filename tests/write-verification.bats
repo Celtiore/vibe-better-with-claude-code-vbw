@@ -273,3 +273,143 @@ JSON
   fields=$(sed -n '/^---$/,/^---$/{ /^---$/d; s/:.*//; p; }' "$TEST_TEMP_DIR/out.md" | tr '\n' ',')
   [[ "$fields" == "phase,tier,result,passed,failed,total,date," ]]
 }
+
+# =============================================================================
+# write-verification.sh: edge cases from QA round 1
+# =============================================================================
+
+@test "write-verification: rejects checks_detail as object instead of array" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":{"id":"MH-01","category":"must_have","description":"X","status":"PASS","evidence":"ok"}}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"checks_detail must be an array"* ]]
+  # No partial output file should exist
+  [ ! -f "$TEST_TEMP_DIR/out.md" ]
+}
+
+@test "write-verification: rejects entries missing id field" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"category":"must_have","description":"X","status":"PASS","evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"must have id and status"* ]]
+}
+
+@test "write-verification: rejects entries missing status field" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"X","evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"must have id and status"* ]]
+}
+
+@test "write-verification: escapes pipe characters in description and evidence" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"A | B","status":"PASS","evidence":"path|line"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  # Raw pipes should not appear in the MH-01 data row (only escaped &#124;)
+  local row
+  row=$(grep 'MH-01' "$TEST_TEMP_DIR/out.md")
+  # The row should contain escaped pipes
+  [[ "$row" == *"&#124;"* ]]
+  # Count pipe chars — a valid 5-col row has exactly 6 pipe delimiters
+  local pipe_count
+  pipe_count=$(echo "$row" | tr -cd '|' | wc -c | tr -d ' ')
+  [ "$pipe_count" -eq 6 ]
+}
+
+@test "write-verification: routes unknown category to Other Checks section" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"X-01","category":"mystery","description":"Mystery check","status":"FAIL","evidence":"hmm"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Other Checks' "$TEST_TEMP_DIR/out.md"
+  grep -q 'X-01' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Mystery check' "$TEST_TEMP_DIR/out.md"
+  # Should also appear in Summary failed list
+  grep -q 'Failed.*X-01' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: unknown category items not in known sections" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":2,"failed":0,"total":2},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Real","status":"PASS","evidence":"ok"},{"id":"X-01","category":"mystery","description":"Unknown","status":"PASS","evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  # MH-01 should be under Must-Have, X-01 under Other
+  grep -q '## Must-Have Checks' "$TEST_TEMP_DIR/out.md"
+  grep -q '## Other Checks' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: explicit jq-missing error message" {
+  # Create a wrapper that shadows jq to simulate it not being found
+  mkdir -p "$TEST_TEMP_DIR/fake-bin"
+  # Copy essential commands but NOT jq
+  for cmd in bash cat date mktemp sed printf rm mv tr wc; do
+    local cmd_path
+    cmd_path=$(command -v "$cmd" 2>/dev/null || true)
+    [ -n "$cmd_path" ] && ln -sf "$cmd_path" "$TEST_TEMP_DIR/fake-bin/$cmd" 2>/dev/null || true
+  done
+  run bash -c "echo '{}' | PATH='$TEST_TEMP_DIR/fake-bin' bash '$SCRIPTS_DIR/write-verification.sh' '$TEST_TEMP_DIR/out.md'"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"jq is required"* ]]
+}
+
+@test "write-verification: no partial file on validation failure" {
+  # Entries missing required fields — should fail before writing
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"category":"must_have"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 1 ]
+  [ ! -f "$TEST_TEMP_DIR/out.md" ]
+}
+
+# =============================================================================
+# extract-verified-items.sh: wave file support
+# =============================================================================
+
+@test "extract-verified-items: finds wave verification files" {
+  local pdir="$TEST_TEMP_DIR/phases/01-setup"
+  mkdir -p "$pdir"
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"quick","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Wave check","status":"PASS","evidence":"ok"}]}}
+JSON
+  bash "$SCRIPTS_DIR/write-verification.sh" "$pdir/01-VERIFICATION-wave1.md" < "$TEST_TEMP_DIR/input.json"
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$pdir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PASS MH-01: Wave check"* ]]
+}
+
+@test "extract-verified-items: handles escaped pipes in table rows" {
+  local pdir="$TEST_TEMP_DIR/phases/01-setup"
+  mkdir -p "$pdir"
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"A | B","status":"PASS","evidence":"path|line"}]}}
+JSON
+  bash "$SCRIPTS_DIR/write-verification.sh" "$pdir/01-VERIFICATION.md" < "$TEST_TEMP_DIR/input.json"
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$pdir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PASS MH-01:"* ]]
+  # Description should contain the original pipe char restored
+  [[ "$output" == *"A | B"* ]]
+}
+
+@test "extract-verified-items: parses Other Checks section" {
+  local pdir="$TEST_TEMP_DIR/phases/01-setup"
+  mkdir -p "$pdir"
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"X-01","category":"custom","description":"Custom check","status":"PASS","evidence":"ok"}]}}
+JSON
+  bash "$SCRIPTS_DIR/write-verification.sh" "$pdir/01-VERIFICATION.md" < "$TEST_TEMP_DIR/input.json"
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$pdir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PASS X-01: Custom check"* ]]
+}

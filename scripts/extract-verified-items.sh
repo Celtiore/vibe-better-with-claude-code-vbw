@@ -13,10 +13,11 @@ if [[ -z "$phase_dir" || ! -d "$phase_dir" ]]; then
 fi
 
 # Find VERIFICATION.md files in the phase directory
+# Supports: NN-VERIFICATION.md, NN-VERIFICATION-waveN.md
 verif_files=()
 while IFS= read -r f; do
   verif_files+=("$f")
-done < <(ls "$phase_dir"/*-VERIFICATION.md 2>/dev/null)
+done < <(ls "$phase_dir"/*-VERIFICATION*.md 2>/dev/null)
 
 if [[ ${#verif_files[@]} -eq 0 ]]; then
   exit 0
@@ -58,9 +59,9 @@ for vf in "${verif_files[@]}"; do
     fi
   done < "$vf"
 
-  # Try deterministic table format: look for "## Must-Have Checks" with ID column
+  # Try deterministic table format: look for any known section heading with ID column
   deterministic=false
-  if grep -q '^## Must-Have Checks' "$vf" 2>/dev/null; then
+  if grep -qE '^## (Must-Have Checks|Artifact Checks|Key Link Checks|Anti-Pattern Scan|Convention Compliance|Requirement Mapping|Other Checks)' "$vf" 2>/dev/null; then
     # Check if the table has the deterministic format (ID column)
     if grep -q '| # | ID |' "$vf" 2>/dev/null; then
       deterministic=true
@@ -79,6 +80,7 @@ for vf in "${verif_files[@]}"; do
         "## Anti-Pattern Scan"*) current_section="anti_pattern" ;;
         "## Convention Compliance"*) current_section="convention" ;;
         "## Requirement Mapping"*) current_section="requirement" ;;
+        "## Other Checks"*) current_section="other" ;;
         "## Pre-existing"*|"## Summary"*) current_section="" ;;
         "| "*)
           # Skip header and separator rows
@@ -87,9 +89,11 @@ for vf in "${verif_files[@]}"; do
           fi
           if [[ -n "$current_section" ]]; then
             # Parse: | N | ID | Description | Status | Evidence |
-            check_id=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
-            description=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $4); print $4}')
-            status=$(echo "$line" | awk -F'|' '{gsub(/^ +| +$/, "", $5); print $5}')
+            # Handle escaped pipes (&#124;) by temporarily replacing them
+            safe_line=$(echo "$line" | sed 's/\&#124;/__PIPE__/g')
+            check_id=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')
+            description=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $4); print $4}' | sed 's/__PIPE__/|/g')
+            status=$(echo "$safe_line" | awk -F'|' '{gsub(/^ +| +$/, "", $5); print $5}')
             if [[ -n "$check_id" && -n "$status" ]]; then
               echo "  $status $check_id: $description"
             fi
