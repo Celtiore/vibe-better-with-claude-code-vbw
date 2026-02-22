@@ -17,12 +17,12 @@ Working directory:
 ```
 Plugin root:
 ```
-!`R=${CLAUDE_PLUGIN_ROOT:-$(bash -c 'ls -1d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/* 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1')}; printf '%s' "$R" > /tmp/.vbw-plugin-root; echo "$R"`
+!`VBW_CACHE_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/vbw-marketplace/vbw"; R=""; if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}" ]; then R="${CLAUDE_PLUGIN_ROOT}"; elif [ -d "${VBW_CACHE_ROOT}/local" ]; then R="${VBW_CACHE_ROOT}/local"; else V=$(ls -1d "${VBW_CACHE_ROOT}"/* 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^[0-9]+(\.[0-9]+)*$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1); [ -n "$V" ] && R="${VBW_CACHE_ROOT}/${V}"; if [ -z "$R" ]; then L=$(ls -1d "${VBW_CACHE_ROOT}"/* 2>/dev/null | awk -F/ '{print $NF}' | sort | tail -1); [ -n "$L" ] && R="${VBW_CACHE_ROOT}/${L}"; fi; fi; if [ -z "$R" ] || [ ! -d "$R" ]; then echo "VBW: plugin root resolution failed" >&2; exit 1; fi; printf '%s' "$R" > /tmp/.vbw-plugin-root; echo "$R"`
 ```
 
 Pre-computed state (via phase-detect.sh):
 ```
-!`bash ${CLAUDE_PLUGIN_ROOT:-$(bash -c 'ls -1d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/* 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1')}/scripts/phase-detect.sh 2>/dev/null || echo "phase_detect_error=true"`
+!`bash `!`cat /tmp/.vbw-plugin-root`/scripts/phase-detect.sh 2>/dev/null || echo "phase_detect_error=true"`
 ```
 
 Config:
@@ -30,7 +30,7 @@ Config:
 !`cat .vbw-planning/config.json 2>/dev/null || echo "No config found"`
 ```
 
-!`bash ${CLAUDE_PLUGIN_ROOT:-$(bash -c 'ls -1d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/* 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1')}/scripts/suggest-compact.sh execute 2>/dev/null || true`
+!`bash `!`cat /tmp/.vbw-plugin-root`/scripts/suggest-compact.sh execute 2>/dev/null || true`
 
 ## Input Parsing
 
@@ -186,8 +186,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
   Script handles: new file generation (heading + core value + VBW sections), existing file preservation (replaces only VBW-managed sections: Active Context, VBW Rules, Installed Skills, Project Conventions, Commands, Plugin Isolation; preserves all other content). Omit the fourth argument if no existing CLAUDE.md. Max 200 lines.
 - **B7: Planning commit boundary (conditional)** -- Run:
    ```bash
-   PG_SCRIPT="$(ls -1 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/*/scripts/planning-git.sh 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1)"
-   [ ! -f "$PG_SCRIPT" ] && PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"
+  PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "bootstrap project files" .vbw-planning/config.json
    else
@@ -377,8 +376,7 @@ This mode handles the case where a milestone was archived before UAT issues were
    ```
 9. **Planning commit boundary (conditional):**
    ```bash
-   PG_SCRIPT="$(ls -1 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/*/scripts/planning-git.sh 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1)"
-   [ ! -f "$PG_SCRIPT" ] && PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"
+  PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "plan phase {N}" .vbw-planning/config.json
    else
@@ -519,8 +517,7 @@ FAIL -> STOP with remediation suggestions. WARN -> proceed with warnings.
    This extracts project-level sections (Todos, Decisions, Skills, Blockers, Codebase Profile) from the archived STATE.md and writes a fresh root STATE.md. Milestone-specific sections (Current Phase, Activity Log, Phase Status) stay in the archive only. Fail-open: if the script fails, warn but continue.
 6. Planning commit boundary (conditional):
    ```bash
-   PG_SCRIPT="$(ls -1 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/*/scripts/planning-git.sh 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1)"
-   [ ! -f "$PG_SCRIPT" ] && PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"
+  PG_SCRIPT="`!`cat /tmp/.vbw-plugin-root`/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
      bash "$PG_SCRIPT" commit-boundary "archive milestone {SLUG}" .vbw-planning/config.json
    else

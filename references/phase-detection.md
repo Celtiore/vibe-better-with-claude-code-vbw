@@ -1,6 +1,6 @@
 # VBW Phase Auto-Detection Protocol
 
-Single source of truth for detecting the target phase when the user omits the phase number from a command. Referenced by `$(cat /tmp/.vbw-plugin-root)/commands/vibe.md`, `$(cat /tmp/.vbw-plugin-root)/commands/qa.md`.
+Single source of truth for detecting the target phase when the user omits the phase number from a command. Referenced by `${VBW_PLUGIN_ROOT}/commands/vibe.md`, `${VBW_PLUGIN_ROOT}/commands/qa.md`.
 
 ## Overview
 
