@@ -326,13 +326,13 @@ if [ "$NEXT_PHASE_STATE" = "all_done" ] && [ ${#PHASE_DIRS[@]} -gt 0 ]; then
     [ -d "$_uv_dir" ] || continue
     _uv_has_summary=false
     for _uv_s in "$_uv_dir"[0-9]*-SUMMARY.md; do
-      [ -e "$_uv_s" ] || continue
+      [ -f "$_uv_s" ] || continue
       _uv_has_summary=true
       break
     done
     [ "$_uv_has_summary" = true ] || continue
     _uv_uat=$(latest_non_source_uat "$_uv_dir")
-    if [ -z "$_uv_uat" ] || [ ! -f "$_uv_uat" ]; then
+    if [ -z "$_uv_uat" ]; then
       HAS_UNVERIFIED_PHASES=true
       break
     fi
@@ -360,7 +360,7 @@ if [ -d "$PHASES_DIR" ] && [ ${#PHASE_DIRS[@]} -gt 0 ]; then
     [ -d "$_rx_dir" ] || continue
     _rx_ctx=""
     for _rx_f in "$_rx_dir"[0-9]*-CONTEXT.md; do
-      [ -e "$_rx_f" ] || continue
+      [ -f "$_rx_f" ] || continue
       _rx_ctx="$_rx_f"
       break
     done
