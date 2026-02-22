@@ -110,6 +110,14 @@ MSG
   echo "$output" | jq -e '.valid == true'
 }
 
+@test "validate-message: qa_verdict with checks_detail validates correctly" {
+  cd "$TEST_TEMP_DIR"
+  MSG='{"id":"q2","type":"qa_verdict","phase":1,"task":"1-1-T1","author_role":"qa","timestamp":"2026-01-01","schema_version":"2.0","confidence":"high","payload":{"tier":"standard","result":"PASS","checks":{"passed":2,"failed":0,"total":2},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Feature A","status":"PASS","evidence":"ok"},{"id":"ART-01","category":"artifact","description":"README","status":"PASS","evidence":"found"}]}}'
+  run bash "$SCRIPTS_DIR/validate-message.sh" "$MSG"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.valid == true'
+}
+
 @test "validate-message: blocker_report validates correctly" {
   cd "$TEST_TEMP_DIR"
   MSG='{"id":"b1","type":"blocker_report","phase":1,"task":"1-1-T1","author_role":"dev","timestamp":"2026-01-01","schema_version":"2.0","confidence":"medium","payload":{"plan_id":"1-1","task_id":"1-1-T1","blocker":"Dependency missing","needs":"Plan 1-1 to complete"}}'

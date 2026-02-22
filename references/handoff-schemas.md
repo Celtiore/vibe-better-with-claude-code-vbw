@@ -198,6 +198,12 @@ Structured verification results.
     "failures": [
       {"check": "Link integrity", "expected": "All resolve", "actual": "broken ref", "evidence": "line 42"}
     ],
+    "checks_detail": [
+      {"id": "MH-01", "category": "must_have", "description": "Feature exists", "status": "PASS", "evidence": "File found at src/feature.js"},
+      {"id": "MH-02", "category": "must_have", "description": "Tests pass", "status": "FAIL", "evidence": "2 failures in test suite"},
+      {"id": "ART-01", "category": "artifact", "description": "README updated", "status": "PASS", "evidence": "Section added at line 42"},
+      {"id": "KL-01", "category": "key_link", "description": "Config references module", "status": "WARN", "evidence": "Indirect reference only"}
+    ],
     "body": "## Must-Have Checks\n...",
     "recommendations": ["Fix broken cross-reference before shipping"],
     "pre_existing_issues": [

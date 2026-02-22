@@ -1,0 +1,275 @@
+#!/usr/bin/env bats
+
+# Tests for write-verification.sh and extract-verified-items.sh deterministic format
+
+load test_helper
+
+setup() {
+  setup_temp_dir
+}
+
+teardown() {
+  teardown_temp_dir
+}
+
+# =============================================================================
+# write-verification.sh: valid JSON with checks_detail
+# =============================================================================
+
+@test "write-verification: produces correct frontmatter from checks_detail" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":2,"failed":0,"total":2},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Test","status":"PASS","evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '^tier: standard' "$TEST_TEMP_DIR/out.md"
+  grep -q '^result: PASS' "$TEST_TEMP_DIR/out.md"
+  grep -q '^passed: 2' "$TEST_TEMP_DIR/out.md"
+  grep -q '^failed: 0' "$TEST_TEMP_DIR/out.md"
+  grep -q '^total: 2' "$TEST_TEMP_DIR/out.md"
+  grep -q '^date: ' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: generates Must-Have Checks table" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"quick","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Feature exists","status":"PASS","evidence":"Found it"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Must-Have Checks' "$TEST_TEMP_DIR/out.md"
+  grep -q 'MH-01' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Feature exists' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: generates Artifact Checks table" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"quick","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"ART-01","category":"artifact","description":"README present","status":"PASS","evidence":"exists"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Artifact Checks' "$TEST_TEMP_DIR/out.md"
+  grep -q 'ART-01' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: generates Key Link Checks table" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"KL-01","category":"key_link","description":"Config refs module","status":"PASS","evidence":"import found"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Key Link Checks' "$TEST_TEMP_DIR/out.md"
+  grep -q 'KL-01' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: generates Anti-Pattern Scan table" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"AP-01","category":"anti_pattern","description":"No TODOs","status":"PASS","evidence":"clean"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Anti-Pattern Scan' "$TEST_TEMP_DIR/out.md"
+  grep -q 'AP-01' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: generates Convention Compliance table" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"CC-01","category":"convention","description":"Naming OK","status":"PASS","evidence":"follows pattern"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Convention Compliance' "$TEST_TEMP_DIR/out.md"
+  grep -q 'CC-01' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: generates Requirement Mapping table" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"deep","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"RM-01","category":"requirement","description":"REQ-01 mapped","status":"PASS","evidence":"found in plan"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Requirement Mapping' "$TEST_TEMP_DIR/out.md"
+  grep -q 'RM-01' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: omits empty category sections" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"quick","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Test","status":"PASS","evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  ! grep -q '## Anti-Pattern Scan' "$TEST_TEMP_DIR/out.md"
+  ! grep -q '## Convention Compliance' "$TEST_TEMP_DIR/out.md"
+  ! grep -q '## Requirement Mapping' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: generates Summary section" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PARTIAL","checks":{"passed":8,"failed":2,"total":10},"checks_detail":[{"id":"MH-01","category":"must_have","description":"A","status":"PASS","evidence":"ok"},{"id":"MH-02","category":"must_have","description":"B","status":"FAIL","evidence":"missing"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Summary' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Tier.*standard' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Result.*PARTIAL' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Passed.*8/10' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Failed.*MH-02' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: includes Pre-existing Issues table" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"A","status":"PASS","evidence":"ok"}],"pre_existing_issues":[{"test":"testFoo","file":"src/foo.js","error":"undefined var"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Pre-existing Issues' "$TEST_TEMP_DIR/out.md"
+  grep -q 'testFoo' "$TEST_TEMP_DIR/out.md"
+  grep -q 'src/foo.js' "$TEST_TEMP_DIR/out.md"
+}
+
+# =============================================================================
+# write-verification.sh: fallback without checks_detail
+# =============================================================================
+
+@test "write-verification: falls back to body when no checks_detail" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"quick","result":"PASS","checks":{"passed":3,"failed":0,"total":3},"body":"## Custom Content\nSome free-form text"}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '^tier: quick' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Custom Content' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: minimal summary when no checks_detail and no body" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"FAIL","checks":{"passed":1,"failed":1,"total":2},"failures":[{"check":"Link check"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Summary' "$TEST_TEMP_DIR/out.md"
+  grep -q 'Failed.*Link check' "$TEST_TEMP_DIR/out.md"
+}
+
+# =============================================================================
+# write-verification.sh: error handling
+# =============================================================================
+
+@test "write-verification: exits 1 on invalid JSON" {
+  echo "not json" > "$TEST_TEMP_DIR/input.txt"
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.txt"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"invalid JSON"* ]]
+}
+
+@test "write-verification: exits 1 on missing required fields" {
+  echo '{"payload":{"tier":"quick"}}' > "$TEST_TEMP_DIR/input.json"
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"missing required fields"* ]]
+}
+
+@test "write-verification: exits 1 with no output path" {
+  run bash -c "echo '{}' | bash '$SCRIPTS_DIR/write-verification.sh'"
+  [ "$status" -eq 1 ]
+}
+
+@test "write-verification: accepts full envelope JSON" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"id":"q1","type":"qa_verdict","phase":2,"author_role":"qa","payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Test","status":"PASS","evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '^phase: 2' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: accepts bare payload JSON" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Test","status":"PASS","evidence":"ok"}]}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '^result: PASS' "$TEST_TEMP_DIR/out.md"
+}
+
+# =============================================================================
+# extract-verified-items.sh: deterministic format parsing
+# =============================================================================
+
+@test "extract-verified-items: parses deterministic VERIFICATION.md" {
+  local pdir="$TEST_TEMP_DIR/phases/01-setup"
+  mkdir -p "$pdir"
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":3,"failed":0,"total":3},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Feature A","status":"PASS","evidence":"ok"},{"id":"MH-02","category":"must_have","description":"Feature B","status":"PASS","evidence":"ok"},{"id":"ART-01","category":"artifact","description":"README","status":"PASS","evidence":"found"}]}}
+JSON
+  bash "$SCRIPTS_DIR/write-verification.sh" "$pdir/01-VERIFICATION.md" < "$TEST_TEMP_DIR/input.json"
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$pdir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PASS MH-01: Feature A"* ]]
+  [[ "$output" == *"PASS MH-02: Feature B"* ]]
+  [[ "$output" == *"PASS ART-01: README"* ]]
+  [[ "$output" == *"QA: PASS (3/3 passed"* ]]
+}
+
+@test "extract-verified-items: shows FAIL checks in deterministic format" {
+  local pdir="$TEST_TEMP_DIR/phases/01-setup"
+  mkdir -p "$pdir"
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"FAIL","checks":{"passed":1,"failed":1,"total":2},"checks_detail":[{"id":"MH-01","category":"must_have","description":"Exists","status":"PASS","evidence":"ok"},{"id":"MH-02","category":"must_have","description":"Tests pass","status":"FAIL","evidence":"2 failures"}]}}
+JSON
+  bash "$SCRIPTS_DIR/write-verification.sh" "$pdir/01-VERIFICATION.md" < "$TEST_TEMP_DIR/input.json"
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$pdir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PASS MH-01: Exists"* ]]
+  [[ "$output" == *"FAIL MH-02: Tests pass"* ]]
+  [[ "$output" == *"QA: FAIL (1/2 passed"* ]]
+}
+
+@test "extract-verified-items: handles frontmatter-only brownfield file" {
+  local pdir="$TEST_TEMP_DIR/phases/01-setup"
+  mkdir -p "$pdir"
+  cat > "$pdir/01-VERIFICATION.md" << 'EOF'
+---
+phase: 1
+tier: standard
+result: PASS
+passed: 5
+failed: 0
+total: 5
+date: 2026-01-01
+---
+
+Some random content without tables.
+EOF
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$pdir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"QA: PASS (5/5 passed"* ]]
+}
+
+@test "extract-verified-items: no crash on empty phase dir" {
+  local pdir="$TEST_TEMP_DIR/phases/01-setup"
+  mkdir -p "$pdir"
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$pdir"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "extract-verified-items: no crash on nonexistent dir" {
+  run bash "$SCRIPTS_DIR/extract-verified-items.sh" "$TEST_TEMP_DIR/nonexistent"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# =============================================================================
+# write-verification.sh: frontmatter field order
+# =============================================================================
+
+@test "write-verification: frontmatter fields in canonical order" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"deep","result":"PARTIAL","checks":{"passed":8,"failed":2,"total":10},"checks_detail":[{"id":"MH-01","category":"must_have","description":"A","status":"PASS","evidence":"ok"}]}}
+JSON
+  bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  # Extract frontmatter field names in order
+  local fields
+  fields=$(sed -n '/^---$/,/^---$/{ /^---$/d; s/:.*//; p; }' "$TEST_TEMP_DIR/out.md" | tr '\n' ',')
+  [[ "$fields" == "phase,tier,result,passed,failed,total,date," ]]
+}
