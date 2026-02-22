@@ -79,16 +79,25 @@ fi
 
 # Validate checks_detail entries have required fields
 if [[ "$has_checks_detail" == "true" ]]; then
-  invalid_entries=$(echo "$payload" | jq '[.checks_detail[] | select(.id == null or .id == "" or .status == null or .status == "")] | length')
+  invalid_entries=$(echo "$payload" | jq '[.checks_detail[] | select(
+    (.id | type != "string") or
+    (.status | type != "string") or
+    ((.id | gsub("^\\s+|\\s+$"; "")) == "") or
+    ((.status | gsub("^\\s+|\\s+$"; "")) as $s | ($s == "" or (["PASS","FAIL","WARN"] | index($s) == null)))
+  )] | length')
   if [[ "$invalid_entries" -gt 0 ]]; then
-    echo "Error: checks_detail entries must have id and status fields" >&2
+    echo "Error: checks_detail entries must have id and status fields (status must be PASS|FAIL|WARN)" >&2
     exit 1
   fi
-  # Normalize empty strings to null so // "-" catches both null and "" (QA R4 F1)
+  # Normalize trimmed id/status and empty-string fields so // "-" catches null/empty
   payload=$(echo "$payload" | jq '
-    .checks_detail |= [.[] | with_entries(
-      if .value == "" then .value = null else . end
-    )]
+    .checks_detail |= [.[]
+      | (if (.id | type) == "string" then .id |= gsub("^\\s+|\\s+$"; "") else . end)
+      | (if (.status | type) == "string" then .status |= gsub("^\\s+|\\s+$"; "") else . end)
+      | with_entries(
+          if ((.value | type) == "string" and .value == "") then .value = null else . end
+        )
+    ]
   ')
 fi
 
@@ -136,7 +145,7 @@ if [[ "$has_checks_detail" == "true" ]]; then
       anti_pattern) echo "Pattern" ;;
       convention)   echo "Convention" ;;
       requirement)  echo "Requirement" ;;
-      skill_augmented) echo "Check" ;;
+      skill_augmented) echo "Skill Check" ;;
     esac
   }
 

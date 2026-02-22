@@ -58,6 +58,14 @@ _Falls back to 5-col (# \| ID \| Requirement \| Status \| Evidence) when categor
 
 _Include for deep tier only. Omit otherwise._
 
+## Skill-Augmented Checks
+
+| # | ID    | Skill Check         | Status           | Evidence       |
+|---|-------|---------------------|------------------|----------------|
+| 1 | SA-01 | {skill-based-check} | {PASS/FAIL/WARN} | {how-verified} |
+
+_Include when quality skills are active. Omit otherwise._
+
 ## Pre-existing Issues
 
 | Test        | File        | Error             |

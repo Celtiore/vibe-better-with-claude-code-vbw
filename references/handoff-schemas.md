@@ -227,6 +227,7 @@ All items share: `id`, `category`, `description`, `status`, `evidence`. Category
 | `anti_pattern` | _(none)_ | 5-col: Pattern, Status, Evidence |
 | `convention` | `file`, `detail` (strings) | 5-col when absent |
 | `requirement` | `plan_ref` (string) | 5-col when absent |
+| `skill_augmented` | _(none)_ | 5-col: Skill Check, Status, Evidence |
 
 When category-specific fields are present, `write-verification.sh` emits a 6-column table. When absent, falls back to uniform 5-column format.
 

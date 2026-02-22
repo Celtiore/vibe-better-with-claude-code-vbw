@@ -307,6 +307,24 @@ JSON
   [[ "$output" == *"must have id and status"* ]]
 }
 
+@test "write-verification: rejects non-string status values" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"X","status":false,"evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"PASS|FAIL|WARN"* ]]
+}
+
+@test "write-verification: rejects whitespace-only id and status" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"   ","category":"must_have","description":"X","status":"   ","evidence":"ok"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"must have id and status"* ]]
+}
+
 @test "write-verification: escapes pipe characters in description and evidence" {
   cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
 {"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"MH-01","category":"must_have","description":"A | B","status":"PASS","evidence":"path|line"}]}}
@@ -335,6 +353,17 @@ JSON
   grep -q 'Mystery check' "$TEST_TEMP_DIR/out.md"
   # Should also appear in Summary failed list
   grep -q 'Failed.*X-01' "$TEST_TEMP_DIR/out.md"
+}
+
+@test "write-verification: skill_augmented uses Skill Check column label" {
+  cat > "$TEST_TEMP_DIR/input.json" << 'JSON'
+{"payload":{"tier":"standard","result":"PASS","checks":{"passed":1,"failed":0,"total":1},"checks_detail":[{"id":"SA-01","category":"skill_augmented","description":"Domain check","status":"PASS","evidence":"verified"}]}}
+JSON
+  run bash "$SCRIPTS_DIR/write-verification.sh" "$TEST_TEMP_DIR/out.md" < "$TEST_TEMP_DIR/input.json"
+  [ "$status" -eq 0 ]
+  grep -q '## Skill-Augmented Checks' "$TEST_TEMP_DIR/out.md"
+  grep -q '| # | ID | Skill Check | Status | Evidence |' "$TEST_TEMP_DIR/out.md"
+  grep -q 'SA-01' "$TEST_TEMP_DIR/out.md"
 }
 
 @test "write-verification: unknown category items not in known sections" {

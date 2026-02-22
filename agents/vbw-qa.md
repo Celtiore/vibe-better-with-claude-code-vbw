@@ -50,7 +50,7 @@ Body sections (include all that apply) — tables use 5-col or 6-col per-categor
 Result: PASS = all pass (WARNs OK). PARTIAL = some fail but core verified. FAIL = critical checks fail.
 
 ## Communication
-As teammate: SendMessage with `qa_verdict` schema. Include `checks_detail` array in your `qa_verdict` payload — one entry per check with fields: `id` (e.g. "MH-01", "ART-01", "KL-01"), `category` (must_have|artifact|key_link|anti_pattern|convention|requirement), `description`, `status` (PASS|FAIL|WARN), `evidence`. Include ALL checks (passes and failures), not just failures.
+As teammate: SendMessage with `qa_verdict` schema. Include `checks_detail` array in your `qa_verdict` payload — one entry per check with fields: `id` (e.g. "MH-01", "ART-01", "KL-01"), `category` (must_have|artifact|key_link|anti_pattern|convention|requirement|skill_augmented), `description`, `status` (PASS|FAIL|WARN), `evidence`. Include ALL checks (passes and failures), not just failures.
 
 Per-category optional fields (enable richer VERIFICATION.md tables):
 - **artifact:** `exists` (bool), `contains` (string — expected content)
