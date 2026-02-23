@@ -22,7 +22,7 @@ Plugin root:
 
 Pre-computed state (via phase-detect.sh):
 ```
-!`L="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; bash "$L/scripts/phase-detect.sh" 2>/dev/null || echo "phase_detect_error=true"`
+!`L="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; P="/tmp/.vbw-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ]; then bash "$L/scripts/phase-detect.sh" 2>/dev/null || cat "$P" 2>/dev/null || echo "phase_detect_error=true"; else cat "$P" 2>/dev/null || echo "phase_detect_error=true"; fi`
 ```
 
 Config:

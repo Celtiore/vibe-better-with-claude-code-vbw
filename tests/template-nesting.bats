@@ -123,17 +123,21 @@ _atomic_pd_cat_pattern() {
 }
 
 @test "commands with phase-detect use cat for temp file read" {
-  for cmd in resume discuss qa verify; do
-    local count
-    count=$(grep -cF "$(_atomic_pd_cat_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
-    [ "$count" -eq 1 ] || { echo "FAIL: ${cmd}.md missing cat for phase-detect temp file"; return 1; }
+  for cmd in resume vibe discuss qa verify; do
+    if [ "$cmd" = "vibe" ]; then
+      grep -qF 'cat "$P"' "$PROJECT_ROOT/commands/${cmd}.md" || { echo "FAIL: ${cmd}.md missing cat for phase-detect temp file"; return 1; }
+    else
+      local count
+      count=$(grep -cF "$(_atomic_pd_cat_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
+      [ "$count" -eq 1 ] || { echo "FAIL: ${cmd}.md missing cat for phase-detect temp file"; return 1; }
+    fi
   done
 }
 
-@test "vibe.md reads phase-detect live (guarded) instead of temp-file cat" {
+@test "vibe.md reads phase-detect live with temp-file fallback" {
   local cat_count
-  cat_count=$(grep -cF "$(_atomic_pd_cat_pattern)" "$PROJECT_ROOT/commands/vibe.md" || true)
-  [ "${cat_count:-0}" -eq 0 ] || { echo "FAIL: vibe.md should not cat phase-detect temp file"; return 1; }
+  cat_count=$(grep -cF 'cat "$P"' "$PROJECT_ROOT/commands/vibe.md" || true)
+  [ "${cat_count:-0}" -ge 1 ] || { echo "FAIL: vibe.md missing phase-detect temp-file fallback"; return 1; }
 
   local live_count
   live_count=$(grep -cF 'bash "$L/scripts/phase-detect.sh"' "$PROJECT_ROOT/commands/vibe.md")
