@@ -46,6 +46,38 @@ slug_to_name() {
   echo "$1" | sed 's/^[0-9]*-//' | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1'
 }
 
+# Find the latest non-SOURCE UAT file in a phase directory
+latest_non_source_uat() {
+  local dir="$1"
+  local f latest=""
+  case "$dir" in */) ;; *) dir="$dir/" ;; esac
+  for f in "${dir}"[0-9]*-UAT.md; do
+    [ -e "$f" ] || continue
+    case "$f" in *SOURCE-UAT.md) continue ;; esac
+    latest="$f"
+  done
+  [ -n "$latest" ] && printf '%s\n' "$latest"
+  return 0
+}
+
+# Check if a phase has unresolved UAT issues
+phase_has_uat_issues() {
+  local phase_dir="$1"
+  local uat_file
+  uat_file=$(latest_non_source_uat "$phase_dir")
+  [ -f "$uat_file" ] || return 1
+  awk '
+    { line = $0 }
+    tolower(line) ~ /^[[:space:]]*status[[:space:]]*:/ {
+      value = line
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      gsub(/[[:space:]]+$/, "", value)
+      if (tolower(value) == "issues_found") exit 0
+      else exit 1
+    }
+  ' "$uat_file" 2>/dev/null
+}
+
 update_roadmap() {
   local phase_dir="$1"
   local planning_root roadmap
@@ -66,8 +98,13 @@ update_roadmap() {
   [ "$plan_count" -eq 0 ] && return 0
 
   if [ "$summary_count" -eq "$plan_count" ]; then
-    status="complete"
-    date_str=$(date +%Y-%m-%d)
+    if phase_has_uat_issues "$phase_dir"; then
+      status="uat issues"
+      date_str="-"
+    else
+      status="complete"
+      date_str=$(date +%Y-%m-%d)
+    fi
   elif [ "$summary_count" -gt 0 ]; then
     status="in progress"
     date_str="-"
@@ -76,19 +113,43 @@ update_roadmap() {
     date_str="-"
   fi
 
-  # Extract phase name from existing progress table row
+  # Start with a working copy
+  local tmp="${roadmap}.tmp.$$"
+  cp "$roadmap" "$tmp" 2>/dev/null || return 0
+
+  # Update extended progress table row (| num - name | done | status | date |)
   local existing_name
   existing_name=$(grep -E "^\| *${phase_num} - " "$roadmap" | head -1 | sed 's/^| *[0-9]* - //' | sed 's/ *|.*//')
-  [ -z "$existing_name" ] && return 0
+  if [ -n "$existing_name" ]; then
+    local tmp_ext="${roadmap}.tmp_ext.$$"
+    sed "s/^| *${phase_num} - .*/| ${phase_num} - ${existing_name} | ${summary_count}\/${plan_count} | ${status} | ${date_str} |/" "$tmp" > "$tmp_ext" 2>/dev/null && \
+      mv "$tmp_ext" "$tmp" 2>/dev/null || rm -f "$tmp_ext" 2>/dev/null
+  fi
 
-  # Update progress table row
-  local tmp="${roadmap}.tmp.$$"
-  sed "s/^| *${phase_num} - .*/| ${phase_num} - ${existing_name} | ${summary_count}\/${plan_count} | ${status} | ${date_str} |/" "$roadmap" > "$tmp" 2>/dev/null
+  # Update simple progress table format (| 01 | ● Done |)
+  local padded_num
+  padded_num=$(printf '%02d' "$phase_num" 2>/dev/null || echo "$phase_num")
+  if grep -qE "^\| *0*${phase_num} *\|" "$tmp" 2>/dev/null; then
+    local simple_status
+    case "$status" in
+      complete)      simple_status="● Done" ;;
+      "uat issues")  simple_status="⚠ UAT Issues" ;;
+      "in progress") simple_status="◐ In Progress" ;;
+      planned)       simple_status="○ Planned" ;;
+      *)             simple_status="$status" ;;
+    esac
+    local tmp_simple="${roadmap}.tmp_s.$$"
+    sed "s/^| *0*${phase_num} *|.*/| ${padded_num} | ${simple_status} |/" "$tmp" > "$tmp_simple" 2>/dev/null && \
+      mv "$tmp_simple" "$tmp" 2>/dev/null || rm -f "$tmp_simple" 2>/dev/null
+  fi
 
-  # Check checkbox if phase complete
+  # Check/uncheck checkbox based on status
+  local tmp2="${roadmap}.tmp2.$$"
   if [ "$status" = "complete" ]; then
-    local tmp2="${roadmap}.tmp2.$$"
     sed "s/^- \[ \] Phase ${phase_num}:/- [x] Phase ${phase_num}:/" "$tmp" > "$tmp2" 2>/dev/null && \
+      mv "$tmp2" "$tmp" 2>/dev/null || rm -f "$tmp2" 2>/dev/null
+  elif [ "$status" = "uat issues" ]; then
+    sed "s/^- \[[xX]\] Phase ${phase_num}:/- [ ] Phase ${phase_num}:/" "$tmp" > "$tmp2" 2>/dev/null && \
       mv "$tmp2" "$tmp" 2>/dev/null || rm -f "$tmp2" 2>/dev/null
   fi
 
@@ -147,14 +208,15 @@ advance_phase() {
   [ "$plan_count" -gt 0 ] && [ "$summary_count" -eq "$plan_count" ] || return 0
 
   # Scan all phase dirs to find next incomplete
-  local phases_dir total next_num next_name all_done
+  local phases_dir total next_num next_name next_has_uat all_done
   phases_dir=$(dirname "$phase_dir")
   total=$(ls -d "$phases_dir"/*/ 2>/dev/null | wc -l | tr -d ' ')
   next_num=""
   next_name=""
+  next_has_uat=false
   all_done=true
 
-  for dir in $(ls -d "$phases_dir"/*/ 2>/dev/null | sort); do
+  for dir in $(ls -d "$phases_dir"/*/ 2>/dev/null | (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-)); do
     local dirname p s
     dirname=$(basename "$dir")
     p=$(ls -1 "$dir"*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
@@ -169,6 +231,17 @@ advance_phase() {
       all_done=false
       break
     fi
+    # Also not done if phase has unresolved UAT issues
+    if phase_has_uat_issues "$dir"; then
+      if [ -z "$next_num" ]; then
+        next_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
+        [ -z "$next_num" ] && next_num=0
+        next_name=$(slug_to_name "$dirname")
+        next_has_uat=true
+      fi
+      all_done=false
+      break
+    fi
   done
 
   [ "$total" -eq 0 ] && return 0
@@ -178,8 +251,10 @@ advance_phase() {
     sed "s/^Status: .*/Status: complete/" "$state_md" > "$tmp" 2>/dev/null && \
       mv "$tmp" "$state_md" 2>/dev/null || rm -f "$tmp" 2>/dev/null
   elif [ -n "$next_num" ]; then
+    local next_status="ready"
+    [ "$next_has_uat" = true ] && next_status="needs_remediation"
     sed "s/^Phase: .*/Phase: ${next_num} of ${total} (${next_name})/" "$state_md" | \
-      sed "s/^Status: .*/Status: ready/" > "$tmp" 2>/dev/null && \
+      sed "s/^Status: .*/Status: ${next_status}/" > "$tmp" 2>/dev/null && \
       mv "$tmp" "$state_md" 2>/dev/null || rm -f "$tmp" 2>/dev/null
   fi
 }
@@ -198,6 +273,14 @@ if echo "$FILE_PATH" | grep -qE 'phases/[^/]+/[0-9]+(-[0-9]+)?-PLAN\.md$'; then
     sed 's/^Status: ready/Status: active/' "$_sm" > "$_tmp" 2>/dev/null && \
       mv "$_tmp" "$_sm" 2>/dev/null || rm -f "$_tmp" 2>/dev/null
   fi
+fi
+
+# UAT.md trigger: update roadmap + state when UAT results are written
+if echo "$FILE_PATH" | grep -qE 'phases/[^/]+/[0-9]+(-[0-9]+)?-UAT\.md$'; then
+  [ -f "$FILE_PATH" ] || exit 0
+  update_roadmap "$(dirname "$FILE_PATH")"
+  advance_phase "$(dirname "$FILE_PATH")"
+  exit 0
 fi
 
 # SUMMARY.md trigger: update execution state + progress
