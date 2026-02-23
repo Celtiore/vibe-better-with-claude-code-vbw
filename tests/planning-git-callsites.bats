@@ -87,10 +87,27 @@ load test_helper
 @test "all commands with readers have a preamble" {
   for file in "$PROJECT_ROOT/commands"/*.md; do
     local reader_count
-    reader_count=$(grep -c 'echo /tmp/.vbw-plugin-root-link-' "$file" 2>/dev/null || echo 0)
+    reader_count=$(grep -c 'echo /tmp/.vbw-plugin-root-link-' "$file" 2>/dev/null || true)
     if [ "$reader_count" -gt 0 ]; then
       grep -q 'LINK="/tmp/.vbw-plugin-root-link-' "$file" || { echo "$(basename "$file"): $reader_count readers but no preamble"; return 1; }
     fi
+  done
+}
+
+@test "preamble and readers use same session key expansion" {
+  for file in "$PROJECT_ROOT/commands"/*.md; do
+    local reader_count
+    reader_count=$(grep -c 'echo /tmp/.vbw-plugin-root-link-' "$file" 2>/dev/null || true)
+    [ "$reader_count" -gt 0 ] || continue
+    # Preamble must derive session key from CLAUDE_SESSION_ID:-default
+    # It may use either direct LINK="/tmp/...-${CLAUDE_SESSION_ID:-default}" or
+    # indirect SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; LINK="/tmp/...-${SESSION_KEY}"
+    grep -q 'CLAUDE_SESSION_ID:-default' "$file" || \
+      { echo "$(basename "$file"): preamble missing CLAUDE_SESSION_ID:-default fallback"; return 1; }
+    # Every reader must also use ${CLAUDE_SESSION_ID:-default}
+    local mismatched
+    mismatched=$(grep 'echo /tmp/.vbw-plugin-root-link-' "$file" | grep -v '\${CLAUDE_SESSION_ID:-default}' || true)
+    [ -z "$mismatched" ] || { echo "$(basename "$file"): reader with mismatched session key: $mismatched"; return 1; }
   done
 }
 

@@ -160,6 +160,10 @@ echo "All preamble fallback checks passed."
 echo ""
 echo "=== Runtime Resolver Safety Verification ==="
 
+# Reset counters so Phase 3 TOTAL reflects only Phase 3 results
+PASS=0
+FAIL=0
+
 EXECUTE_PROTOCOL="$REFERENCES_DIR/execute-protocol.md"
 PHASE_DETECTION="$REFERENCES_DIR/phase-detection.md"
 
