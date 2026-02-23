@@ -62,6 +62,9 @@ milestone_uat_issues=false
 milestone_uat_phase="none"
 milestone_uat_slug="none"
 milestone_uat_count=0
+current_uat_issues_phase=""
+current_uat_issues_slug=""
+current_uat_major_or_higher=false
 cfg_require_phase_discussion=false
 next_undiscussed=""
 next_preseeded=""
@@ -124,6 +127,16 @@ if [ -d "$PLANNING_DIR" ]; then
 
     _pd_require_discuss=$(echo "$_pd_out" | grep -m1 '^config_require_phase_discussion=' | sed 's/^[^=]*=//' || true)
     [ -n "${_pd_require_discuss:-}" ] && cfg_require_phase_discussion="$_pd_require_discuss"
+
+    # Current-phase UAT issues (distinct from archived milestone UAT)
+    _pd_uat_phase=$(echo "$_pd_out" | grep -m1 '^uat_issues_phase=' | sed 's/^[^=]*=//' || true)
+    _pd_uat_slug=$(echo "$_pd_out" | grep -m1 '^uat_issues_slug=' | sed 's/^[^=]*=//' || true)
+    _pd_uat_major=$(echo "$_pd_out" | grep -m1 '^uat_issues_major_or_higher=' | sed 's/^[^=]*=//' || true)
+    if [ -n "${_pd_uat_phase:-}" ] && [ "$_pd_uat_phase" != "none" ]; then
+      current_uat_issues_phase="$_pd_uat_phase"
+      current_uat_issues_slug="${_pd_uat_slug:-}"
+      [ "${_pd_uat_major:-}" = "true" ] && current_uat_major_or_higher=true
+    fi
   fi
 
   # Root-canonical phases directory (no ACTIVE indirection)
@@ -230,8 +243,8 @@ if [ -d "$PLANNING_DIR" ]; then
       active_phase_plans="$last_phase_plans"
     fi
 
-    # All done if phases exist and nothing is unplanned/unbuilt
-    if [ "$phase_count" -gt 0 ] && [ -z "$next_unplanned" ] && [ -z "$next_unbuilt" ]; then
+    # All done if phases exist, nothing is unplanned/unbuilt, and no current-phase UAT issues
+    if [ "$phase_count" -gt 0 ] && [ -z "$next_unplanned" ] && [ -z "$next_unbuilt" ] && [ -z "$current_uat_issues_phase" ]; then
       all_done=true
     fi
 
@@ -446,6 +459,12 @@ case "$CMD" in
           else
             :
           fi
+        elif [ -n "$current_uat_issues_phase" ]; then
+          if [ "$current_uat_major_or_higher" = true ]; then
+            suggest "/vbw:vibe -- Remediate UAT issues for Phase $current_uat_issues_phase"
+          else
+            suggest "/vbw:fix -- Fix minor UAT issues in Phase $current_uat_issues_phase"
+          fi
         elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
           target="${next_unbuilt:-$next_unplanned}"
           # If next phase needs discussion, suggest discuss (suppress continue)
@@ -506,6 +525,12 @@ case "$CMD" in
             fi
           else
             :
+          fi
+        elif [ -n "$current_uat_issues_phase" ]; then
+          if [ "$current_uat_major_or_higher" = true ]; then
+            suggest "/vbw:vibe -- Remediate UAT issues for Phase $current_uat_issues_phase"
+          else
+            suggest "/vbw:fix -- Fix minor UAT issues in Phase $current_uat_issues_phase"
           fi
         else
           target="${next_unbuilt:-$next_unplanned}"
@@ -620,6 +645,12 @@ case "$CMD" in
       else
         :
       fi
+    elif [ -n "$current_uat_issues_phase" ]; then
+      if [ "$current_uat_major_or_higher" = true ]; then
+        suggest "/vbw:vibe -- Remediate UAT issues for Phase $current_uat_issues_phase"
+      else
+        suggest "/vbw:fix -- Fix minor UAT issues in Phase $current_uat_issues_phase"
+      fi
     elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
       target="${next_unbuilt:-$next_unplanned}"
       # If next phase needs discussion, suggest discuss (suppress continue)
@@ -662,7 +693,48 @@ case "$CMD" in
     ;;
 
   resume)
-    suggest "/vbw:vibe -- Continue building"
+    if [ -n "$current_uat_issues_phase" ]; then
+      if [ "$current_uat_major_or_higher" = true ]; then
+        suggest "/vbw:vibe -- Remediate UAT issues for Phase $current_uat_issues_phase"
+      else
+        suggest "/vbw:fix -- Fix minor UAT issues in Phase $current_uat_issues_phase"
+      fi
+    elif [ "$all_done" = true ]; then
+      if ! suggest_milestone_recovery; then
+        if [ "$deviation_count" -eq 0 ]; then
+          suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
+        else
+          suggest "/vbw:vibe --archive -- Archive completed work ($deviation_count deviation(s) logged)"
+        fi
+      fi
+    elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
+      target="${next_unbuilt:-$next_unplanned}"
+      if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
+        suggest "/vbw:discuss $target -- Discuss phase before planning"
+      elif [ -n "$next_preseeded" ] && [ "$next_preseeded" = "$target" ]; then
+        for dir in "$PHASES_DIR"/*/; do
+          [ -d "$dir" ] || continue
+          pn=$(basename "$dir" | sed 's/[^0-9].*//')
+          if [ "$pn" = "$target" ]; then
+            tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+            suggest "/vbw:vibe -- Plan Phase $target: $(fmt_phase_name "$tname") (discussion pre-seeded from UAT)"
+            break
+          fi
+        done
+      else
+        for dir in "$PHASES_DIR"/*/; do
+          [ -d "$dir" ] || continue
+          pn=$(basename "$dir" | sed 's/[^0-9].*//')
+          if [ "$pn" = "$target" ]; then
+            tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+            suggest "/vbw:vibe -- Continue Phase $target: $(fmt_phase_name "$tname")"
+            break
+          fi
+        done
+      fi
+    else
+      suggest "/vbw:vibe -- Continue building"
+    fi
     suggest "/vbw:status -- View current progress"
     ;;
 
