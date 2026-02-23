@@ -270,6 +270,19 @@ if [ -d "$PHASES_DIR" ]; then
         _ei_plans=$(find "$_ei_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
         _ei_summaries=$(find "$_ei_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
         if [ "$_ei_plans" -eq 0 ]; then
+          # Mirror the discussion gate from the normal scan
+          if [ "$CFG_REQUIRE_PHASE_DISCUSSION" = true ]; then
+            _ei_contexts=$(find "$_ei_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$_ei_contexts" -eq 0 ]; then
+              NEXT_PHASE="$_ei_num"
+              NEXT_PHASE_SLUG="$_ei_name"
+              NEXT_PHASE_STATE="needs_discussion"
+              NEXT_PHASE_PLANS="$_ei_plans"
+              NEXT_PHASE_SUMMARIES="$_ei_summaries"
+              _EARLIER_INCOMPLETE=true
+              break
+            fi
+          fi
           NEXT_PHASE="$_ei_num"
           NEXT_PHASE_SLUG="$_ei_name"
           NEXT_PHASE_STATE="needs_plan_and_execute"

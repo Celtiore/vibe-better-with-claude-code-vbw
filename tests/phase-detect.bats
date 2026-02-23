@@ -765,19 +765,9 @@ EOF
   echo "$output" | grep -q "next_phase_summaries=1"
 }
 
-@test "mid-remediation in plan stage takes priority over later phase UAT issues" {
-  # Phase 01: mid-remediation — remediation stage is 'plan' (plan not yet created)
+@test "earlier unplanned phase takes priority over later phase UAT issues" {
+  # Phase 01: no plans at all — needs planning
   mkdir -p .vbw-planning/phases/01-setup/
-  touch .vbw-planning/phases/01-setup/01-01-PLAN.md
-  touch .vbw-planning/phases/01-setup/01-01-SUMMARY.md
-  echo "plan" > .vbw-planning/phases/01-setup/.uat-remediation-stage
-  cat > .vbw-planning/phases/01-setup/01-UAT.md <<'EOF'
----
-phase: 01
-status: issues_found
----
-- Severity: major
-EOF
 
   # Phase 02: fully complete with UAT issues
   mkdir -p .vbw-planning/phases/02-feature/
@@ -793,9 +783,9 @@ EOF
 
   run bash "$SCRIPTS_DIR/phase-detect.sh"
   [ "$status" -eq 0 ]
-  # Phase 01 mid-remediation (plan stage) should take priority
+  # Phase 01 unplanned should take priority over Phase 02 UAT
   echo "$output" | grep -q "next_phase=01"
-  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
+  echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
 }
 
 @test "mid-execution phase without remediation marker takes priority over later UAT" {
@@ -825,4 +815,30 @@ EOF
   echo "$output" | grep -q "next_phase_state=needs_execute"
   echo "$output" | grep -q "next_phase_plans=2"
   echo "$output" | grep -q "next_phase_summaries=1"
+}
+
+@test "earlier undiscussed phase with require_phase_discussion routes to needs_discussion over later UAT" {
+  # Enable discussion requirement
+  echo '{"require_phase_discussion": true}' > .vbw-planning/config.json
+
+  # Phase 01: no plans, no CONTEXT — needs discussion first
+  mkdir -p .vbw-planning/phases/01-setup/
+
+  # Phase 02: fully complete with UAT issues
+  mkdir -p .vbw-planning/phases/02-feature/
+  touch .vbw-planning/phases/02-feature/02-01-PLAN.md
+  touch .vbw-planning/phases/02-feature/02-01-SUMMARY.md
+  cat > .vbw-planning/phases/02-feature/02-UAT.md <<'EOF'
+---
+phase: 02
+status: issues_found
+---
+- Severity: major
+EOF
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  # Phase 01 should route to needs_discussion, not needs_plan_and_execute
+  echo "$output" | grep -q "next_phase=01"
+  echo "$output" | grep -q "next_phase_state=needs_discussion"
 }
