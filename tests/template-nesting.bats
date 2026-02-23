@@ -81,10 +81,16 @@ _guard_pattern() {
   [ "$count" -eq 1 ]
 }
 
-@test "total guarded symlink template expressions across commands is 10" {
+@test "resume.md has 1 guarded symlink template expression" {
+  local count
+  count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/resume.md")
+  [ "$count" -eq 1 ]
+}
+
+@test "total guarded symlink template expressions across commands is 11" {
   local count
   count=$(grep -rcF "$(_guard_pattern)" "$PROJECT_ROOT/commands/" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
-  [ "$count" -eq 10 ]
+  [ "$count" -eq 11 ]
 }
 
 @test "guarded expressions use symlink path variable not direct path" {

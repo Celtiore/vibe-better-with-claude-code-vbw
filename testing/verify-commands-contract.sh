@@ -144,6 +144,28 @@ for scan_dir in "$ROOT/scripts" "$ROOT/references" "$ROOT/agents" "$ROOT/templat
 done
 
 echo ""
+echo "=== Phase-Detect Usage Verification ==="
+
+# Commands that present phase progress MUST use phase-detect.sh output for state
+# detection rather than having the LLM glob and compute state independently.
+# Without this, the LLM may read from archived milestone directories and present
+# stale data. Commands that read STATE.md/ROADMAP.md should also scope reads to
+# top-level .vbw-planning/ only (not milestones/).
+PHASE_DETECT_REQUIRED_COMMANDS="resume"
+for pd_cmd in $PHASE_DETECT_REQUIRED_COMMANDS; do
+  pd_file="$COMMANDS_DIR/${pd_cmd}.md"
+  if [ ! -f "$pd_file" ]; then
+    fail "$pd_cmd: command file not found"
+    continue
+  fi
+  if grep -q 'phase-detect\.sh' "$pd_file"; then
+    pass "$pd_cmd: uses phase-detect.sh for state detection"
+  else
+    fail "$pd_cmd: missing phase-detect.sh — LLM may read archived milestone data"
+  fi
+done
+
+echo ""
 echo "=== Command Reference Verification ==="
 
 while IFS= read -r ref; do
