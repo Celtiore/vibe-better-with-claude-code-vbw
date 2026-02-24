@@ -30,6 +30,11 @@ Config:
 !`cat .vbw-planning/config.json 2>/dev/null || echo "No config found"`
 ```
 
+UAT issues (remediation only):
+```
+!`SESSION_BASE="${CLAUDE_SESSION_ID:-}"; [ -z "$SESSION_BASE" ] && SESSION_BASE=$(pwd); SESSION_KEY=$(printf '%s' "$SESSION_BASE" | shasum | awk '{print $1}' | cut -c1-16); L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; PD=""; [ -f "$P" ] && PD=$(cat "$P"); STATE=$(printf '%s' "$PD" | grep '^next_phase_state=' | head -1 | cut -d= -f2); if [ "$STATE" = "needs_uat_remediation" ]; then SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); PDIR=".vbw-planning/phases/$SLUG"; [ -d "$PDIR" ] && bash "$L/scripts/extract-uat-issues.sh" "$PDIR" 2>/dev/null || echo "uat_extract_error=true"; else echo "not_in_remediation"; fi`
+```
+
 !`SESSION_BASE="${CLAUDE_SESSION_ID:-}"; [ -z "$SESSION_BASE" ] && SESSION_BASE=$(pwd); SESSION_KEY=$(printf '%s' "$SESSION_BASE" | shasum | awk '{print $1}' | cut -c1-16); L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; bash "$L/scripts/suggest-compact.sh" execute 2>/dev/null || true`
 
 ## Input Parsing
@@ -244,8 +249,8 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
 **Steps:**
 1. Resolve target phase from pre-computed state (`next_phase`, `next_phase_slug`) when `next_phase_state=needs_uat_remediation`. Set `PHASE_DIR` to the resolved phase directory path.
    **Milestone path guard (NON-NEGOTIABLE):** If `PHASE_DIR` contains `.vbw-planning/milestones/` (e.g., `.vbw-planning/milestones/*/phases/`), STOP — this is an archived milestone. UAT Remediation operates only on active phases in `.vbw-planning/phases/`. Display: "⚠ UAT issues found in archived milestone, not active phases. Routing to Milestone UAT Recovery." Then route to Milestone UAT Recovery mode instead.
-2. Read latest `{phase}-UAT.md` in the target phase directory. Extract all issues — both test failures (`Pxx-Ty` entries) and discovered issues (`D{N}` entries) — with description and severity.
-3. Treat the UAT report as source-of-truth scope. Do NOT ask the user to restate issues already recorded in UAT.
+2. **Use pre-computed UAT issues** from the "UAT issues (remediation only)" section above. The `extract-uat-issues.sh` output provides compact `ID|SEVERITY|DESCRIPTION` lines — no need to read the full UAT file. If the pre-computed section shows `uat_extract_error=true`, fall back to reading `{phase}-UAT.md` directly.
+3. Treat the UAT issues as source-of-truth scope. Do NOT ask the user to restate issues already recorded in UAT.
 4. **Read or initialize remediation stage:**
    ```bash
    STAGE=$(bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/uat-remediation-state.sh get "$PHASE_DIR")
@@ -258,7 +263,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
    - If `STAGE=done`: UAT remediation already completed for this phase. Display "Remediation already completed. Run `/vbw:verify --resume` to re-test." STOP.
    - Otherwise: resume at the persisted stage (handles compaction recovery).
 5. **Execute the current stage** based on `STAGE`:
-   - `plan`: Execute **Plan mode steps 1-11 above** for the same phase. The UAT report serves as the scoping document — no separate discussion is needed (CONTEXT.md is already pre-seeded with UAT data by `init`). **Scout context (CRITICAL):** When Plan mode step 3 spawns Scout, include the UAT issue list (IDs, descriptions, severity) in Scout's task prompt so Scout knows what problems to investigate in the codebase. Without this, Scout searches blind. After planning completes, advance:
+   - `plan`: Execute **Plan mode steps 1-11 above** for the same phase. The UAT report serves as the scoping document — no separate discussion is needed (CONTEXT.md is already pre-seeded with UAT data by `init`). **Scout context (CRITICAL):** When Plan mode step 3 spawns Scout, include the pre-computed UAT issue lines (`ID|SEVERITY|DESCRIPTION` from step 2) in Scout's task prompt so Scout knows what codebase areas to investigate for each issue. Without this, Scout searches blind. After planning completes, advance:
      ```bash
      bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```

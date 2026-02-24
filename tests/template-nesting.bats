@@ -45,10 +45,10 @@ _guard_pattern() {
   printf 'while [ ! -L "$L" ] && [ $i -lt 20 ]'
 }
 
-@test "vibe.md has 2 guarded symlink template expressions" {
+@test "vibe.md has 3 guarded symlink template expressions" {
   local count
   count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/vibe.md")
-  [ "$count" -eq 2 ]
+  [ "$count" -eq 3 ]
 }
 
 @test "qa.md has 1 guarded symlink template expression" {
@@ -87,10 +87,10 @@ _guard_pattern() {
   [ "${count:-0}" -eq 0 ]
 }
 
-@test "total guarded symlink template expressions across commands is 7" {
+@test "total guarded symlink template expressions across commands is 8" {
   local count
   count=$(grep -rcF "$(_guard_pattern)" "$PROJECT_ROOT/commands/" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
-  [ "$count" -eq 7 ]
+  [ "$count" -eq 8 ]
 }
 
 @test "guarded expressions use symlink path variable not direct path" {
