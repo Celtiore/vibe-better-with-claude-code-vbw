@@ -47,7 +47,8 @@ load test_helper
 
   c=$(grep -c 'PG_SCRIPT="`!`SESSION_BASE="${CLAUDE_SESSION_ID:-}"; \[ -z "\$SESSION_BASE" \] && SESSION_BASE=\$(pwd); echo /tmp/.vbw-plugin-root-link-\$(printf '\''%s'\'' "\$SESSION_BASE" | shasum | awk '\''{print \$1}'\'' | cut -c1-16)`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/vibe.md")
   [ "$c" -eq 3 ]
-
+  c=$(grep -c 'PG_SCRIPT="`!`SESSION_BASE="${CLAUDE_SESSION_ID:-}"; \[ -z "\$SESSION_BASE" \] && SESSION_BASE=\$(pwd); echo /tmp/.vbw-plugin-root-link-\$(printf '\''%s'\'' "\$SESSION_BASE" | shasum | awk '\''{print \$1}'\'' | cut -c1-16)`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/verify.md")
+  [ "$c" -eq 1 ]
   c=$(grep -c 'PG_SCRIPT="${VBW_PLUGIN_ROOT}/scripts/planning-git.sh"' "$PROJECT_ROOT/references/execute-protocol.md")
   [ "$c" -eq 2 ]
 }
@@ -61,7 +62,7 @@ load test_helper
 @test "planning-git callsite count is exact" {
   local fallback_count
   fallback_count=$(grep -R -cE 'PG_SCRIPT="`!`SESSION_BASE="\$\{CLAUDE_SESSION_ID:-\}"; \[ -z "\$SESSION_BASE" \] && SESSION_BASE=\$\(pwd\); echo /tmp/.vbw-plugin-root-link-\$\(printf '\''%s'\'' "\$SESSION_BASE" \| shasum \| awk '\''\{print \$1\}'\'' \| cut -c1-16\)`/scripts/planning-git.sh"|PG_SCRIPT="\$\{VBW_PLUGIN_ROOT\}/scripts/planning-git.sh"' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
-  [ "$fallback_count" -eq 8 ] || { echo "Unexpected planning-git callsite count: $fallback_count"; false; }
+  [ "$fallback_count" -eq 9 ] || { echo "Unexpected planning-git callsite count: $fallback_count"; false; }
 }
 
 @test "planning-git callsites do not use sort -V fallback resolver" {

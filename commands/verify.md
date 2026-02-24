@@ -252,4 +252,17 @@ These are already recorded in the UAT.md and will flow into remediation alongsid
   - All issues are `minor`:
     - `Suggest /vbw:fix to address recorded issues.`
 
+**Planning artifact boundary commit (conditional):**
+```bash
+PG_SCRIPT="`!`SESSION_BASE="${CLAUDE_SESSION_ID:-}"; [ -z "$SESSION_BASE" ] && SESSION_BASE=$(pwd); echo /tmp/.vbw-plugin-root-link-$(printf '%s' "$SESSION_BASE" | shasum | awk '{print $1}' | cut -c1-16)`/scripts/planning-git.sh"
+if [ -f "$PG_SCRIPT" ]; then
+  bash "$PG_SCRIPT" commit-boundary "verify phase {N}" .vbw-planning/config.json
+else
+  echo "VBW: planning-git.sh unavailable; skipping planning git boundary commit" >&2
+fi
+```
+- `planning_tracking=commit`: commits `.vbw-planning/` + `CLAUDE.md` when changed (includes UAT report)
+- `planning_tracking=manual|ignore`: no-op
+- `auto_push=always`: push happens inside the boundary commit command when upstream exists
+
 Run `bash "$(echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default})/scripts/suggest-next.sh" verify {result} {phase}` and display.
