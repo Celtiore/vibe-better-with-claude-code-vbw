@@ -140,3 +140,47 @@ load test_helper
   ! grep -q 'CLAUDE_SESSION_ID' "$env_file"
   teardown_temp_dir
 }
+
+@test "session-start: rejects session_id with backtick injection" {
+  setup_temp_dir
+  create_test_config
+
+  local env_file="$TEST_TEMP_DIR/.claude-env"
+  : > "$env_file"
+
+  run bash -c "cd '$TEST_TEMP_DIR' && printf '{\"session_id\":\"\`id\`\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  [ "$status" -eq 0 ]
+  ! grep -q 'CLAUDE_SESSION_ID' "$env_file"
+  teardown_temp_dir
+}
+
+@test "session-start: rejects session_id with embedded newlines" {
+  setup_temp_dir
+  create_test_config
+
+  local env_file="$TEST_TEMP_DIR/.claude-env"
+  : > "$env_file"
+
+  # JSON \n becomes a real newline via jq -r — must be rejected
+  run bash -c "cd '$TEST_TEMP_DIR' && printf '{\"session_id\":\"abc\\\\n\"; export EVIL=pwned; #\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  [ "$status" -eq 0 ]
+  ! grep -q 'EVIL' "$env_file"
+  ! grep -q 'CLAUDE_SESSION_ID' "$env_file"
+  teardown_temp_dir
+}
+
+@test "session-start: replace preserves other env file content" {
+  setup_temp_dir
+  create_test_config
+
+  local env_file="$TEST_TEMP_DIR/.claude-env"
+  printf 'export OTHER_VAR="keep-me"\nexport CLAUDE_SESSION_ID="old-id"\nexport ANOTHER="also-keep"\n' > "$env_file"
+
+  run bash -c "cd '$TEST_TEMP_DIR' && echo '{\"session_id\":\"new-id\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  [ "$status" -eq 0 ]
+  grep -q 'OTHER_VAR="keep-me"' "$env_file"
+  grep -q 'ANOTHER="also-keep"' "$env_file"
+  grep -q 'CLAUDE_SESSION_ID="new-id"' "$env_file"
+  ! grep -q 'old-id' "$env_file"
+  teardown_temp_dir
+}
