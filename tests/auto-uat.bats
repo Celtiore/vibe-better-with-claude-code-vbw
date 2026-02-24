@@ -708,6 +708,33 @@ EOF
   [[ "$output" == *"does not exist"* ]]
 }
 
+@test "prepare-reverification pre-stages git changes when in a git repo" {
+  cd "$TEST_TEMP_DIR"
+  git init -q
+  git config user.name "VBW Test"
+  git config user.email "vbw-test@example.com"
+  echo "seed" > README.md
+  git add -A
+  git commit -q -m "chore(init): seed"
+
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\nIssues.\n' > "$dir/01-UAT.md"
+  printf 'done' > "$dir/.uat-remediation-stage"
+  git add "$dir/01-UAT.md" "$dir/.uat-remediation-stage"
+  git commit -q -m "chore(phase): add UAT + stage file"
+
+  run bash "$SCRIPTS_DIR/prepare-reverification.sh" "$dir"
+  [ "$status" -eq 0 ]
+
+  # Round file should be staged for addition
+  run git diff --cached --name-only --diff-filter=A
+  [[ "$output" == *"01-UAT-round-01.md"* ]]
+
+  # .uat-remediation-stage should be staged for deletion
+  run git diff --cached --name-only --diff-filter=D
+  [[ "$output" == *".uat-remediation-stage"* ]]
+}
+
 # --- suggest-next needs_reverification routing tests ---
 
 @test "suggest-next execute suggests re-verify when needs_reverification" {

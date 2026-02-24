@@ -94,6 +94,13 @@ mv "$UAT_FILE" "${PHASE_DIR}${ROUND_FILE}"
 # Reset remediation stage
 rm -f "${PHASE_DIR}.uat-remediation-stage"
 
+# Pre-stage changes in git so boundary commits capture them even if the
+# LLM improvises a manual commit instead of using planning-git.sh.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  git add "${PHASE_DIR}${ROUND_FILE}" 2>/dev/null || true
+  git rm -f --quiet "${PHASE_DIR}.uat-remediation-stage" 2>/dev/null || true
+fi
+
 # Output for logging
 echo "archived=$UAT_BASENAME"
 echo "round_file=$ROUND_FILE"

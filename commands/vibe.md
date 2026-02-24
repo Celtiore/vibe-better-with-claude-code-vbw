@@ -86,7 +86,7 @@ STOP. Do NOT manually scan for project state or improvise routing — incorrect 
 |---|---|---|---|
 | 1 | `planning_dir_exists=false` | Init redirect | (redirect, no confirmation) |
 | 2 | `project_exists=false` | Bootstrap | "No project defined. Set one up?" |
-| 3 | `next_phase_state=needs_uat_remediation` | UAT Remediation | "Phase {N} has unresolved UAT issues. Continue with remediation now?" |
+| 3 | `next_phase_state=needs_uat_remediation` | UAT Remediation | auto_uat=true: no confirmation. auto_uat=false: "Phase {N} has unresolved UAT issues. Continue with remediation now?" |
 | 4 | `next_phase_state=needs_reverification` | Re-verify | auto_uat=true: no confirmation. auto_uat=false: "Phase {N} remediation complete. Run re-verification?" |
 | 5 | `milestone_uat_issues=true` | Milestone UAT Recovery | "Milestone {slug} has unresolved UAT issues in {count} phase(s). Unarchive and remediate?" |
 | 6 | `phase_count=0` | Scope | "Project defined but no phases. Scope the work?" |
