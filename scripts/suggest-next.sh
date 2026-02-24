@@ -88,6 +88,22 @@ read_status_field() {
   ' "$file" 2>/dev/null || true
 }
 
+read_deviations_field() {
+  local file="$1"
+  awk '
+    BEGIN { in_fm = 0 }
+    NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
+    in_fm && /^---[[:space:]]*$/ { exit }
+    in_fm && tolower($0) ~ /^[[:space:]]*deviations[[:space:]]*:/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      gsub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "$file" 2>/dev/null || true
+}
+
 latest_non_source_uat() {
   local dir="$1"
   local f
@@ -278,7 +294,7 @@ if [ -d "$PLANNING_DIR" ]; then
       for sf in "$active_phase_dir"/*-SUMMARY.md; do
         [ -f "$sf" ] || continue
         # Extract deviations count from frontmatter
-        d=$(grep -m1 '^deviations:' "$sf" 2>/dev/null | sed 's/deviations:[[:space:]]*//' || true)
+        d=$(read_deviations_field "$sf")
         case "$d" in
           0|"[]"|"") ;;  # zero deviations
           [0-9]*) deviation_count=$((deviation_count + d)) ;;

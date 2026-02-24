@@ -514,3 +514,51 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"/vbw:vibe"* ]]
 }
+
+# --- QA round 4: discussion gate vs auto_uat priority (finding #1) ---
+
+@test "suggest-next execute with auto_uat+discussion gate suggests verify not discuss" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '. + {auto_uat: true, require_phase_discussion: true}' "$TEST_TEMP_DIR/.vbw-planning/config.json" > "$tmp" && mv "$tmp" "$TEST_TEMP_DIR/.vbw-planning/config.json"
+  # Phase 01 completed (from setup), no UAT → unverified
+  # Phase 02 unplanned → needs_discussion
+  mkdir -p "$TEST_TEMP_DIR/.vbw-planning/phases/02-polish"
+
+  run bash "$SCRIPTS_DIR/suggest-next.sh" execute pass
+
+  [ "$status" -eq 0 ]
+  # auto_uat verify should take priority over discussion
+  [[ "$output" == *"/vbw:verify"* ]]
+  # Should NOT suggest discuss (verify suppresses continue which would hit discuss)
+  [ "$(grep -cF '/vbw:discuss' <<< "$output")" -eq 0 ]
+}
+
+# --- QA round 4: deviations frontmatter extraction (finding #2) ---
+
+@test "suggest-next reads deviations from frontmatter only" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  # SUMMARY with deviations in frontmatter AND body text with deviations
+  printf -- '---\nstatus: complete\ndeviations: 0\n---\ndeviations: 5 from original plan\n' > "$dir/01-01-SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/suggest-next.sh" execute pass
+
+  [ "$status" -eq 0 ]
+  # Should report zero deviations (frontmatter value), not body value
+  [[ "$output" == *"zero deviations"* ]] || [ "$(grep -cF 'deviation(s)' <<< "$output")" -eq 0 ]
+}
+
+@test "suggest-next handles CRLF deviations in frontmatter" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  # SUMMARY with CRLF line endings (deviations: 2\r\n)
+  printf -- "---\r\nstatus: complete\r\ndeviations: 2\r\n---\r\nDone.\r\n" > "$dir/01-01-SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/suggest-next.sh" execute pass
+
+  [ "$status" -eq 0 ]
+  # Should parse deviations correctly despite CRLF (AWK gsub strips trailing whitespace)
+  [[ "$output" == *"2 deviation(s)"* ]]
+}
