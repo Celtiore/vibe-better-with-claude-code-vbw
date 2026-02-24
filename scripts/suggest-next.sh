@@ -71,6 +71,10 @@ next_undiscussed=""
 next_preseeded=""
 cfg_auto_uat=false
 has_unverified_phases=false
+first_unverified_phase=""
+first_unverified_slug=""
+next_phase_state=""
+pd_next_phase=""
 
 read_status_field() {
   local file="$1"
@@ -149,6 +153,20 @@ if [ -d "$PLANNING_DIR" ]; then
     # Unverified phases (for mid-milestone auto_uat suppression)
     _pd_has_unverified=$(echo "$_pd_out" | grep -m1 '^has_unverified_phases=' | sed 's/^[^=]*=//' || true)
     [ "${_pd_has_unverified:-}" = "true" ] && has_unverified_phases=true
+
+    # First unverified phase details
+    _pd_first_unverified_phase=$(echo "$_pd_out" | grep -m1 '^first_unverified_phase=' | sed 's/^[^=]*=//' || true)
+    _pd_first_unverified_slug=$(echo "$_pd_out" | grep -m1 '^first_unverified_slug=' | sed 's/^[^=]*=//' || true)
+    [ -n "${_pd_first_unverified_phase:-}" ] && first_unverified_phase="$_pd_first_unverified_phase"
+    [ -n "${_pd_first_unverified_slug:-}" ] && first_unverified_slug="$_pd_first_unverified_slug"
+
+    # Next phase state (for reverification routing)
+    _pd_next_phase_state=$(echo "$_pd_out" | grep -m1 '^next_phase_state=' | sed 's/^[^=]*=//' || true)
+    [ -n "${_pd_next_phase_state:-}" ] && next_phase_state="$_pd_next_phase_state"
+
+    # Next phase number (for reverification suggestions)
+    _pd_next_phase=$(echo "$_pd_out" | grep -m1 '^next_phase=' | sed 's/^[^=]*=//' || true)
+    [ -n "${_pd_next_phase:-}" ] && pd_next_phase="$_pd_next_phase"
 
     # Current-phase UAT issues (distinct from archived milestone UAT)
     _pd_uat_phase=$(echo "$_pd_out" | grep -m1 '^uat_issues_phase=' | sed 's/^[^=]*=//' || true)
@@ -480,10 +498,16 @@ case "$CMD" in
         if [ -z "$current_uat_issues_phase" ] && \
            { { [ "$has_uat" = false ] && [ "$active_phase_plans" -gt 0 ] && { [ "$cfg_auto_uat" = true ] || [ "$cfg_autonomy" = "cautious" ] || [ "$cfg_autonomy" = "standard" ]; }; } \
              || { [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; }; }; then
-          suggest "/vbw:verify -- Walk through changes before continuing"
+          if [ -n "$first_unverified_phase" ]; then
+            suggest "/vbw:verify $first_unverified_phase -- Walk through changes before continuing"
+          else
+            suggest "/vbw:verify -- Walk through changes before continuing"
+          fi
         fi
-        if [ "$all_done" = true ]; then
-          if ! suggest_milestone_recovery; then
+        if [ "$all_done" = true ] || [ "$next_phase_state" = "needs_reverification" ]; then
+          if [ "$next_phase_state" = "needs_reverification" ]; then
+            suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+          elif ! suggest_milestone_recovery; then
             if [ "$deviation_count" -eq 0 ]; then
               suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
             else
@@ -555,10 +579,16 @@ case "$CMD" in
         if [ -z "$current_uat_issues_phase" ] && \
            { { [ "$has_uat" = false ] && [ "$active_phase_plans" -gt 0 ] && { [ "$cfg_auto_uat" = true ] || [ "$cfg_autonomy" = "cautious" ] || [ "$cfg_autonomy" = "standard" ]; }; } \
              || { [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; }; }; then
-          suggest "/vbw:verify -- Walk through changes manually"
+          if [ -n "$first_unverified_phase" ]; then
+            suggest "/vbw:verify $first_unverified_phase -- Walk through changes manually"
+          else
+            suggest "/vbw:verify -- Walk through changes manually"
+          fi
         fi
-        if [ "$all_done" = true ]; then
-          if ! suggest_milestone_recovery; then
+        if [ "$all_done" = true ] || [ "$next_phase_state" = "needs_reverification" ]; then
+          if [ "$next_phase_state" = "needs_reverification" ]; then
+            suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+          elif ! suggest_milestone_recovery; then
             if [ "$deviation_count" -eq 0 ]; then
               suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
             else
@@ -693,7 +723,11 @@ case "$CMD" in
         suggest "/vbw:fix -- Fix minor UAT issues in $current_uat_issues_label"
       fi
     elif [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; then
-      suggest "/vbw:verify -- Verify completed phases before continuing"
+      if [ -n "$first_unverified_phase" ]; then
+        suggest "/vbw:verify $first_unverified_phase -- Verify completed phases before continuing"
+      else
+        suggest "/vbw:verify -- Verify completed phases before continuing"
+      fi
     elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
       target="${next_unbuilt:-$next_unplanned}"
       # If next phase needs discussion, suggest discuss (suppress continue)
@@ -751,7 +785,11 @@ case "$CMD" in
         fi
       fi
     elif [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; then
-      suggest "/vbw:verify -- Verify completed phases before continuing"
+      if [ -n "$first_unverified_phase" ]; then
+        suggest "/vbw:verify $first_unverified_phase -- Verify completed phases before continuing"
+      else
+        suggest "/vbw:verify -- Verify completed phases before continuing"
+      fi
     elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
       target="${next_unbuilt:-$next_unplanned}"
       if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
