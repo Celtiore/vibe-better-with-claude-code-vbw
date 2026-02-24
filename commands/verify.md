@@ -42,7 +42,11 @@ Phase state:
 
 - Not initialized (no .vbw-planning/ dir): STOP "Run /vbw:init first."
 - No SUMMARY.md in phase dir: STOP "Phase {N} has no completed plans. Run /vbw:vibe first."
-- **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context above. Use `next_phase` and `next_phase_slug` for the target phase. To find the first phase needing UAT: scan phase dirs for first with `*-SUMMARY.md` but no `*-UAT.md`. Found: announce "Auto-detected Phase {N} ({slug})". All verified: STOP "All phases have UAT results. Specify: `/vbw:verify N`"
+- **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context above. Use `next_phase` and `next_phase_slug` for the target phase.
+  - If `next_phase_state=needs_reverification`: use `next_phase` directly — this is the phase that just completed remediation and needs re-verification.
+  - If `first_unverified_phase` is set: use that phase directly — this is the first fully-built phase without a terminal UAT.
+  - Fallback: scan phase dirs for first with `*-SUMMARY.md` but no `*-UAT.md`.
+  - Found: announce "Auto-detected Phase {N} ({slug})". All verified: STOP "All phases have UAT results. Specify: `/vbw:verify N`"
 
 ## Steps
 

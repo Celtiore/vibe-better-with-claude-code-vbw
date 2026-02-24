@@ -87,18 +87,21 @@ STOP. Do NOT manually scan for project state or improvise routing — incorrect 
 | 1 | `planning_dir_exists=false` | Init redirect | (redirect, no confirmation) |
 | 2 | `project_exists=false` | Bootstrap | "No project defined. Set one up?" |
 | 3 | `next_phase_state=needs_uat_remediation` | UAT Remediation | "Phase {N} has unresolved UAT issues. Continue with remediation now?" |
-| 4 | `milestone_uat_issues=true` | Milestone UAT Recovery | "Milestone {slug} has unresolved UAT issues in {count} phase(s). Unarchive and remediate?" |
-| 5 | `phase_count=0` | Scope | "Project defined but no phases. Scope the work?" |
-| 6 | `config_auto_uat=true` AND `has_unverified_phases=true` AND `next_phase_state` != `all_done` | Verify | (no confirmation — auto_uat intent, mid-milestone) |
-| 7 | `next_phase_state=needs_discussion` | Discuss | "Phase {N} needs discussion before planning. Start discussion?" |
-| 8 | `next_phase_state=needs_plan_and_execute` | Plan + Execute | "Phase {N} needs planning and execution. Start?" |
-| 9 | `next_phase_state=needs_execute` | Execute | "Phase {N} is planned. Execute it?" |
-| 10 | `next_phase_state=all_done` AND `config_auto_uat=true` AND `has_unverified_phases=true` | Verify | (no confirmation — auto_uat intent) |
-| 11 | `next_phase_state=all_done` | Archive | "All phases complete. Run audit and archive?" |
+| 4 | `next_phase_state=needs_reverification` | Re-verify | auto_uat=true: no confirmation. auto_uat=false: "Phase {N} remediation complete. Run re-verification?" |
+| 5 | `milestone_uat_issues=true` | Milestone UAT Recovery | "Milestone {slug} has unresolved UAT issues in {count} phase(s). Unarchive and remediate?" |
+| 6 | `phase_count=0` | Scope | "Project defined but no phases. Scope the work?" |
+| 7 | `config_auto_uat=true` AND `has_unverified_phases=true` AND `next_phase_state` != `all_done` | Verify | (no confirmation — auto_uat intent, mid-milestone) |
+| 8 | `next_phase_state=needs_discussion` | Discuss | "Phase {N} needs discussion before planning. Start discussion?" |
+| 9 | `next_phase_state=needs_plan_and_execute` | Plan + Execute | "Phase {N} needs planning and execution. Start?" |
+| 10 | `next_phase_state=needs_execute` | Execute | "Phase {N} is planned. Execute it?" |
+| 11 | `next_phase_state=all_done` AND `config_auto_uat=true` AND `has_unverified_phases=true` | Verify | (no confirmation — auto_uat intent) |
+| 12 | `next_phase_state=all_done` | Archive | "All phases complete. Run audit and archive?" |
 
-**auto_uat mid-milestone:** When `config_auto_uat=true` and `has_unverified_phases=true` but `next_phase_state` is NOT `all_done`, route to Verify mode before continuing to the next phase. This ensures each completed phase gets UAT verification immediately after execution, even when later phases still need work. After verification completes, the next `/vbw:vibe` call re-runs phase-detect and routes to the next pending phase.
+**Re-verify after remediation:** When `next_phase_state=needs_reverification`, remediation is complete but the phase hasn't been re-verified. Run `bash {plugin-root}/scripts/prepare-reverification.sh {phase-dir}` to archive the old UAT and reset the remediation stage, then route to `/vbw:verify {phase-number}`. The `needs_reverification` state fires regardless of `auto_uat` — remediation always requires re-verification. The `auto_uat` flag only controls whether the user is prompted for confirmation.
 
-**auto_uat + all_done:** When `config_auto_uat=true` and `has_unverified_phases=true`, skip the Archive confirmation and route directly to Verify mode. Verify auto-detects the first phase with SUMMARY.md but no UAT.md. After verification completes, the next `/vbw:vibe` call re-runs phase-detect — if more unverified phases remain, it routes to Verify again; otherwise it falls through to Archive (priority 11).
+**auto_uat mid-milestone:** When `config_auto_uat=true` and `has_unverified_phases=true` but `next_phase_state` is NOT `all_done`, route to Verify mode before continuing to the next phase. Use `first_unverified_phase` and `first_unverified_slug` from phase-detect output to target the specific phase: `/vbw:verify {first_unverified_phase}`. This ensures each completed phase gets UAT verification immediately after execution, even when later phases still need work. After verification completes, the next `/vbw:vibe` call re-runs phase-detect and routes to the next pending phase.
+
+**auto_uat + all_done:** When `config_auto_uat=true` and `has_unverified_phases=true`, skip the Archive confirmation and route directly to Verify mode. Use `first_unverified_phase` from phase-detect output to target the specific phase: `/vbw:verify {first_unverified_phase}`. After verification completes, the next `/vbw:vibe` call re-runs phase-detect — if more unverified phases remain, it routes to Verify again; otherwise it falls through to Archive (priority 12).
 
 **all_done + natural language:** If $ARGUMENTS describe new work (bug, feature, task) and state is `all_done`, route to Add Phase mode instead of Archive. Add Phase handles codebase context loading and research internally — do NOT spawn an Explore agent or do ad-hoc research before entering the mode.
 
