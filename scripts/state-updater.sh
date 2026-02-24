@@ -4,7 +4,9 @@ set -u
 # Non-blocking, fail-open (always exit 0)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/uat-utils.sh"
+if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/uat-utils.sh"
+fi
 
 planning_root_from_phase_dir() {
   local phase_dir="$1"

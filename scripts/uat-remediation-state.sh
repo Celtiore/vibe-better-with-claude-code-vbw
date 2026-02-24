@@ -18,6 +18,11 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/uat-utils.sh"
+fi
+
 CMD="${1:-}"
 PHASE_DIR="${2:-}"
 SEVERITY_ARG="${3:-}"
@@ -120,7 +125,11 @@ case "$CMD" in
     # Appends UAT issues to the existing CONTEXT (preserving original
     # discussion context) and adds pre_seeded: true to frontmatter.
     context_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | sort | head -1)
-    uat_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-UAT.md' ! -name '*SOURCE-UAT.md' 2>/dev/null | sort | tail -1)
+    if type latest_non_source_uat &>/dev/null; then
+      uat_file=$(latest_non_source_uat "$PHASE_DIR")
+    else
+      uat_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-UAT.md' ! -name '*SOURCE-UAT.md' 2>/dev/null | sort | tail -1)
+    fi
 
     if [ -n "$uat_file" ] && [ -f "$uat_file" ]; then
       uat_content=$(cat "$uat_file")

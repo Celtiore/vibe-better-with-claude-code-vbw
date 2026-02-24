@@ -415,7 +415,7 @@ Then Read the protocol file and execute Steps 2-5 as written.
 
 **Guard:** Initialized, phase has `*-SUMMARY.md` files.
 No SUMMARY.md: STOP "Phase {N} has no completed plans. Run /vbw:vibe first."
-**Phase auto-detection:** First phase with `*-SUMMARY.md` but no `*-UAT.md`. All verified: STOP "All phases have UAT results. Specify: `/vbw:verify N`"
+**Phase auto-detection:** First phase with `*-SUMMARY.md` but no canonical `*-UAT.md` (exclude `*-SOURCE-UAT.md` copies). All verified: STOP "All phases have UAT results. Specify: `/vbw:verify N`"
 
 **Steps:**
 1. Read ``!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/commands/verify.md` protocol.
