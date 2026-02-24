@@ -99,9 +99,9 @@ load test_helper
     local reader_count
     reader_count=$(grep -c 'echo /tmp/.vbw-plugin-root-link-' "$file" 2>/dev/null || true)
     [ "$reader_count" -gt 0 ] || continue
-    # Preamble must use CLAUDE_SESSION_ID:-default
-    grep -q 'CLAUDE_SESSION_ID:-default' "$file" || \
-      { echo "$(basename "$file"): preamble missing CLAUDE_SESSION_ID:-default session key"; return 1; }
+    # Preamble must assign SESSION_KEY with CLAUDE_SESSION_ID:-default
+    grep -q 'SESSION_KEY="${CLAUDE_SESSION_ID:-default}"' "$file" || \
+      { echo "$(basename "$file"): preamble missing SESSION_KEY=\"\${CLAUDE_SESSION_ID:-default}\" assignment"; return 1; }
     # Reader references must use CLAUDE_SESSION_ID:-default
     local mismatched
     mismatched=$(grep 'echo /tmp/.vbw-plugin-root-link-' "$file" | grep -v 'CLAUDE_SESSION_ID:-default' || true)

@@ -295,7 +295,7 @@ for rel in "${TARGET_COMMANDS[@]}"; do
 done
 
 # Check 12: no SHA1 session key derivation in commands (reverted pattern)
-sha1_session_count=$(grep -R -c 'SESSION_BASE.*shasum\|shasum.*SESSION' "$COMMANDS_DIR" 2>/dev/null | awk -F: '{s+=$NF} END{print s+0}')
+sha1_session_count=$({ grep -R -c 'SESSION_BASE.*shasum\|shasum.*SESSION' "$COMMANDS_DIR" 2>/dev/null || true; } | awk -F: '{s+=$NF} END{print s+0}')
 if [ "$sha1_session_count" -eq 0 ]; then
   pass "no SHA1 session key derivation in commands"
 else
