@@ -279,7 +279,7 @@ else
   fail "execute-protocol missing safe fallback for canonicalization failure"
 fi
 
-# Check 11: targeted command preambles use deterministic session key fallback
+# Check 11: targeted command preambles use CLAUDE_SESSION_ID:-default session key
 TARGET_COMMANDS=(
   config.md debug.md discuss.md fix.md help.md init.md list-todos.md map.md qa.md
   research.md resume.md skills.md status.md todo.md update.md verify.md vibe.md whats-new.md
@@ -287,18 +287,20 @@ TARGET_COMMANDS=(
 for rel in "${TARGET_COMMANDS[@]}"; do
   file="$COMMANDS_DIR/$rel"
   base="$(basename "$rel" .md)"
-  if grep -q 'SESSION_BASE="${CLAUDE_SESSION_ID:-}"' "$file"; then
-    pass "$base: preamble uses deterministic SESSION_BASE fallback"
+  if grep -q 'SESSION_KEY="${CLAUDE_SESSION_ID:-default}"' "$file"; then
+    pass "$base: preamble uses CLAUDE_SESSION_ID:-default session key"
   else
-    fail "$base: missing deterministic SESSION_BASE fallback"
-  fi
-
-  if grep -q 'SESSION_KEY=$(printf '\''%s'\'' "$SESSION_BASE" | shasum | awk '\''{print $1}'\'' | cut -c1-16)' "$file"; then
-    pass "$base: preamble hashes SESSION_BASE into SESSION_KEY"
-  else
-    fail "$base: missing hashed SESSION_KEY derivation"
+    fail "$base: missing CLAUDE_SESSION_ID:-default session key in preamble"
   fi
 done
+
+# Check 12: no SHA1 session key derivation in commands (reverted pattern)
+sha1_session_count=$(grep -R -c 'SESSION_BASE.*shasum\|shasum.*SESSION' "$COMMANDS_DIR" 2>/dev/null | awk -F: '{s+=$NF} END{print s+0}')
+if [ "$sha1_session_count" -eq 0 ]; then
+  pass "no SHA1 session key derivation in commands"
+else
+  fail "$sha1_session_count SHA1 session key derivation(s) still present in commands"
+fi
 
 echo ""
 echo "==============================="
