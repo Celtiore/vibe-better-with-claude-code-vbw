@@ -31,7 +31,9 @@ fi
 # Reuse extract_status_value pattern from phase-detect.sh
 extract_status_value() {
   local file="$1"
-  awk '
+  local result
+  # Try frontmatter first
+  result=$(awk '
     BEGIN { in_fm = 0 }
     NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
     in_fm && /^---[[:space:]]*$/ { exit }
@@ -42,7 +44,20 @@ extract_status_value() {
       print tolower(value)
       exit
     }
-  ' "$file" 2>/dev/null || true
+  ' "$file" 2>/dev/null || true)
+  # Fallback: scan body for status: line (brownfield/manual UATs)
+  if [ -z "$result" ]; then
+    result=$(awk '
+      tolower($0) ~ /^[[:space:]]*status[[:space:]]*:/ {
+        value = $0
+        sub(/^[^:]*:[[:space:]]*/, "", value)
+        gsub(/[[:space:]]+$/, "", value)
+        print tolower(value)
+        exit
+      }
+    ' "$file" 2>/dev/null || true)
+  fi
+  printf '%s' "$result"
 }
 
 # Find latest non-SOURCE UAT (same pattern as phase-detect.sh)
@@ -82,6 +97,17 @@ fi
 UAT_STATUS=$(extract_status_value "$UAT_FILE")
 if [ "$UAT_STATUS" != "issues_found" ]; then
   echo "Error: UAT status is '${UAT_STATUS:-empty}', not 'issues_found' — refusing to archive" >&2
+  exit 1
+fi
+
+# Check remediation stage — only archive when stage=done
+_REM_STAGE="none"
+_stage_file="${PHASE_DIR%/}/.uat-remediation-stage"
+if [ -f "$_stage_file" ]; then
+  _REM_STAGE=$(tr -d '[:space:]' < "$_stage_file")
+fi
+if [ "$_REM_STAGE" != "done" ]; then
+  echo "Error: remediation stage is '${_REM_STAGE}', not 'done' — remediation still in progress" >&2
   exit 1
 fi
 

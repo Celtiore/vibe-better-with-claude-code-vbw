@@ -78,7 +78,9 @@ pd_next_phase=""
 
 read_status_field() {
   local file="$1"
-  awk '
+  local result
+  # Try frontmatter first
+  result=$(awk '
     BEGIN { in_fm = 0 }
     NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
     in_fm && /^---[[:space:]]*$/ { exit }
@@ -89,7 +91,20 @@ read_status_field() {
       print tolower(value)
       exit
     }
-  ' "$file" 2>/dev/null || true
+  ' "$file" 2>/dev/null || true)
+  # Fallback: scan body for status: line (brownfield/manual UATs)
+  if [ -z "$result" ]; then
+    result=$(awk '
+      tolower($0) ~ /^[[:space:]]*status[[:space:]]*:/ {
+        value = $0
+        sub(/^[^:]*:[[:space:]]*/, "", value)
+        gsub(/[[:space:]]+$/, "", value)
+        print tolower(value)
+        exit
+      }
+    ' "$file" 2>/dev/null || true)
+  fi
+  printf '%s' "$result"
 }
 
 read_deviations_field() {
@@ -710,7 +725,9 @@ case "$CMD" in
     ;;
 
   status)
-    if [ "$all_done" = true ]; then
+    if [ "$next_phase_state" = "needs_reverification" ]; then
+      suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+    elif [ "$all_done" = true ]; then
       if ! suggest_milestone_recovery; then
         if [ "$deviation_count" -eq 0 ]; then
           suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
@@ -776,7 +793,9 @@ case "$CMD" in
     ;;
 
   resume)
-    if [ -n "$current_uat_issues_phase" ]; then
+    if [ "$next_phase_state" = "needs_reverification" ]; then
+      suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+    elif [ -n "$current_uat_issues_phase" ]; then
       if [ "$current_uat_major_or_higher" = true ]; then
         suggest "/vbw:vibe -- Remediate UAT issues for $current_uat_issues_label"
       else

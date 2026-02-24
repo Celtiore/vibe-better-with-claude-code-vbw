@@ -16,7 +16,9 @@ list_child_dirs_sorted() {
 
 extract_status_value() {
   local file="$1"
-  awk '
+  local result
+  # Try frontmatter first
+  result=$(awk '
     BEGIN { in_fm = 0 }
     NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
     in_fm && /^---[[:space:]]*$/ { exit }
@@ -27,7 +29,20 @@ extract_status_value() {
       print tolower(value)
       exit
     }
-  ' "$file" 2>/dev/null || true
+  ' "$file" 2>/dev/null || true)
+  # Fallback: scan body for status: line (brownfield/manual UATs)
+  if [ -z "$result" ]; then
+    result=$(awk '
+      tolower($0) ~ /^[[:space:]]*status[[:space:]]*:/ {
+        value = $0
+        sub(/^[^:]*:[[:space:]]*/, "", value)
+        gsub(/[[:space:]]+$/, "", value)
+        print tolower(value)
+        exit
+      }
+    ' "$file" 2>/dev/null || true)
+  fi
+  printf '%s' "$result"
 }
 
 latest_non_source_uat() {

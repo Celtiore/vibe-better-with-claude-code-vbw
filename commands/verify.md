@@ -57,7 +57,14 @@ Phase state:
 - Read all `*-SUMMARY.md` files in the phase directory
 - Read corresponding `*-PLAN.md` files for `must_haves` and success criteria
 
-### 2. Check for existing UAT session (resume support)
+### 2. Handle re-verification state
+
+- If `next_phase_state=needs_reverification` (from Context above):
+  - Run `prepare-reverification.sh {phase-dir}` to archive the old UAT and reset remediation stage
+  - Display: `Archived previous UAT → {round_file}. Starting fresh re-verification.`
+  - Continue to Step 3 (generate new tests) — do NOT resume the old UAT
+
+### 3. Check for existing UAT session (resume support)
 
 - If `{phase}-UAT.md` exists in the phase directory:
   - Read it, find the first test without a result (Result line is empty or missing)
@@ -65,7 +72,7 @@ Phase state:
   - Jump to the CHECKPOINT loop at the resume point
 - If all tests already have results: display the summary, STOP
 
-### 3. Generate test scenarios from SUMMARY.md files
+### 4. Generate test scenarios from SUMMARY.md files
 
 For each completed plan's SUMMARY.md:
 - Read what was built, files modified, and the plan's `must_haves`
@@ -90,7 +97,7 @@ Write the initial `{phase}-UAT.md` in the phase directory using the `templates/U
 - Populate YAML frontmatter: phase, plan_count, status=in_progress, started=today, total_tests
 - Write all test entries with Result fields empty
 
-### 4. CHECKPOINT loop (one test at a time — conversational, blocking)
+### 5. CHECKPOINT loop (one test at a time — conversational, blocking)
 
 **This is a conversational loop. Present ONE test, then STOP and wait for the user to respond. Do NOT present multiple tests at once. Do NOT skip ahead. Do NOT end the session after presenting a test.**
 
@@ -121,7 +128,7 @@ The tool automatically provides a freeform "Other" option for the user to descri
 
 After response: process (Step 5), persist (Step 7), then present the NEXT test. Repeat until all tests are done, then go to Step 8.
 
-### 5. Response mapping
+### 6. Response mapping
 
 Map the AskUserQuestion response:
 
@@ -156,7 +163,7 @@ Evaluate in this order:
 - **Pass-intent only:** Pass-intent present, not negated, and no issue observation in post-separator text → record as passed.
 - **Anything else:** treat the entire response text as an issue description (Step 6).
 
-### 6. Issue handling (when response = issue)
+### 7. Issue handling (when response = issue)
 
 The user's response text IS the issue description. Infer severity from keywords (never ask the user):
 
@@ -174,7 +181,7 @@ Display:
 Issue recorded (severity: {level}). Final next-step routing shown at UAT summary.
 ```
 
-### 6a. Discovered issue handling (observations during passing/skipping tests)
+### 7a. Discovered issue handling (observations during passing/skipping tests)
 
 When a user passes or skips a test but also mentions a separate bug, issue, or observation unrelated to the test's expected behavior, capture it as a **discovered issue**.
 
@@ -205,13 +212,13 @@ Display:
 Discovered issue D{N} recorded (severity: {level}).
 ```
 
-### 7. After each response: persist immediately
+### 8. After each response: persist immediately
 
 - Update `{phase}-UAT.md` with the result for this test
 - Write the file to disk (survives /clear)
 - Display progress: `✓ {completed}/{total} tests`
 
-### 8. Session complete
+### 9. Session complete
 
 - Update `{phase}-UAT.md` frontmatter: status (complete or issues_found), completed date, final counts
 - Display summary:

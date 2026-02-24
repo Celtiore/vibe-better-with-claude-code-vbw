@@ -370,7 +370,7 @@ EOF
 
 # --- QA round 3: frontmatter-scoped status parsing (finding #1) ---
 
-@test "phase-detect ignores body-only status: passed without frontmatter" {
+@test "phase-detect detects body-only status: passed without frontmatter" {
   cd "$TEST_TEMP_DIR"
   local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
   # UAT file with NO frontmatter — status: passed appears in body only
@@ -378,8 +378,8 @@ EOF
 
   run bash "$SCRIPTS_DIR/phase-detect.sh"
   [ "$status" -eq 0 ]
-  # Without frontmatter, status should not be recognized → phase is unverified
-  [[ "$output" == *"has_unverified_phases=true"* ]]
+  # Body fallback detects status: passed → phase is verified
+  [[ "$output" == *"has_unverified_phases=false"* ]]
 }
 
 @test "phase-detect reads status from frontmatter correctly" {
@@ -393,7 +393,7 @@ EOF
   [[ "$output" == *"has_unverified_phases=false"* ]]
 }
 
-@test "suggest-next ignores body-only status: passed in UAT without frontmatter" {
+@test "suggest-next detects body-only status: passed in UAT without frontmatter" {
   cd "$TEST_TEMP_DIR"
   local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
   # UAT file with NO frontmatter — status line in body
@@ -402,8 +402,8 @@ EOF
   run bash "$SCRIPTS_DIR/suggest-next.sh" qa pass
 
   [ "$status" -eq 0 ]
-  # has_uat should be false (no frontmatter status) → verify should be suggested
-  [[ "$output" == *"/vbw:verify"* ]]
+  # Body fallback detects status: passed → no verify needed
+  [ "$(grep -cF '/vbw:verify' <<< "$output")" -eq 0 ]
 }
 
 # --- QA round 3: cross-phase verify contradiction (finding #2) ---
@@ -761,4 +761,77 @@ EOF
   [[ "$output" == *"has_unverified_phases=true"* ]]
   # No reverification state
   [[ "$output" != *"needs_reverification"* ]]
+}
+
+# --- QA round 5 finding 1: status/resume prioritise reverification over remediation ---
+
+@test "suggest-next status suggests re-verify not remediation when needs_reverification" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  # UAT with issues_found (current_uat_issues_phase would be set)
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\nFailed tests.\n' > "$dir/01-UAT.md"
+  # Remediation done → needs_reverification
+  printf 'done' > "$dir/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/suggest-next.sh" status
+
+  [ "$status" -eq 0 ]
+  # Should suggest re-verify, NOT the remediation action
+  [[ "$output" == *"Re-verify"* ]] || [[ "$output" == *"re-verify"* ]]
+  [ "$(grep -cF 'Remediate UAT' <<< "$output")" -eq 0 ]
+}
+
+@test "suggest-next resume suggests re-verify not remediation when needs_reverification" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\nFailed tests.\n' > "$dir/01-UAT.md"
+  printf 'done' > "$dir/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/suggest-next.sh" resume
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Re-verify"* ]] || [[ "$output" == *"re-verify"* ]]
+  [ "$(grep -cF 'Remediate UAT' <<< "$output")" -eq 0 ]
+}
+
+# --- QA round 5 finding 2: prepare-reverification.sh stage guard ---
+
+@test "prepare-reverification refuses when remediation stage not done" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\nFailed.\n' > "$dir/01-UAT.md"
+  # Stage is execute (not done)
+  printf 'execute' > "$dir/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/prepare-reverification.sh" "$dir"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"remediation still in progress"* ]]
+}
+
+@test "prepare-reverification refuses when no stage file exists" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\nFailed.\n' > "$dir/01-UAT.md"
+  # No .uat-remediation-stage file
+
+  run bash "$SCRIPTS_DIR/prepare-reverification.sh" "$dir"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"remediation still in progress"* ]]
+}
+
+@test "prepare-reverification succeeds when stage is done" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\nFailed.\n' > "$dir/01-UAT.md"
+  printf 'done' > "$dir/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/prepare-reverification.sh" "$dir"
+
+  [ "$status" -eq 0 ]
+  # Old UAT should be archived
+  [ ! -f "$dir/01-UAT.md" ]
+  # Round file should exist
+  ls "$dir"/01-UAT-round-*.md 2>/dev/null | grep -q .
 }
