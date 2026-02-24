@@ -24,9 +24,17 @@ _VBW_SESSION_ID=""
 if [ -n "$HOOK_INPUT" ]; then
   _VBW_SESSION_ID=$(printf '%s' "$HOOK_INPUT" | jq -r '.session_id // empty' 2>/dev/null) || _VBW_SESSION_ID=""
 fi
+# Validate session_id: only allow safe characters (defense in depth)
+if [ -n "$_VBW_SESSION_ID" ] && ! printf '%s' "$_VBW_SESSION_ID" | grep -qE '^[a-zA-Z0-9._-]+$'; then
+  _VBW_SESSION_ID=""
+fi
 if [ -n "$_VBW_SESSION_ID" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  # Only write if not already present in the env file
-  if ! grep -q "^export CLAUDE_SESSION_ID=" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+  _EXISTING_SID=$(grep '^export CLAUDE_SESSION_ID=' "$CLAUDE_ENV_FILE" 2>/dev/null | head -1 | sed 's/^export CLAUDE_SESSION_ID="\(.*\)"$/\1/' || true)
+  if [ -z "$_EXISTING_SID" ]; then
+    printf 'export CLAUDE_SESSION_ID="%s"\n' "$_VBW_SESSION_ID" >> "$CLAUDE_ENV_FILE"
+  elif [ "$_EXISTING_SID" != "$_VBW_SESSION_ID" ]; then
+    # Replace stale session_id from a previous session
+    sed -i '' '/^export CLAUDE_SESSION_ID=/d' "$CLAUDE_ENV_FILE" 2>/dev/null || true
     printf 'export CLAUDE_SESSION_ID="%s"\n' "$_VBW_SESSION_ID" >> "$CLAUDE_ENV_FILE"
   fi
 fi

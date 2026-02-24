@@ -18,18 +18,33 @@ load test_helper
   teardown_temp_dir
 }
 
-@test "session-start: does not duplicate session_id if already in CLAUDE_ENV_FILE" {
+@test "session-start: keeps same session_id if already matches" {
   setup_temp_dir
   create_test_config
 
   local env_file="$TEST_TEMP_DIR/.claude-env"
-  echo 'export CLAUDE_SESSION_ID="existing-id"' > "$env_file"
+  echo 'export CLAUDE_SESSION_ID="same-id"' > "$env_file"
 
-  run bash -c "cd '$TEST_TEMP_DIR' && echo '{\"session_id\":\"new-id\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  run bash -c "cd '$TEST_TEMP_DIR' && echo '{\"session_id\":\"same-id\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
   [ "$status" -eq 0 ]
-  # Should still have original, not new
-  grep -q 'existing-id' "$env_file"
-  # Should not have duplicate entries
+  grep -q 'same-id' "$env_file"
+  local count
+  count=$(grep -c 'CLAUDE_SESSION_ID' "$env_file")
+  [ "$count" -eq 1 ]
+  teardown_temp_dir
+}
+
+@test "session-start: replaces stale session_id with new one" {
+  setup_temp_dir
+  create_test_config
+
+  local env_file="$TEST_TEMP_DIR/.claude-env"
+  echo 'export CLAUDE_SESSION_ID="old-session"' > "$env_file"
+
+  run bash -c "cd '$TEST_TEMP_DIR' && echo '{\"session_id\":\"new-session\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  [ "$status" -eq 0 ]
+  grep -q 'new-session' "$env_file"
+  ! grep -q 'old-session' "$env_file"
   local count
   count=$(grep -c 'CLAUDE_SESSION_ID' "$env_file")
   [ "$count" -eq 1 ]
@@ -82,5 +97,46 @@ load test_helper
   run bash -c "cd '$TEST_TEMP_DIR' && echo '{\"session_id\":\"a4b692e2-8f3a-4c71-b5d1-9e2f8a3c6d4e\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
   [ "$status" -eq 0 ]
   grep -q '^export CLAUDE_SESSION_ID="a4b692e2-8f3a-4c71-b5d1-9e2f8a3c6d4e"$' "$env_file"
+  teardown_temp_dir
+}
+
+@test "session-start: handles malformed JSON stdin gracefully" {
+  setup_temp_dir
+  create_test_config
+
+  local env_file="$TEST_TEMP_DIR/.claude-env"
+  : > "$env_file"
+
+  run bash -c "cd '$TEST_TEMP_DIR' && echo '{truncated' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  [ "$status" -eq 0 ]
+  ! grep -q 'CLAUDE_SESSION_ID' "$env_file"
+  teardown_temp_dir
+}
+
+@test "session-start: rejects session_id with shell metacharacters" {
+  setup_temp_dir
+  create_test_config
+
+  local env_file="$TEST_TEMP_DIR/.claude-env"
+  : > "$env_file"
+
+  # Test double-quote injection
+  run bash -c "cd '$TEST_TEMP_DIR' && echo '{\"session_id\":\"abc\\\"; echo PWNED; #\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  [ "$status" -eq 0 ]
+  ! grep -q 'CLAUDE_SESSION_ID' "$env_file"
+  ! grep -q 'PWNED' "$env_file"
+  teardown_temp_dir
+}
+
+@test "session-start: rejects session_id with command substitution" {
+  setup_temp_dir
+  create_test_config
+
+  local env_file="$TEST_TEMP_DIR/.claude-env"
+  : > "$env_file"
+
+  run bash -c "cd '$TEST_TEMP_DIR' && printf '{\"session_id\":\"\$(whoami)\"}' | CLAUDE_ENV_FILE='$env_file' bash '$SCRIPTS_DIR/session-start.sh'"
+  [ "$status" -eq 0 ]
+  ! grep -q 'CLAUDE_SESSION_ID' "$env_file"
   teardown_temp_dir
 }
