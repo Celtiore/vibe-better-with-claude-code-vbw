@@ -250,6 +250,17 @@ bash scripts/bump-version.sh --verify
 
 `/vbw:release` lives in `internal/release.md` — outside the `commands/` directory so it's never auto-discovered by the plugin system. Marketplace consumers don't see it.
 
+#### Release authorization (CODEOWNERS + branch protection)
+
+Release is a two-phase, approval-gated workflow:
+
+1. Run `/vbw:release` to prepare `release/v{version}` and open a **draft** PR to `main`.
+2. Mark the PR ready for review and get required approvals from reviewers listed in `.github/CODEOWNERS` (source of truth).
+3. Merge the release PR to `main` under branch protection.
+4. On updated local `main`, run `/vbw:release --finalize` to create/push the tag and GitHub release.
+
+**Authorization rule:** Release is authorized by the approved-and-merged PR. If the release PR is not approved/merged, do **not** run finalize.
+
 To make it available locally, copy it to your personal commands directory:
 
 ```bash
