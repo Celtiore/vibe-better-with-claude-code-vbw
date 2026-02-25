@@ -13,6 +13,40 @@ PLANNING_DIR=".vbw-planning"
 . "$(dirname "$0")/resolve-claude-dir.sh"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# --- Capture session_id from hook stdin JSON ---
+# Claude Code passes a JSON object on stdin to SessionStart hooks containing
+# session_id. Since CLAUDE_SESSION_ID was removed from the env (upstream
+# regression anthropics/claude-code#24371), we extract it here and inject it
+# via CLAUDE_ENV_FILE so command templates get per-session isolation.
+# Stdin is ephemeral — must be consumed before any other read.
+# Use timeout to avoid blocking when stdin is not piped (e.g., in tests).
+if [ -t 0 ]; then
+  HOOK_INPUT=""
+else
+  HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""
+fi
+_VBW_SESSION_ID=""
+if [ -n "$HOOK_INPUT" ]; then
+  _VBW_SESSION_ID=$(printf '%s' "$HOOK_INPUT" | jq -r '.session_id // empty' 2>/dev/null) || _VBW_SESSION_ID=""
+fi
+# Validate session_id: only allow safe characters (defense in depth)
+# Use [[ =~ ]] which operates on the full string, not line-by-line like grep
+if [ -n "$_VBW_SESSION_ID" ] && [[ "$_VBW_SESSION_ID" =~ [^a-zA-Z0-9._-] ]]; then
+  _VBW_SESSION_ID=""
+fi
+if [ -n "$_VBW_SESSION_ID" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  _EXISTING_SID=$(grep '^export CLAUDE_SESSION_ID=' "$CLAUDE_ENV_FILE" 2>/dev/null | head -1 | sed 's/^export CLAUDE_SESSION_ID=//; s/^"//; s/"$//' || true)
+  if [ -z "$_EXISTING_SID" ]; then
+    printf 'export CLAUDE_SESSION_ID="%s"\n' "$_VBW_SESSION_ID" >> "$CLAUDE_ENV_FILE"
+  elif [ "$_EXISTING_SID" != "$_VBW_SESSION_ID" ]; then
+    # Replace stale session_id from a previous session (portable: no sed -i)
+    _tmp_env=$(mktemp 2>/dev/null || echo "${CLAUDE_ENV_FILE}.tmp")
+    grep -v '^export CLAUDE_SESSION_ID=' "$CLAUDE_ENV_FILE" > "$_tmp_env" 2>/dev/null || true
+    mv "$_tmp_env" "$CLAUDE_ENV_FILE" 2>/dev/null || true
+    printf 'export CLAUDE_SESSION_ID="%s"\n' "$_VBW_SESSION_ID" >> "$CLAUDE_ENV_FILE"
+  fi
+fi
+
 find_phase_dir_by_num() {
   _planning_dir="$1"
   _phase_num="$2"
