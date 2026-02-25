@@ -250,6 +250,51 @@ bash scripts/bump-version.sh --verify
 
 `/vbw:release` lives in `internal/release.md` — outside the `commands/` directory so it's never auto-discovered by the plugin system. Marketplace consumers don't see it.
 
+#### Release authorization (CODEOWNERS + branch protection)
+
+Release is a two-phase, approval-gated workflow:
+
+1. Run `/vbw:release` to prepare `release/v{version}` and open a **draft** PR to `main`.
+2. Mark the PR ready for review and get required approvals from reviewers listed in `.github/CODEOWNERS` (source of truth).
+3. Merge the release PR to `main` under branch protection.
+4. On updated local `main`, run `/vbw:release --finalize` to create/push the tag and GitHub release.
+
+**Authorization rule:** Release is authorized by the approved-and-merged PR. If the release PR is not approved/merged, do **not** run finalize.
+
+#### Release flags quick reference (for contributors)
+
+Use these flags with `/vbw:release`:
+
+| Flag | Phase | Meaning |
+| ---- | ----- | ------- |
+| *(none)* | Prepare only | Default is a patch bump (e.g., `1.2.3 -> 1.2.4`). |
+| `--finalize` | Finalize only | Run post-merge finalize flow (tag + GitHub release). |
+| `--dry-run` | Prepare only | Show release plan/audit output without writing changes. |
+| `--no-push` | Prepare only | Create release commit locally but do not push branch or open PR. |
+| `--major` | Prepare only | Major bump (e.g., `1.2.3 -> 2.0.0`). |
+| `--minor` | Prepare only | Minor bump (e.g., `1.2.3 -> 1.3.0`). |
+| `--skip-audit` | Prepare only | Skip pre-release audit checks. |
+
+Compatibility rule:
+
+- `--finalize` **cannot** be combined with prepare-only flags (`--dry-run`, `--no-push`, `--major`, `--minor`, `--skip-audit`).
+- Mixed usage is a hard stop, not "ignore and continue".
+
+Default behavior notes:
+
+- There is no `--patch` flag because patch is the default when neither `--major` nor `--minor` is provided.
+- There is no `--push` flag because prepare mode pushes by default; `--no-push` is the explicit opt-out.
+
+Common examples:
+
+```text
+/vbw:release
+/vbw:release --minor
+/vbw:release --dry-run
+/vbw:release --no-push
+/vbw:release --finalize
+```
+
 To make it available locally, copy it to your personal commands directory:
 
 ```bash
@@ -259,7 +304,7 @@ cp internal/release.md ~/.claude/commands/vbw-release.md
 
 This registers it as `/vbw-release` (personal commands don't get the plugin namespace prefix). Re-copy after pulling changes that modify `internal/release.md`.
 
-> **Note:** `${CLAUDE_PLUGIN_ROOT}` is only set for plugin-scoped commands. Personal commands won't resolve the `@${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md` brand reference — output formatting may differ slightly. Functional steps (version bump, changelog, git tag, push, GitHub release) are unaffected. For full fidelity, use `claude --plugin-dir .` instead.
+> **Note:** `${CLAUDE_PLUGIN_ROOT}` is only set for plugin-scoped commands. Personal commands won't resolve the `@${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md` brand reference — output formatting may differ slightly. The two-phase workflow (prepare: bump, commit, release branch, draft PR; finalize: tag, GitHub release after merge) is unaffected. For full fidelity, use `claude --plugin-dir .` instead.
 
 To remove it:
 
