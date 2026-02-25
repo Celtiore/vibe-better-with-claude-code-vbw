@@ -261,6 +261,40 @@ Release is a two-phase, approval-gated workflow:
 
 **Authorization rule:** Release is authorized by the approved-and-merged PR. If the release PR is not approved/merged, do **not** run finalize.
 
+#### Release flags quick reference (for contributors)
+
+Use these flags with `/vbw:release`:
+
+| Flag | Phase | Meaning |
+| ---- | ----- | ------- |
+| *(none)* | Prepare only | Default is a patch bump (e.g., `1.2.3 -> 1.2.4`). |
+| `--finalize` | Finalize only | Run post-merge finalize flow (tag + GitHub release). |
+| `--dry-run` | Prepare only | Show release plan/audit output without writing changes. |
+| `--no-push` | Prepare only | Create release commit locally but do not push branch or open PR. |
+| `--major` | Prepare only | Major bump (e.g., `1.2.3 -> 2.0.0`). |
+| `--minor` | Prepare only | Minor bump (e.g., `1.2.3 -> 1.3.0`). |
+| `--skip-audit` | Prepare only | Skip pre-release audit checks. |
+
+Compatibility rule:
+
+- `--finalize` **cannot** be combined with prepare-only flags (`--dry-run`, `--no-push`, `--major`, `--minor`, `--skip-audit`).
+- Mixed usage is a hard stop, not "ignore and continue".
+
+Default behavior notes:
+
+- There is no `--patch` flag because patch is the default when neither `--major` nor `--minor` is provided.
+- There is no `--push` flag because prepare mode pushes by default; `--no-push` is the explicit opt-out.
+
+Common examples:
+
+```text
+/vbw:release
+/vbw:release --minor
+/vbw:release --dry-run
+/vbw:release --no-push
+/vbw:release --finalize
+```
+
 To make it available locally, copy it to your personal commands directory:
 
 ```bash
