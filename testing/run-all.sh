@@ -21,6 +21,10 @@ echo "Running command contract checks..."
 bash "$ROOT/testing/verify-commands-contract.sh"
 
 echo ""
+echo "Running inline execution span checks..."
+bash "$ROOT/testing/verify-no-inline-exec-spans.sh"
+
+echo ""
 echo "Running plugin root resolution checks..."
 bash "$ROOT/testing/verify-plugin-root-resolution.sh"
 
