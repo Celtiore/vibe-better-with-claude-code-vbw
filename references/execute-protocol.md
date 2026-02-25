@@ -219,7 +219,7 @@ description: |
   Model: ${DEV_MODEL}
   Phase context: {phase-dir}/.context-dev.md (if compiled)
   If `.vbw-planning/codebase/META.md` exists, read CONVENTIONS.md, PATTERNS.md, STRUCTURE.md, and DEPENDENCIES.md (whichever exist) from `.vbw-planning/codebase/` to bootstrap codebase understanding before executing.
-  {If resuming: "Resume from Task {N}. Tasks 1-{N-1} already committed."}
+  {If resuming: "Resume from Task {NN}. Tasks 1-{NN-1} already committed."}
   {If autonomous: false: "This plan has checkpoints -- pause for user input."}
 activeForm: "Executing {NN-MM}"
 ```
@@ -468,7 +468,7 @@ If `AUTO_UAT` is not `true` and autonomy is confident or pure-vibe: display "○
 2. Generate test scenarios from completed SUMMARY.md files:
    - Read each SUMMARY.md: extract what was built, files modified, must_haves
    - Generate 1-3 test scenarios per plan requiring HUMAN verification
-   - Minimum 1 test per plan. Test IDs: `P{plan}-T{N}`
+   - Minimum 1 test per plan. Test IDs: `P{plan}-T{NN}`
    - Write initial `{phase}-UAT.md` in phase dir with all tests (Result fields empty)
 3. **CHECKPOINT loop — present ONE test at a time, wait for user response:**
 
@@ -478,7 +478,7 @@ If `AUTO_UAT` is not `true` and autonomy is confident or pure-vibe: display "○
 
    ```text
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   CHECKPOINT {N}/{total} — {plan-id}: {plan-title}
+   CHECKPOINT {NN}/{total} — {plan-id}: {plan-title}
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
    {scenario description}
