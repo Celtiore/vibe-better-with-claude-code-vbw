@@ -38,6 +38,16 @@ Phase state:
 
 !`L="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; bash "$L/scripts/suggest-compact.sh" verify 2>/dev/null || true`
 
+Pre-computed verify context (PLAN/SUMMARY aggregation):
+```
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; PD=""; if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ]; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; [ -z "$PD" ] && [ -f "$P" ] && PD=$(cat "$P"); SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2); TARGET="${FU_SLUG:-$SLUG}"; PDIR=".vbw-planning/phases/$TARGET"; if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -f "$L/scripts/compile-verify-context.sh" ]; then bash "$L/scripts/compile-verify-context.sh" "$PDIR" 2>/dev/null || echo "verify_context_error=true"; else echo "verify_context=unavailable"; fi`
+```
+
+Pre-computed UAT resume metadata:
+```
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; PD=""; if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ]; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; [ -z "$PD" ] && [ -f "$P" ] && PD=$(cat "$P"); SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2); TARGET="${FU_SLUG:-$SLUG}"; PDIR=".vbw-planning/phases/$TARGET"; if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -f "$L/scripts/extract-uat-resume.sh" ]; then bash "$L/scripts/extract-uat-resume.sh" "$PDIR" 2>/dev/null || echo "uat_resume=error"; else echo "uat_resume=unavailable"; fi`
+```
+
 ## Guard
 
 - Not initialized (no .vbw-planning/ dir): STOP "Run /vbw:init first."
@@ -54,8 +64,7 @@ Phase state:
 
 - Parse explicit phase number from $ARGUMENTS, or use auto-detected phase
 - Use `.vbw-planning/phases/` for phase directories
-- Read all `*-SUMMARY.md` files in the phase directory
-- Read corresponding `*-PLAN.md` files for `must_haves` and success criteria
+- Use pre-computed verify context from the "Pre-computed verify context" block above — it contains per-plan titles, must_haves, what was built, files modified, and status. Do NOT read individual `*-SUMMARY.md` or `*-PLAN.md` files.
 
 ### 2. Handle re-verification state
 
@@ -68,16 +77,16 @@ Phase state:
 
 ### 3. Check for existing UAT session (resume support)
 
-- If `{phase}-UAT.md` exists in the phase directory:
-  - Read it, find the first test without a result (Result line is empty or missing)
-  - Display: `Resuming UAT session -- {completed}/{total} tests done`
-  - Jump to the CHECKPOINT loop at the resume point
-- If all tests already have results: display the summary, STOP
+- Use pre-computed UAT resume metadata from the "Pre-computed UAT resume metadata" block above:
+  - `uat_resume=none`: no existing UAT session — proceed to Step 4 (generate tests)
+  - `uat_resume=all_done uat_completed=N uat_total=N`: all tests already have results — display the summary, STOP
+  - `uat_resume=<test-id> uat_completed=N uat_total=N`: resume at `<test-id>`. Display: `Resuming UAT session -- {completed}/{total} tests done`. Read the UAT.md once to load checkpoint text, then jump to the CHECKPOINT loop at the resume point.
+- Do NOT scan-parse the UAT file to find the resume point — the pre-computed metadata already identifies it.
 
-### 4. Generate test scenarios from SUMMARY.md files
+### 4. Generate test scenarios from pre-computed verify context
 
-For each completed plan's SUMMARY.md:
-- Read what was built, files modified, and the plan's `must_haves`
+For each plan in the pre-computed verify context block:
+- Use the pre-computed `what_was_built`, `files_modified`, and `must_haves` data. Do NOT read SUMMARY.md or PLAN.md files.
 - Generate 1-3 test scenarios that require HUMAN judgment — things only a person can verify
 - Minimum 1 test per plan, even for pure refactors (use "verify nothing broke" regression test)
 - Test IDs follow the format: `P{plan}-T{N}` (e.g., P01-T1, P01-T2, P02-T1)
