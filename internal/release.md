@@ -25,12 +25,14 @@ Git status:
 ## Guard
 
 1. **Not a VBW repo:** No VERSION file → STOP: "No VERSION file found. Must run from VBW plugin root."
-2. **--finalize mode:** If `--finalize` is present, reject prepare-only flags (`--dry-run`, `--no-push`, `--major`, `--minor`, `--skip-audit`) with: "Flag `{flag}` is prepare-only and has no effect in finalize mode." Then skip to **Finalize Phase** below.
+2. **--finalize mode:** If `--finalize` is present **and any prepare-only flags are also present** (`--dry-run`, `--no-push`, `--major`, `--minor`, `--skip-audit`) → reject the mixed flags and STOP (hard error): "Incompatible flags: `{flags}` are prepare-only and cannot be combined with `--finalize`. Re-run with only `--finalize`." Do **not** continue to finalize when this guard fails.
 3. **Not on main:** If current branch is not `main` → STOP: "Must be on main to prepare a release. Currently on `{branch}`."
 4. **Dirty tree:** If `git status --porcelain` shows uncommitted changes (excluding .claude/ and CLAUDE.md), WARN + confirm: "Uncommitted changes detected. They will NOT be in the release commit. Continue?"
 5. **No [Unreleased]:** If CHANGELOG.md lacks `## [Unreleased]`, WARN + confirm: "No [Unreleased] section. Release commit will only bump versions. Continue?"
 6. **Version sync:** `bash scripts/bump-version.sh --verify`. Out of sync → WARN but proceed (bump fixes it).
-7. **Existing release branch:** Check both local (`git branch --list 'release/v*'`) and remote (`git ls-remote --heads origin 'refs/heads/release/v*'`). If either returns matches → STOP: "Release branch already exists (local or remote). Run `/vbw:release --finalize` after merging, or delete the stale branch."
+7. **Existing release branch:** Check local first (`git branch --list 'release/v*'`) and remote second (`git ls-remote --heads origin 'refs/heads/release/v*'`).
+   - If remote check exits non-zero (auth/network/repo failure) → STOP: "Could not verify remote release branches (`origin` unreachable or unauthorized). Fix remote access and retry."
+   - If local or remote checks return matches → STOP: "Release branch already exists (local or remote). Run `/vbw:release --finalize` after merging, or delete the stale branch."
 
 ## Pre-release Audit
 
@@ -58,14 +60,14 @@ Creates a release branch, bumps version, opens a draft PR. Does NOT tag or creat
 
 ### Step 1: Parse arguments
 
-| Flag | Effect |
-|------|--------|
-| --finalize | Run finalize phase instead (see below) |
-| --dry-run | Show plan, no mutations |
-| --no-push | Bump+commit locally, no push or PR |
-| --major | Major bump (1.0.70→2.0.0) |
-| --minor | Minor bump (1.0.70→1.1.0) |
-| --skip-audit | Skip pre-release audit |
+| Flag         | Effect                                 |
+| ------------ | -------------------------------------- |
+| --finalize   | Run finalize phase instead (see below) |
+| --dry-run    | Show plan, no mutations                |
+| --no-push    | Bump+commit locally, no push or PR     |
+| --major      | Major bump (1.0.70→2.0.0)              |
+| --minor      | Minor bump (1.0.70→1.1.0)              |
+| --skip-audit | Skip pre-release audit                 |
 
 No flags = patch bump (default).
 
@@ -118,9 +120,16 @@ Run after the release PR has been merged into `main`. Tags the exact release com
 1. **Must be on main:** If current branch is not `main` → STOP: "Must be on main to finalize. Currently on `{branch}`."
 2. **Dirty tree:** If `git status --porcelain` shows uncommitted changes → STOP: "Working tree is dirty. Commit or stash changes before finalizing."
 3. **Pull latest:** `git pull origin main` to ensure the merge commit is local.
-4. **Locate release commit:** Read VERSION to get `{version}`. Search the full `main` history for the commit with message matching `chore: release v{version}`: `git log --grep="chore: release v{version}" --format="%H" main | head -1`. Store as `{release_sha}`. If empty → STOP: "Release commit for v{version} not found on main. Was the PR merged?"
+4. **Locate merged release artifact on main:** Read VERSION to get `{version}`.
+   - **Primary path (merge commit):** Search first-parent `main` history for merge commits referencing `release/v{version}`: `git log main --first-parent --grep="Merge pull request .*release/v{version}" --format="%H"`.
+     - Exactly one match → store as `{release_sha}`.
+     - More than one match → STOP: "Multiple merge commits found for release/v{version}. Resolve manually before finalizing."
+   - **Fallback path (squash/rebase):** If no merge-commit match, search first-parent `main` history for commit subject prefix `chore: release v{version}`: `git log main --first-parent --grep="^chore: release v{version}" --format="%H"`.
+     - Zero matches → STOP: "Release commit for v{version} not found on main. Was the PR merged?"
+     - More than one match → STOP: "Multiple release commits match v{version} on main. Resolve ambiguity manually before finalizing."
+     - Exactly one match → store as `{release_sha}`.
 
-> **Merge strategy note:** The finalize grep uses substring matching, so squash-merge suffixes like `(#NNN)` don't break it. However, do not edit the commit message to remove the `chore: release v{version}` prefix during merge — finalize depends on it.
+> **Merge strategy note:** `--first-parent` ensures finalize tags the merged release artifact on `main` (merge commit for merge strategy, squash commit for squash strategy), not a pre-merge branch commit. This avoids ambiguous tagging when extra commits were added on `release/v{version}` before merge.
 5. **Tag already exists:** If `git tag -l "v{version}"` returns a match, check if it points to `{release_sha}` (`git rev-parse "v{version}^{commit}"`). If it matches → skip tagging, continue to Step 2. If it points elsewhere → STOP: "Tag v{version} already exists but points to a different commit. Resolve manually."
 
 ### Finalize Step 1: Tag release commit
@@ -146,18 +155,18 @@ Delete remote release branch: `git push origin --delete release/v{version} 2>/de
 
 Display task-level box with: version, tag (commit SHA), GitHub release status, branch cleanup status.
 
-## Output Format
-
 ## Flag Compatibility
 
-| Flag | Prepare | Finalize | Notes |
-|------|---------|----------|-------|
-| --finalize | — | ✓ | Switches to finalize phase |
-| --dry-run | ✓ | ✗ | Prepare-only; rejected in finalize mode |
-| --no-push | ✓ | ✗ | Prepare-only; rejected in finalize mode |
-| --major | ✓ | ✗ | Prepare-only; rejected in finalize mode |
-| --minor | ✓ | ✗ | Prepare-only; rejected in finalize mode |
-| --skip-audit | ✓ | ✗ | Prepare-only; rejected in finalize mode |
+| Flag         | Prepare | Finalize | Notes                                             |
+| ------------ | ------- | -------- | ------------------------------------------------- |
+| --finalize   | n/a     | yes      | Switches to finalize phase                        |
+| --dry-run    | yes     | no       | Prepare-only; hard STOP with `--finalize`         |
+| --no-push    | yes     | no       | Prepare-only; hard STOP with `--finalize`         |
+| --major      | yes     | no       | Prepare-only; hard STOP with `--finalize`         |
+| --minor      | yes     | no       | Prepare-only; hard STOP with `--finalize`         |
+| --skip-audit | yes     | no       | Prepare-only; hard STOP with `--finalize`         |
+
+**Mixed-flag policy:** `--finalize` + any prepare-only flag is an immediate hard STOP. No prepare-only flag is ignored in finalize mode.
 
 ## Output Format
 

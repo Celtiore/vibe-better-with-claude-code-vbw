@@ -44,17 +44,21 @@ RELEASE_CMD="$REPO_ROOT/internal/release.md"
   # Extract the push step content (between "Push release branch" and next heading)
   local push_section
   push_section=$(awk '/^### Step 7: Push release branch/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
-  # The prepare-mode push must reference the release branch, not bare push
+  # The prepare-mode push must reference the release branch and explicit origin target
+  echo "$push_section" | grep -q 'git push -u origin release/v{new-version}'
   echo "$push_section" | grep -qi 'release/'
+  # Must not include unsafe direct-main or bare push semantics
+  ! echo "$push_section" | grep -Eq 'git push[[:space:]]*$'
+  ! echo "$push_section" | grep -Eq 'git push[[:space:]]+origin[[:space:]]+main'
 }
 
 @test "release finalize tags on main after merge" {
-  # Finalize phase must verify the release commit is on main before tagging
+  # Finalize phase must verify merged release artifact on main before tagging
   local finalize_section
   finalize_section=$(awk '/^## Finalize Phase/{found=1} found{print}' "$RELEASE_CMD")
   [ -n "$finalize_section" ]
-  # Must check that merge happened or that main has the version
-  echo "$finalize_section" | grep -qi 'main\|merge'
+  echo "$finalize_section" | grep -qi 'merged release artifact on main'
+  echo "$finalize_section" | grep -qi 'first-parent'
 }
 
 @test "release command argument-hint includes --finalize" {
@@ -74,12 +78,14 @@ RELEASE_CMD="$REPO_ROOT/internal/release.md"
   ! echo "$tag_step" | grep -qi 'current HEAD'
 }
 
-@test "finalize searches full history, not fixed HEAD~N window" {
-  # Finalize guard must use git log search, not HEAD~5 or fixed window
+@test "finalize uses first-parent selection and stops on ambiguity" {
+  # Finalize guard must select the merged artifact from first-parent main history
+  # and STOP when multiple candidates are found.
   local finalize_guard
   finalize_guard=$(awk '/^### Finalize Guard/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
-  # Must use git log --grep search pattern
-  echo "$finalize_guard" | grep -qi 'git log.*grep'
+  echo "$finalize_guard" | grep -qi 'git log.*--first-parent.*grep'
+  echo "$finalize_guard" | grep -qi 'Multiple merge commits found\|Multiple release commits match'
+  echo "$finalize_guard" | grep -qi 'Resolve ambiguity manually\|Resolve manually before finalizing'
   # Must NOT use HEAD~N fixed window
   ! echo "$finalize_guard" | grep -q 'HEAD~[0-9]'
 }
@@ -102,19 +108,31 @@ RELEASE_CMD="$REPO_ROOT/internal/release.md"
 }
 
 @test "guard rejects prepare-only flags in finalize mode" {
-  # Guard #2 must reject --dry-run, --no-push, etc. when --finalize is present
+  # Guard #2 must hard-stop when --finalize is mixed with prepare-only flags
   local guard_section
   guard_section=$(awk '/^## Guard/{found=1; next} /^## [^G]/{found=0} found{print}' "$RELEASE_CMD")
+  echo "$guard_section" | grep -qi 'Incompatible flags'
+  echo "$guard_section" | grep -qi 'hard error'
   echo "$guard_section" | grep -qi 'prepare-only'
   echo "$guard_section" | grep -qi '\-\-dry-run'
+  echo "$guard_section" | grep -qi '\-\-no-push'
+  echo "$guard_section" | grep -qi '\-\-major'
+  echo "$guard_section" | grep -qi '\-\-minor'
+  echo "$guard_section" | grep -qi '\-\-skip-audit'
+  echo "$guard_section" | grep -qi 'cannot be combined with `--finalize`'
+  echo "$guard_section" | grep -qi 'Do \*\*not\*\* continue to finalize'
   echo "$guard_section" | grep -qi 'reject'
 }
 
 @test "guard checks remote branches for existing release branch" {
-  # Guard #7 must check both local and remote branches
+  # Guard #7 must distinguish branch-exists vs remote lookup failure
   local guard_section
   guard_section=$(awk '/^## Guard/{found=1; next} /^## [^G]/{found=0} found{print}' "$RELEASE_CMD")
-  echo "$guard_section" | grep -qi 'ls-remote\|remote'
+  echo "$guard_section" | grep -qi 'git branch --list'
+  echo "$guard_section" | grep -qi 'git ls-remote --heads origin'
+  echo "$guard_section" | grep -qi 'Could not verify remote release branches'
+  echo "$guard_section" | grep -qi 'origin.*unreachable\|unauthorized'
+  echo "$guard_section" | grep -qi 'Release branch already exists'
 }
 
 @test "finalize commit search does not use --all-match" {
@@ -125,10 +143,22 @@ RELEASE_CMD="$REPO_ROOT/internal/release.md"
 }
 
 @test "flag compatibility table documents finalize restrictions" {
-  # Must have a flag compatibility section listing which flags work in each phase
+  # Must have a compatibility table with explicit mixed-flag hard-stop policy
   local compat_section
   compat_section=$(awk '/^## Flag Compatibility/{found=1; next} /^## [^F]/{found=0} found{print}' "$RELEASE_CMD")
   [ -n "$compat_section" ]
-  echo "$compat_section" | grep -qi 'finalize'
-  echo "$compat_section" | grep -qi 'prepare'
+  echo "$compat_section" | grep -q '| --finalize'
+  echo "$compat_section" | grep -q '| --dry-run'
+  echo "$compat_section" | grep -q '| --no-push'
+  echo "$compat_section" | grep -q '| --major'
+  echo "$compat_section" | grep -q '| --minor'
+  echo "$compat_section" | grep -q '| --skip-audit'
+  echo "$compat_section" | grep -qi 'hard STOP'
+  echo "$compat_section" | grep -qi 'yes\|no\|n/a'
+}
+
+@test "release doc has a single Output Format heading" {
+  local count
+  count=$(grep -c '^## Output Format$' "$RELEASE_CMD")
+  [ "$count" -eq 1 ]
 }
