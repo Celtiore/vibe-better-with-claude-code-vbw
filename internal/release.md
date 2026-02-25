@@ -2,8 +2,8 @@
 name: vbw:release
 category: lifecycle
 disable-model-invocation: true
-description: Bump version, finalize changelog, tag, commit, push, and create a GitHub release.
-argument-hint: "[--dry-run] [--no-push] [--major] [--minor] [--skip-audit]"
+description: Two-phase release — prepare a release branch + PR, then finalize after merge.
+argument-hint: "[--finalize] [--dry-run] [--no-push] [--major] [--minor] [--skip-audit]"
 allowed-tools: Read, Edit, Bash, Glob, Grep
 ---
 
@@ -16,6 +16,7 @@ Working directory:
 !`pwd`
 ```
 Version: `!`cat VERSION 2>/dev/null || echo "No VERSION file"``
+Current branch: `!`git branch --show-current 2>/dev/null || echo "detached"``
 Git status:
 ```
 !`git status --short 2>/dev/null || echo "Not a git repository"`
@@ -24,9 +25,12 @@ Git status:
 ## Guard
 
 1. **Not a VBW repo:** No VERSION file → STOP: "No VERSION file found. Must run from VBW plugin root."
-2. **Dirty tree:** If `git status --porcelain` shows uncommitted changes (excluding .claude/ and CLAUDE.md), WARN + confirm: "Uncommitted changes detected. They will NOT be in the release commit. Continue?"
-3. **No [Unreleased]:** If CHANGELOG.md lacks `## [Unreleased]`, WARN + confirm: "No [Unreleased] section. Release commit will only bump versions. Continue?"
-4. **Version sync:** `bash scripts/bump-version.sh --verify`. Out of sync → WARN but proceed (bump fixes it).
+2. **--finalize mode:** If `--finalize` is present, skip to **Finalize Phase** below.
+3. **Not on main:** If current branch is not `main` → STOP: "Must be on main to prepare a release. Currently on `{branch}`."
+4. **Dirty tree:** If `git status --porcelain` shows uncommitted changes (excluding .claude/ and CLAUDE.md), WARN + confirm: "Uncommitted changes detected. They will NOT be in the release commit. Continue?"
+5. **No [Unreleased]:** If CHANGELOG.md lacks `## [Unreleased]`, WARN + confirm: "No [Unreleased] section. Release commit will only bump versions. Continue?"
+6. **Version sync:** `bash scripts/bump-version.sh --verify`. Out of sync → WARN but proceed (bump fixes it).
+7. **Existing release branch:** If `git branch --list 'release/v*'` returns matches → STOP: "Release branch already exists. Run `/vbw:release --finalize` after merging, or delete the stale branch."
 
 ## Pre-release Audit
 
@@ -46,54 +50,95 @@ Skip if `--skip-audit`.
 - **Dry-run:** Show suggestions only, no writes: "○ Dry run -- no changes written."
 Both require explicit user confirmation.
 
-## Steps
+---
+
+## Prepare Phase (default)
+
+Creates a release branch, bumps version, opens a draft PR. Does NOT tag or create a GitHub release — that happens in the finalize phase after the PR is merged.
 
 ### Step 1: Parse arguments
 
 | Flag | Effect |
 |------|--------|
+| --finalize | Run finalize phase instead (see below) |
 | --dry-run | Show plan, no mutations |
-| --no-push | Bump+commit, no push |
+| --no-push | Bump+commit locally, no push or PR |
 | --major | Major bump (1.0.70→2.0.0) |
 | --minor | Minor bump (1.0.70→1.1.0) |
 | --skip-audit | Skip pre-release audit |
 
 No flags = patch bump (default).
 
-### Step 2: Bump version
+### Step 2: Create release branch
+
+Compute new version (read VERSION, apply bump level).
+Create and switch to release branch: `git checkout -b release/v{new-version}`
+
+### Step 3: Bump version
 
 --major/--minor: read VERSION, compute new version, write to all 4 files (VERSION, .claude-plugin/plugin.json, .claude-plugin/marketplace.json, marketplace.json).
 Neither flag: `bash scripts/bump-version.sh`. Capture new version.
 
-### Step 3: Update CHANGELOG header
+### Step 4: Update CHANGELOG header
 
 If [Unreleased] exists: replace with `## [{new-version}] - {YYYY-MM-DD}`. Display ✓.
 No [Unreleased]: display ○.
 
-### Step 4: Verify version sync
+### Step 5: Verify version sync
 
 `bash scripts/bump-version.sh --verify`. Fail → STOP: "Version sync failed after bump."
 
-### Step 5: Commit
+### Step 6: Commit
 
 Stage individually (only if modified): VERSION, .claude-plugin/plugin.json, .claude-plugin/marketplace.json, marketplace.json, CHANGELOG.md (if changed), README.md (if changed). Commit: `chore: release v{new-version}`
 
-### Step 6: Tag
+### Step 7: Push release branch
 
-`git tag -a v{new-version} -m "Release v{new-version}"`
+--no-push: "○ Push skipped. Run `git push -u origin release/v{new-version}` when ready."
+Otherwise: `git push -u origin release/v{new-version}`. Display ✓.
 
-### Step 7: Push
+### Step 8: Open draft PR
 
---no-push: "○ Push skipped. Run `git push && git push --tags` when ready."
-Otherwise: `git push` + `git push --tags`. Display ✓.
-
-### Step 8: GitHub Release
-
---no-push: skip. Otherwise: extract changelog for this version. Auth resolution (try in order): (1) `gh auth token` — preferred, uses gh CLI's native auth; (2) extract token from git remote URL (`https://user:TOKEN@github.com/...`), set as `GH_TOKEN` env prefix; (3) existing `GH_TOKEN` env var. Run `gh release create v{new-version} --title "v{new-version}" --notes "{content}"`. If gh unavailable/fails: "⚠ GitHub release failed -- create manually."
+--no-push: skip. Otherwise: `gh pr create --base main --head release/v{new-version} --title "chore: release v{new-version}" --body "Release v{new-version}\n\nBumps version across all 4 files. Updates CHANGELOG.\n\nAfter merging, run \`/vbw:release --finalize\` to tag and create the GitHub release." --draft`. If gh unavailable/fails: "⚠ PR creation failed — create manually."
 
 ### Step 9: Present summary
 
-Display task-level box with: version old→new, audit result, changelog status, commit hash, tag, push status, release status, files updated list.
+Display task-level box with: version old→new, audit result, changelog status, commit hash, release branch name, push status, draft PR status, next step.
+
+Include: "Next: merge the PR, then run `/vbw:release --finalize` to tag and create the GitHub release."
+
+---
+
+## Finalize Phase (`--finalize`)
+
+Run after the release PR has been merged into `main`. Tags the merge commit and creates the GitHub release.
+
+### Finalize Guard
+
+1. **Must be on main:** If current branch is not `main` → STOP: "Must be on main to finalize. Currently on `{branch}`."
+2. **Pull latest:** `git pull origin main` to ensure the merge commit is local.
+3. **Verify version:** Read VERSION. Check that the HEAD commit message matches `chore: release v{version}` (the merge commit squashes or contains this). If not found in HEAD~5 → STOP: "Release commit not found on main. Was the PR merged?"
+
+### Finalize Step 1: Tag
+
+`git tag -a v{version} -m "Release v{version}"` on the current HEAD (merge commit on main).
+
+### Finalize Step 2: Push tag
+
+`git push origin v{version}`. Display ✓.
+
+### Finalize Step 3: GitHub Release
+
+Extract changelog for this version from CHANGELOG.md. Auth resolution (try in order): (1) `gh auth token` — preferred, uses gh CLI's native auth; (2) extract token from git remote URL (`https://user:TOKEN@github.com/...`), set as `GH_TOKEN` env prefix; (3) existing `GH_TOKEN` env var. Run `gh release create v{version} --title "v{version}" --notes "{content}"`. If gh unavailable/fails: "⚠ GitHub release failed — create manually."
+
+### Finalize Step 4: Clean up release branch
+
+Delete local release branch if it still exists: `git branch -d release/v{version} 2>/dev/null || true`
+Delete remote release branch: `git push origin --delete release/v{version} 2>/dev/null || true`
+
+### Finalize Step 5: Present summary
+
+Display task-level box with: version, tag, GitHub release status, branch cleanup status.
 
 ## Output Format
 
