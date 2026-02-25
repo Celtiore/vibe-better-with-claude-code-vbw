@@ -227,7 +227,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
 3. Decompose into 3-5 phases (name, goal, success criteria). Each independently plannable. Map REQ-IDs.
 4. Write ROADMAP.md. Create `.vbw-planning/phases/{NN}-{slug}/` dirs.
 5. Update STATE.md: Phase 1, status "Pending planning". Do NOT write next-action suggestions (e.g. "Run /vbw:vibe --plan 1") into the Todos section — those are ephemeral display output from suggest-next.sh, not persistent state.
-6. Display "Scoping complete. {NN} phases created." STOP -- do not auto-continue to planning.
+6. Display "Scoping complete. {N} phases created." STOP -- do not auto-continue to planning.
 
 ### Mode: Discuss
 
@@ -397,8 +397,8 @@ This mode handles the case where a milestone was archived before UAT issues were
    Display Phase Banner with plan list, effort level, and model profile:
     ```text
    Phase {NN}: {name}
-   Plans: {NN}
-     {plan}: {title} (wave {W}, {NN} tasks)
+   Plans: {N}
+     {plan}: {title} (wave {W}, {N} tasks)
    Effort: {effort}
    Model Profile: {profile}
    ```

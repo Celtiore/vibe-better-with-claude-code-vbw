@@ -2,9 +2,9 @@
 phase: {phase-id}
 tier: {quick|standard|deep}
 result: {PASS|FAIL|PARTIAL}
-passed: {NN}
-failed: {NN}
-total: {NN}
+passed: {N}
+failed: {N}
+total: {N}
 date: {YYYY-MM-DD}
 ---
 
@@ -78,5 +78,5 @@ _Omit this section if no pre-existing issues were found._
 
 **Tier:** {quick|standard|deep}
 **Result:** {PASS|FAIL|PARTIAL}
-**Passed:** {NN}/{total}
+**Passed:** {N}/{total}
 **Failed:** {list or "None"}

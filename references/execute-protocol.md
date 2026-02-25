@@ -219,7 +219,7 @@ description: |
   Model: ${DEV_MODEL}
   Phase context: {phase-dir}/.context-dev.md (if compiled)
   If `.vbw-planning/codebase/META.md` exists, read CONVENTIONS.md, PATTERNS.md, STRUCTURE.md, and DEPENDENCIES.md (whichever exist) from `.vbw-planning/codebase/` to bootstrap codebase understanding before executing.
-  {If resuming: "Resume from Task {NN}. Tasks 1-{NN-1} already committed."}
+  {If resuming: "Resume from Task {N}. Tasks 1-{N-1} already committed."}
   {If autonomous: false: "This plan has checkpoints -- pause for user input."}
 activeForm: "Executing {NN-MM}"
 ```
@@ -318,9 +318,9 @@ Hooks handle continuous verification: PostToolUse validates SUMMARY.md, TaskComp
 - This captures execution state + recent git context for crash recovery. The optional `{agent-role}` and `{trigger}` arguments add metadata to the snapshot for role-filtered restore.
 
 **Metrics instrumentation (REQ-09):** If `metrics=true` in config:
-- At phase start: `bash "${VBW_PLUGIN_ROOT}/scripts/collect-metrics.sh" execute_phase_start {phase} plan_count={NN} effort={effort}`
-- At each plan completion: `bash "${VBW_PLUGIN_ROOT}/scripts/collect-metrics.sh" execute_plan_complete {phase} {plan} task_count={NN} commit_count={NN}`
-- At phase end: `bash "${VBW_PLUGIN_ROOT}/scripts/collect-metrics.sh" execute_phase_complete {phase} plans_completed={NN} total_tasks={NN} total_commits={NN} deviations={NN}`
+- At phase start: `bash "${VBW_PLUGIN_ROOT}/scripts/collect-metrics.sh" execute_phase_start {phase} plan_count={N} effort={effort}`
+- At each plan completion: `bash "${VBW_PLUGIN_ROOT}/scripts/collect-metrics.sh" execute_plan_complete {phase} {plan} task_count={N} commit_count={N}`
+- At phase end: `bash "${VBW_PLUGIN_ROOT}/scripts/collect-metrics.sh" execute_phase_complete {phase} plans_completed={N} total_tasks={N} total_commits={N} deviations={N}`
 All metrics calls should be `2>/dev/null || true` — never block execution.
 
 **V3 Contract-Lite (REQ-10, graduated):**
@@ -468,7 +468,7 @@ If `AUTO_UAT` is not `true` and autonomy is confident or pure-vibe: display "○
 2. Generate test scenarios from completed SUMMARY.md files:
    - Read each SUMMARY.md: extract what was built, files modified, must_haves
    - Generate 1-3 test scenarios per plan requiring HUMAN verification
-   - Minimum 1 test per plan. Test IDs: `P{plan}-T{NN}`
+   - Minimum 1 test per plan. Test IDs: `P{plan}-T{N}`
    - Write initial `{phase}-UAT.md` in phase dir with all tests (Result fields empty)
 3. **CHECKPOINT loop — present ONE test at a time, wait for user response:**
 
@@ -478,7 +478,7 @@ If `AUTO_UAT` is not `true` and autonomy is confident or pure-vibe: display "○
 
    ```text
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   CHECKPOINT {NN}/{total} — {plan-id}: {plan-title}
+   CHECKPOINT {N}/{total} — {plan-id}: {plan-title}
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
    {scenario description}
@@ -564,7 +564,7 @@ When `worktree_isolation="off"`: skip this block silently.
 - When `rolling_summary=false` (default): skip this step silently.
 
 **Event Log — phase end (REQ-16, graduated, always-on):**
-- `bash "${VBW_PLUGIN_ROOT}/scripts/log-event.sh" phase_end {phase} plans_completed={NN} total_tasks={NN} 2>/dev/null || true`
+- `bash "${VBW_PLUGIN_ROOT}/scripts/log-event.sh" phase_end {phase} plans_completed={N} total_tasks={N} 2>/dev/null || true`
 
 **Observability Report (REQ-14):** After phase completion, if `metrics=true`:
 - Generate observability report: `bash "${VBW_PLUGIN_ROOT}/scripts/metrics-report.sh" {phase}`
@@ -618,7 +618,7 @@ Phase {NN}: {name} -- Built
 
 **"What happened" (NRW-02):** If config `plain_summary` is true (default), append 2-4 plain-English sentences between QA and Next Up. No jargon. Source from SUMMARY.md files + QA result. If false, skip.
 
-**Discovered Issues:** If any Dev or QA agent reported pre-existing failures, out-of-scope bugs, or issues unrelated to this phase's work, collect and de-duplicate them by test name and file (when the same test+file pair appears with different error messages, keep the first error message encountered), then list them in the summary output between "What happened" and Next Up. To keep context size manageable, cap the displayed list at 20 entries; if more exist, show the first 20 and append `... and {NN} more`. Format each bullet as `⚠ testName (path/to/file): error message`:
+**Discovered Issues:** If any Dev or QA agent reported pre-existing failures, out-of-scope bugs, or issues unrelated to this phase's work, collect and de-duplicate them by test name and file (when the same test+file pair appears with different error messages, keep the first error message encountered), then list them in the summary output between "What happened" and Next Up. To keep context size manageable, cap the displayed list at 20 entries; if more exist, show the first 20 and append `... and {N} more`. Format each bullet as `⚠ testName (path/to/file): error message`:
 ```text
   Discovered Issues:
     ⚠ {issue-1}

@@ -114,9 +114,9 @@ Protocol instructions in agent definitions (not JS hooks or event handlers).
 phase: {phase-id}
 tier: {quick|standard|deep}
 result: {PASS|FAIL|PARTIAL}
-passed: {NN}
-failed: {NN}
-total: {NN}
+passed: {N}
+failed: {N}
+total: {N}
 date: {YYYY-MM-DD}
 ---
 ```

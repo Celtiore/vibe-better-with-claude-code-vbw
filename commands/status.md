@@ -82,12 +82,12 @@ Per @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md:
 
 **Phases:** `✓/◆/○ Phase N: {name}  {██░░} {%}  ({done}/{total} plans)`. If --verbose, indent per-plan detail with duration.
 
-**Agent Teams** (if active): `◆/✓/○ {Agent}: Plan {NN} ({status})`
+**Agent Teams** (if active): `◆/✓/○ {Agent}: Plan {N} ({status})`
 
 **Velocity:**
 ```
   Velocity:
-    Plans completed:  {NN}
+    Plans completed:  {N}
     Average duration: {time}
     Total time:       {time}
 ```

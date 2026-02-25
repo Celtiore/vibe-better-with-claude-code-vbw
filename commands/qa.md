@@ -110,7 +110,7 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
 
     ```
 
-**Discovered Issues:** If the QA agent reported pre-existing failures, out-of-scope bugs, or issues unrelated to this phase's work, de-duplicate by test name and file (keep first error message when the same test+file pair has different messages) and append after the result box. Cap the list at 20 entries; if more exist, show the first 20 and append `... and {NN} more`:
+**Discovered Issues:** If the QA agent reported pre-existing failures, out-of-scope bugs, or issues unrelated to this phase's work, de-duplicate by test name and file (keep first error message when the same test+file pair has different messages) and append after the result box. Cap the list at 20 entries; if more exist, show the first 20 and append `... and {N} more`:
 ```text
   Discovered Issues:
     ⚠ testName (path/to/file): error message
