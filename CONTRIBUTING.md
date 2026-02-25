@@ -248,16 +248,16 @@ bash scripts/bump-version.sh --verify
 
 ### Release Command (Maintainer Only)
 
-`/vbw:release` is excluded from marketplace installs via the `commands` array in `plugin.json` — consumers never see it. The command file remains in the repo at `commands/release.md`.
+`/vbw:release` lives in `internal/release.md` — outside the `commands/` directory so it's never auto-discovered by the plugin system. Marketplace consumers don't see it.
 
 To make it available locally, copy it to your personal commands directory:
 
 ```bash
 mkdir -p ~/.claude/commands
-cp commands/release.md ~/.claude/commands/vbw-release.md
+cp internal/release.md ~/.claude/commands/vbw-release.md
 ```
 
-This registers it as `/vbw-release` (personal commands don't get the plugin namespace prefix). Re-copy after pulling changes that modify `commands/release.md`.
+This registers it as `/vbw-release` (personal commands don't get the plugin namespace prefix). Re-copy after pulling changes that modify `internal/release.md`.
 
 To remove it:
 
