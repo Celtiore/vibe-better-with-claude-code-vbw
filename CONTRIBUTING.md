@@ -259,7 +259,7 @@ cp internal/release.md ~/.claude/commands/vbw-release.md
 
 This registers it as `/vbw-release` (personal commands don't get the plugin namespace prefix). Re-copy after pulling changes that modify `internal/release.md`.
 
-> **Note:** `${CLAUDE_PLUGIN_ROOT}` is only set for plugin-scoped commands. Personal commands won't resolve the `@${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md` brand reference — output formatting may differ slightly. Functional steps (version bump, changelog, git tag, push, GitHub release) are unaffected. For full fidelity, use `claude --plugin-dir .` instead.
+> **Note:** `${CLAUDE_PLUGIN_ROOT}` is only set for plugin-scoped commands. Personal commands won't resolve the `@${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md` brand reference — output formatting may differ slightly. The two-phase workflow (prepare: bump, commit, release branch, draft PR; finalize: tag, GitHub release after merge) is unaffected. For full fidelity, use `claude --plugin-dir .` instead.
 
 To remove it:
 

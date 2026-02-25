@@ -111,25 +111,29 @@ Include: "Next: merge the PR, then run `/vbw:release --finalize` to tag and crea
 
 ## Finalize Phase (`--finalize`)
 
-Run after the release PR has been merged into `main`. Tags the merge commit and creates the GitHub release.
+Run after the release PR has been merged into `main`. Tags the exact release commit and creates the GitHub release.
 
 ### Finalize Guard
 
 1. **Must be on main:** If current branch is not `main` → STOP: "Must be on main to finalize. Currently on `{branch}`."
-2. **Pull latest:** `git pull origin main` to ensure the merge commit is local.
-3. **Verify version:** Read VERSION. Check that the HEAD commit message matches `chore: release v{version}` (the merge commit squashes or contains this). If not found in HEAD~5 → STOP: "Release commit not found on main. Was the PR merged?"
+2. **Dirty tree:** If `git status --porcelain` shows uncommitted changes → STOP: "Working tree is dirty. Commit or stash changes before finalizing."
+3. **Pull latest:** `git pull origin main` to ensure the merge commit is local.
+4. **Locate release commit:** Read VERSION to get `{version}`. Search the full `main` history for the commit with message matching `chore: release v{version}`: `git log --all-match --grep="chore: release v{version}" --format="%H" main | head -1`. Store as `{release_sha}`. If empty → STOP: "Release commit for v{version} not found on main. Was the PR merged?"
+5. **Tag already exists:** If `git tag -l "v{version}"` returns a match, check if it points to `{release_sha}` (`git rev-parse "v{version}^{commit}"`). If it matches → skip tagging, continue to Step 2. If it points elsewhere → STOP: "Tag v{version} already exists but points to a different commit. Resolve manually."
 
-### Finalize Step 1: Tag
+### Finalize Step 1: Tag release commit
 
-`git tag -a v{version} -m "Release v{version}"` on the current HEAD (merge commit on main).
+`git tag -a v{version} {release_sha} -m "Release v{version}"`. Tags the exact release commit, not HEAD.
 
 ### Finalize Step 2: Push tag
 
-`git push origin v{version}`. Display ✓.
+If tag was already pushed (`git ls-remote --tags origin "v{version}"` returns a match) → display "○ Tag already on remote." and skip.
+Otherwise: `git push origin v{version}`. Display ✓.
 
 ### Finalize Step 3: GitHub Release
 
-Extract changelog for this version from CHANGELOG.md. Auth resolution (try in order): (1) `gh auth token` — preferred, uses gh CLI's native auth; (2) extract token from git remote URL (`https://user:TOKEN@github.com/...`), set as `GH_TOKEN` env prefix; (3) existing `GH_TOKEN` env var. Run `gh release create v{version} --title "v{version}" --notes "{content}"`. If gh unavailable/fails: "⚠ GitHub release failed — create manually."
+If release already exists (`gh release view v{version} &>/dev/null` succeeds) → display "○ GitHub release already exists." and skip.
+Otherwise: Extract changelog for this version from CHANGELOG.md. Auth resolution (try in order): (1) `gh auth token` — preferred, uses gh CLI's native auth; (2) extract token from git remote URL (`https://user:TOKEN@github.com/...`), set as `GH_TOKEN` env prefix; (3) existing `GH_TOKEN` env var. Run `gh release create v{version} --title "v{version}" --notes "{content}"`. If gh unavailable/fails: "⚠ GitHub release failed — create manually."
 
 ### Finalize Step 4: Clean up release branch
 
@@ -138,7 +142,7 @@ Delete remote release branch: `git push origin --delete release/v{version} 2>/de
 
 ### Finalize Step 5: Present summary
 
-Display task-level box with: version, tag, GitHub release status, branch cleanup status.
+Display task-level box with: version, tag (commit SHA), GitHub release status, branch cleanup status.
 
 ## Output Format
 
