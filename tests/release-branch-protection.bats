@@ -15,17 +15,27 @@ RELEASE_CMD="$REPO_ROOT/internal/release.md"
 }
 
 @test "release command supports --finalize flag" {
-  grep -q '\-\-finalize' "$RELEASE_CMD"
+  # argument-hint in frontmatter must list --finalize
+  local frontmatter
+  frontmatter=$(awk '/^---$/{ d++; next } d==1' "$RELEASE_CMD")
+  echo "$frontmatter" | grep -q '\-\-finalize'
 }
 
 @test "release command creates a release branch instead of committing to main" {
-  # Must mention creating a release/ branch
-  grep -qi 'release/' "$RELEASE_CMD"
+  # Step 2 must contain git checkout -b release/ instruction
+  local step2
+  step2=$(awk '/^### Step 2: Create release branch/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
+  [ -n "$step2" ]
+  echo "$step2" | grep -qi 'checkout.*release/'
 }
 
 @test "release command opens a draft PR" {
-  grep -qi 'draft' "$RELEASE_CMD"
-  grep -qi 'pr\|pull.request' "$RELEASE_CMD"
+  # Step 8 must contain gh pr create --draft
+  local step8
+  step8=$(awk '/^### Step 8: Open draft PR/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
+  [ -n "$step8" ]
+  echo "$step8" | grep -qi 'draft'
+  echo "$step8" | grep -qi 'pr.*create\|gh.*pr'
 }
 
 @test "release command does NOT push directly to current branch in prepare mode" {
@@ -89,4 +99,36 @@ RELEASE_CMD="$REPO_ROOT/internal/release.md"
   local finalize_guard
   finalize_guard=$(awk '/^### Finalize Guard/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
   echo "$finalize_guard" | grep -qi 'dirty\|porcelain\|clean'
+}
+
+@test "guard rejects prepare-only flags in finalize mode" {
+  # Guard #2 must reject --dry-run, --no-push, etc. when --finalize is present
+  local guard_section
+  guard_section=$(awk '/^## Guard/{found=1; next} /^## [^G]/{found=0} found{print}' "$RELEASE_CMD")
+  echo "$guard_section" | grep -qi 'prepare-only'
+  echo "$guard_section" | grep -qi '\-\-dry-run'
+  echo "$guard_section" | grep -qi 'reject'
+}
+
+@test "guard checks remote branches for existing release branch" {
+  # Guard #7 must check both local and remote branches
+  local guard_section
+  guard_section=$(awk '/^## Guard/{found=1; next} /^## [^G]/{found=0} found{print}' "$RELEASE_CMD")
+  echo "$guard_section" | grep -qi 'ls-remote\|remote'
+}
+
+@test "finalize commit search does not use --all-match" {
+  # --all-match is a no-op with single --grep; should not be present
+  local finalize_guard
+  finalize_guard=$(awk '/^### Finalize Guard/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
+  ! echo "$finalize_guard" | grep -q '\-\-all-match'
+}
+
+@test "flag compatibility table documents finalize restrictions" {
+  # Must have a flag compatibility section listing which flags work in each phase
+  local compat_section
+  compat_section=$(awk '/^## Flag Compatibility/{found=1; next} /^## [^F]/{found=0} found{print}' "$RELEASE_CMD")
+  [ -n "$compat_section" ]
+  echo "$compat_section" | grep -qi 'finalize'
+  echo "$compat_section" | grep -qi 'prepare'
 }

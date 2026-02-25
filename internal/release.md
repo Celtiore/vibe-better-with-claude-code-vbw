@@ -25,12 +25,12 @@ Git status:
 ## Guard
 
 1. **Not a VBW repo:** No VERSION file → STOP: "No VERSION file found. Must run from VBW plugin root."
-2. **--finalize mode:** If `--finalize` is present, skip to **Finalize Phase** below.
+2. **--finalize mode:** If `--finalize` is present, reject prepare-only flags (`--dry-run`, `--no-push`, `--major`, `--minor`, `--skip-audit`) with: "Flag `{flag}` is prepare-only and has no effect in finalize mode." Then skip to **Finalize Phase** below.
 3. **Not on main:** If current branch is not `main` → STOP: "Must be on main to prepare a release. Currently on `{branch}`."
 4. **Dirty tree:** If `git status --porcelain` shows uncommitted changes (excluding .claude/ and CLAUDE.md), WARN + confirm: "Uncommitted changes detected. They will NOT be in the release commit. Continue?"
 5. **No [Unreleased]:** If CHANGELOG.md lacks `## [Unreleased]`, WARN + confirm: "No [Unreleased] section. Release commit will only bump versions. Continue?"
 6. **Version sync:** `bash scripts/bump-version.sh --verify`. Out of sync → WARN but proceed (bump fixes it).
-7. **Existing release branch:** If `git branch --list 'release/v*'` returns matches → STOP: "Release branch already exists. Run `/vbw:release --finalize` after merging, or delete the stale branch."
+7. **Existing release branch:** Check both local (`git branch --list 'release/v*'`) and remote (`git ls-remote --heads origin 'refs/heads/release/v*'`). If either returns matches → STOP: "Release branch already exists (local or remote). Run `/vbw:release --finalize` after merging, or delete the stale branch."
 
 ## Pre-release Audit
 
@@ -118,7 +118,9 @@ Run after the release PR has been merged into `main`. Tags the exact release com
 1. **Must be on main:** If current branch is not `main` → STOP: "Must be on main to finalize. Currently on `{branch}`."
 2. **Dirty tree:** If `git status --porcelain` shows uncommitted changes → STOP: "Working tree is dirty. Commit or stash changes before finalizing."
 3. **Pull latest:** `git pull origin main` to ensure the merge commit is local.
-4. **Locate release commit:** Read VERSION to get `{version}`. Search the full `main` history for the commit with message matching `chore: release v{version}`: `git log --all-match --grep="chore: release v{version}" --format="%H" main | head -1`. Store as `{release_sha}`. If empty → STOP: "Release commit for v{version} not found on main. Was the PR merged?"
+4. **Locate release commit:** Read VERSION to get `{version}`. Search the full `main` history for the commit with message matching `chore: release v{version}`: `git log --grep="chore: release v{version}" --format="%H" main | head -1`. Store as `{release_sha}`. If empty → STOP: "Release commit for v{version} not found on main. Was the PR merged?"
+
+> **Merge strategy note:** The finalize grep uses substring matching, so squash-merge suffixes like `(#NNN)` don't break it. However, do not edit the commit message to remove the `chore: release v{version}` prefix during merge — finalize depends on it.
 5. **Tag already exists:** If `git tag -l "v{version}"` returns a match, check if it points to `{release_sha}` (`git rev-parse "v{version}^{commit}"`). If it matches → skip tagging, continue to Step 2. If it points elsewhere → STOP: "Tag v{version} already exists but points to a different commit. Resolve manually."
 
 ### Finalize Step 1: Tag release commit
@@ -143,6 +145,19 @@ Delete remote release branch: `git push origin --delete release/v{version} 2>/de
 ### Finalize Step 5: Present summary
 
 Display task-level box with: version, tag (commit SHA), GitHub release status, branch cleanup status.
+
+## Output Format
+
+## Flag Compatibility
+
+| Flag | Prepare | Finalize | Notes |
+|------|---------|----------|-------|
+| --finalize | — | ✓ | Switches to finalize phase |
+| --dry-run | ✓ | ✗ | Prepare-only; rejected in finalize mode |
+| --no-push | ✓ | ✗ | Prepare-only; rejected in finalize mode |
+| --major | ✓ | ✗ | Prepare-only; rejected in finalize mode |
+| --minor | ✓ | ✗ | Prepare-only; rejected in finalize mode |
+| --skip-audit | ✓ | ✗ | Prepare-only; rejected in finalize mode |
 
 ## Output Format
 
