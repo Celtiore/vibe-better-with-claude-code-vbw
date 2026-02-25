@@ -351,3 +351,84 @@ status: issues_found
 
   rm -f "$cache_file"
 }
+
+# ===========================================================================
+# Milestone-style path coverage (Phase A — pre-emit milestone UAT)
+# ===========================================================================
+
+@test "extract-uat-issues: works on milestone-style phase path" {
+  # Milestone paths: .vbw-planning/milestones/<slug>/phases/<NN-slug>/
+  local MS_PHASE_DIR="$TEST_TEMP_DIR/.vbw-planning/milestones/v1-initial/phases/03-test-phase"
+  mkdir -p "$MS_PHASE_DIR"
+
+  cat > "$MS_PHASE_DIR/03-UAT.md" <<'EOF'
+---
+phase: 03
+status: issues_found
+issues: 2
+---
+
+## Tests
+
+### P01-T1: First issue
+
+- **Result:** issue
+- **Issue:**
+  - Description: Milestone issue one
+  - Severity: critical
+
+### P02-T1: Second issue
+
+- **Result:** issue
+- **Issue:**
+  - Description: Milestone issue two
+  - Severity: minor
+
+## Summary
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/extract-uat-issues.sh" "$MS_PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == *"uat_phase=03"* ]]
+  [[ "${lines[0]}" == *"uat_issues_total=2"* ]]
+  [[ "${lines[1]}" == "P01-T1|critical|Milestone issue one" ]]
+  [[ "${lines[2]}" == "P02-T1|minor|Milestone issue two" ]]
+}
+
+@test "extract-uat-issues: milestone path with no UAT file" {
+  local MS_PHASE_DIR="$TEST_TEMP_DIR/.vbw-planning/milestones/v2-refactor/phases/01-cleanup"
+  mkdir -p "$MS_PHASE_DIR"
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/extract-uat-issues.sh" "$MS_PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uat_extract_error=no_uat_file"* ]]
+}
+
+@test "extract-uat-issues: milestone path with complete UAT" {
+  local MS_PHASE_DIR="$TEST_TEMP_DIR/.vbw-planning/milestones/v1-initial/phases/05-polish"
+  mkdir -p "$MS_PHASE_DIR"
+
+  cat > "$MS_PHASE_DIR/05-UAT.md" <<'EOF'
+---
+phase: 05
+status: complete
+issues: 0
+---
+
+## Tests
+
+### P01-T1: All good
+
+- **Result:** pass
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/extract-uat-issues.sh" "$MS_PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uat_extract_status=complete"* ]]
+}
