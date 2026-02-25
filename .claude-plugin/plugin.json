@@ -6,5 +6,31 @@
     "name": "Tiago Serôdio",
     "url": "https://github.com/yidakee"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "commands": [
+    "./commands/config.md",
+    "./commands/debug.md",
+    "./commands/diag-session-key.md",
+    "./commands/discuss.md",
+    "./commands/doctor.md",
+    "./commands/fix.md",
+    "./commands/help.md",
+    "./commands/init.md",
+    "./commands/list-todos.md",
+    "./commands/map.md",
+    "./commands/pause.md",
+    "./commands/profile.md",
+    "./commands/qa.md",
+    "./commands/research.md",
+    "./commands/resume.md",
+    "./commands/skills.md",
+    "./commands/status.md",
+    "./commands/teach.md",
+    "./commands/todo.md",
+    "./commands/uninstall.md",
+    "./commands/update.md",
+    "./commands/verify.md",
+    "./commands/vibe.md",
+    "./commands/whats-new.md"
+  ]
 }
