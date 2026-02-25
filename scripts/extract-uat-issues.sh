@@ -103,12 +103,18 @@ awk '
     next
   }
   /^### / {
-    # New section without finding issue — reset
+    # New section — emit partial issue if only one field was captured
+    if (has_issue && (description != "" || severity != "")) {
+      if (description == "") description = "(no description)"
+      if (severity == "") severity = "unknown"
+      printf "%s|%s|%s\n", id, severity, description
+    }
     has_issue = 0
     description = ""
     severity = ""
   }
 ' "$UAT_FILE" > /tmp/.vbw-uat-issues-$$.txt
+trap 'rm -f /tmp/.vbw-uat-issues-$$.txt' EXIT
 
 ISSUE_COUNT=$(wc -l < /tmp/.vbw-uat-issues-$$.txt | tr -d ' ')
 
@@ -117,4 +123,3 @@ echo "uat_phase=${PHASE_NUM} uat_issues_total=${ISSUE_COUNT} uat_file=$(basename
 
 # Issue lines
 cat /tmp/.vbw-uat-issues-$$.txt
-rm -f /tmp/.vbw-uat-issues-$$.txt

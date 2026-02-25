@@ -33,6 +33,8 @@ extract_status_value() {
       value = $0
       sub(/^[^:]*:[[:space:]]*/, "", value)
       gsub(/[[:space:]]+$/, "", value)
+      gsub(/^[\"]/,  "", value); gsub(/[\"]/,  "", value)
+      gsub(/^'"'"'/, "", value); gsub(/'"'"'$/, "", value)
       print tolower(value)
       exit
     }
@@ -46,7 +48,7 @@ extract_status_value() {
         sub(/^[^:]*:[[:space:]]*/, "", value)
         gsub(/[[:space:]]+$/, "", value)
         v = tolower(value)
-        if (v == "issues_found" || v == "complete" || v == "passed" || v == "in_progress" || v == "pending") {
+        if (v == "issues_found" || v == "complete" || v == "passed" || v == "in_progress" || v == "pending" || v == "failed" || v == "aborted") {
           print v
           exit
         }

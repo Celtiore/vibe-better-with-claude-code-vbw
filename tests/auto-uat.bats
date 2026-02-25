@@ -923,3 +923,27 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"skipped=already_archived"* ]]
 }
+
+# --- QA round 2: reverification preempts mid-milestone auto_uat (finding #7) ---
+
+@test "phase-detect: needs_reverification preempts has_unverified_phases" {
+  cd "$TEST_TEMP_DIR"
+  # Phase 1: issues_found + remediation done → needs_reverification
+  local dir1="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nstatus: issues_found\n---\nIssues.\n' > "$dir1/01-UAT.md"
+  printf 'done' > "$dir1/.uat-remediation-stage"
+
+  # Phase 2: fully built, no UAT → unverified
+  local dir2="$TEST_TEMP_DIR/.vbw-planning/phases/02-feature"
+  mkdir -p "$dir2"
+  printf -- '---\nplan: 02-01\ntitle: Feature\n---\n' > "$dir2/02-01-PLAN.md"
+  printf -- '---\nstatus: complete\ndeviations: 0\n---\nDone.\n' > "$dir2/02-01-SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  # P4 (needs_reverification) must fire, not P7 (auto_uat + has_unverified)
+  [[ "$output" == *"next_phase_state=needs_reverification"* ]]
+  [[ "$output" == *"has_unverified_phases=true"* ]]
+  # The target phase should be 01-setup (reverification target), not 02-feature
+  [[ "$output" == *"next_phase_slug=01-setup"* ]]
+}
