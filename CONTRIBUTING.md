@@ -246,6 +246,25 @@ bash scripts/bump-version.sh --verify
 
 > **Note:** The git pre-push hook installed by `scripts/install-hooks.sh` delegates to the marketplace cache. With the [symlink](#setting-up-the-plugin-cache-symlink-required) in place, the hook will run your local copy's version check. Without the symlink, the hook silently passes. Use the manual `--verify` command above before pushing if you haven't set up the symlink.
 
+### Release Command (Maintainer Only)
+
+`/vbw:release` is excluded from marketplace installs via the `commands` array in `plugin.json` — consumers never see it. The command file remains in the repo at `commands/release.md`.
+
+To make it available locally, copy it to your personal commands directory:
+
+```bash
+mkdir -p ~/.claude/commands
+cp commands/release.md ~/.claude/commands/vbw-release.md
+```
+
+This registers it as `/vbw-release` (personal commands don't get the plugin namespace prefix). Re-copy after pulling changes that modify `commands/release.md`.
+
+To remove it:
+
+```bash
+rm ~/.claude/commands/vbw-release.md
+```
+
 ## Reporting Bugs
 
 Use the [bug report template](https://github.com/yidakee/vibe-better-with-claude-code-vbw/issues/new?template=bug_report.md). Include your Claude Code version, the command that failed, and any error output.
