@@ -279,6 +279,70 @@ else
   fail "PLAN-01-CONTEXT.md — got rc=$RC, output: $OUTPUT"
 fi
 
+# --- Edge-case tests (unknown compounds, symlinks, many digits) ---
+echo ""
+echo "Edge cases:"
+
+# Test 24: normalize skips unknown compound PLAN-01-RESEARCH.md
+TDIR="$TMPDIR_TEST/test24"
+mkdir -p "$TDIR"
+echo "research" > "$TDIR/PLAN-01-RESEARCH.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$TDIR/PLAN-01-RESEARCH.md" ] && [ ! -f "$TDIR/01-PLAN.md" ]; then
+  pass "skips unknown compound PLAN-01-RESEARCH.md (no rename)"
+else
+  fail "unknown compound — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# Test 25: normalize skips unknown compound SUMMARY-01-extra.md
+TDIR="$TMPDIR_TEST/test25"
+mkdir -p "$TDIR"
+echo "extra" > "$TDIR/SUMMARY-01-extra.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$TDIR/SUMMARY-01-extra.md" ] && [ ! -f "$TDIR/01-SUMMARY.md" ]; then
+  pass "skips unknown compound SUMMARY-01-extra.md (no rename)"
+else
+  fail "SUMMARY compound — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# Test 26: normalize handles many-digit PLAN-0000001.md → 01-PLAN.md
+TDIR="$TMPDIR_TEST/test26"
+mkdir -p "$TDIR"
+echo "plan" > "$TDIR/PLAN-0000001.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$TDIR/01-PLAN.md" ]; then
+  pass "normalizes PLAN-0000001.md → 01-PLAN.md (many leading zeros)"
+else
+  fail "many zeros — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# Test 27: normalize skips symlinks
+TDIR="$TMPDIR_TEST/test27"
+mkdir -p "$TDIR"
+echo "real" > "$TDIR/real-plan.md"
+ln -s "$TDIR/real-plan.md" "$TDIR/PLAN-01.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -L "$TDIR/PLAN-01.md" ] && [ ! -f "$TDIR/01-PLAN.md" ]; then
+  pass "skips symlink PLAN-01.md (no rename)"
+else
+  fail "symlink — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# Test 28: phase-detect ignores PLAN-01-RESEARCH.md (not a misnamed plan)
+TDIR="$TMPDIR_TEST/test28"
+mkdir -p "$TDIR/.vbw-planning/phases/01-setup"
+echo "research" > "$TDIR/.vbw-planning/phases/01-setup/PLAN-01-RESEARCH.md"
+cat > "$TDIR/.vbw-planning/PROJECT.md" << 'EOF'
+# Test Project
+This is a test project.
+EOF
+OUTPUT=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null) && RC=$? || RC=$?
+if echo "$OUTPUT" | grep -q "misnamed_plans=false"; then
+  pass "phase-detect ignores PLAN-01-RESEARCH.md (not a known misname pattern)"
+else
+  fail "phase-detect compound — output missing misnamed_plans=false, got: $(echo "$OUTPUT" | grep misnamed)"
+fi
+
 echo ""
 echo "==============================="
 echo "Plan filename convention: $PASS passed, $FAIL failed"

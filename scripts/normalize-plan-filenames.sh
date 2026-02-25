@@ -23,7 +23,13 @@ PHASE_DIR="${PHASE_DIR%/}"
 # Pattern: PLAN-NN.md → NN-PLAN.md (case-insensitive extension)
 for f in "$PHASE_DIR"/PLAN-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
+  [ ! -L "$f" ] || continue  # skip symlinks
   BASENAME=$(basename "$f")
+  # Only handle known forms: PLAN-NN.md, PLAN-NN-SUMMARY.md, PLAN-NN-CONTEXT.md
+  if ! echo "$BASENAME" | grep -qiE '^PLAN-[0-9]+\.(md|MD)$|^PLAN-[0-9]+-(SUMMARY|CONTEXT)\.(md|MD)$'; then
+    echo "skipped: $BASENAME (unknown compound form)" >&2
+    continue
+  fi
   # Extract number: PLAN-01.md → 01, PLAN-02-SUMMARY.md → 02
   NUM=$(echo "$BASENAME" | sed 's/^PLAN-\([0-9]*\).*/\1/')
   [ -z "$NUM" ] && continue
@@ -52,7 +58,13 @@ done
 # Pattern: SUMMARY-NN.md → NN-SUMMARY.md (case-insensitive extension)
 for f in "$PHASE_DIR"/SUMMARY-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
+  [ ! -L "$f" ] || continue  # skip symlinks
   BASENAME=$(basename "$f")
+  # Only handle exact SUMMARY-NN.md (no compound suffixes)
+  if ! echo "$BASENAME" | grep -qiE '^SUMMARY-[0-9]+\.(md|MD)$'; then
+    echo "skipped: $BASENAME (unknown compound form)" >&2
+    continue
+  fi
   NUM=$(echo "$BASENAME" | sed 's/^SUMMARY-\([0-9]*\).*/\1/')
   [ -z "$NUM" ] && continue
   NUM=$(printf "%02d" "$((10#$NUM))")
@@ -68,7 +80,13 @@ done
 # Pattern: CONTEXT-NN.md → NN-CONTEXT.md (case-insensitive extension)
 for f in "$PHASE_DIR"/CONTEXT-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
+  [ ! -L "$f" ] || continue  # skip symlinks
   BASENAME=$(basename "$f")
+  # Only handle exact CONTEXT-NN.md (no compound suffixes)
+  if ! echo "$BASENAME" | grep -qiE '^CONTEXT-[0-9]+\.(md|MD)$'; then
+    echo "skipped: $BASENAME (unknown compound form)" >&2
+    continue
+  fi
   NUM=$(echo "$BASENAME" | sed 's/^CONTEXT-\([0-9]*\).*/\1/')
   [ -z "$NUM" ] && continue
   NUM=$(printf "%02d" "$((10#$NUM))")
