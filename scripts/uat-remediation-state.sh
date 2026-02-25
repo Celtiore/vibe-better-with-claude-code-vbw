@@ -18,6 +18,11 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/uat-utils.sh"
+fi
+
 CMD="${1:-}"
 PHASE_DIR="${2:-}"
 SEVERITY_ARG="${3:-}"
@@ -120,20 +125,41 @@ case "$CMD" in
     # Appends UAT issues to the existing CONTEXT (preserving original
     # discussion context) and adds pre_seeded: true to frontmatter.
     context_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | sort | head -1)
-    uat_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-UAT.md' ! -name '*SOURCE-UAT.md' 2>/dev/null | sort | tail -1)
+    if type latest_non_source_uat &>/dev/null; then
+      uat_file=$(latest_non_source_uat "$PHASE_DIR")
+    else
+      uat_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-UAT.md' ! -name '*SOURCE-UAT.md' 2>/dev/null | sort | tail -1)
+    fi
 
+    _emit_context=false
     if [ -n "$uat_file" ] && [ -f "$uat_file" ]; then
       uat_content=$(cat "$uat_file")
 
       if [ -n "$context_file" ] && [ -f "$context_file" ]; then
-        # Existing CONTEXT.md — check if already pre-seeded (idempotency)
-        if ! awk '
+        # Check if already pre-seeded from a previous remediation turn
+        _already_seeded=false
+        if awk '
           BEGIN { in_fm=0; found=0 }
           NR==1 && /^---[[:space:]]*$/ { in_fm=1; next }
           in_fm && /^---[[:space:]]*$/ { exit }
           in_fm && /^pre_seeded[[:space:]]*:[[:space:]]*"?true"?[[:space:]]*$/ { found=1; exit }
           END { exit !found }
         ' "$context_file" 2>/dev/null; then
+          _already_seeded=true
+        fi
+
+        if [ "$_already_seeded" = true ]; then
+          # Already pre-seeded — replace old UAT content with current UAT.
+          # Truncate at "## UAT Remediation Issues" and re-append.
+          awk '/^## UAT Remediation Issues[[:space:]]*$/ { exit } { print }' \
+            "$context_file" > "${context_file}.tmp" && mv "${context_file}.tmp" "$context_file"
+          {
+            echo "## UAT Remediation Issues"
+            echo ""
+            printf '%s\n' "$uat_content"
+          } >> "$context_file"
+          _emit_context=true
+        else
           # Not yet pre-seeded — update frontmatter and append UAT content
           if head -1 "$context_file" | grep -q '^---[[:space:]]*$'; then
             # Has frontmatter — insert pre_seeded: true before closing ---
@@ -162,6 +188,7 @@ case "$CMD" in
             echo ""
             printf '%s\n' "$uat_content"
           } >> "$context_file"
+          _emit_context=true
         fi
       else
         # No CONTEXT.md yet — create one with UAT content
@@ -180,7 +207,15 @@ case "$CMD" in
           echo ""
           printf '%s\n' "$uat_content"
         } > "$context_file"
+        _emit_context=true
       fi
+    fi
+
+    # Emit CONTEXT.md content so the model has it without a separate file read.
+    # Output format: line 1 = stage word (already emitted above), then separator + content.
+    if [ "$_emit_context" = true ] && [ -n "$context_file" ] && [ -f "$context_file" ]; then
+      echo "---CONTEXT---"
+      cat "$context_file"
     fi
     ;;
 

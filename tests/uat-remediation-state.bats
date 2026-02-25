@@ -21,7 +21,7 @@ teardown() {
 @test "init major creates plan stage" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  [ "$output" = "plan" ]
+  [ "$(echo "$output" | head -1)" = "plan" ]
   [ -f "$PHASE_DIR/.uat-remediation-stage" ]
   [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "plan" ]
 }
@@ -29,14 +29,14 @@ teardown() {
 @test "init minor creates fix stage" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "minor"
   [ "$status" -eq 0 ]
-  [ "$output" = "fix" ]
+  [ "$(echo "$output" | head -1)" = "fix" ]
   [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "fix" ]
 }
 
 @test "init unknown severity defaults to plan" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "unknown"
   [ "$status" -eq 0 ]
-  [ "$output" = "plan" ]
+  [ "$(echo "$output" | head -1)" = "plan" ]
 }
 
 @test "advance major chain: plan -> execute -> done" {
@@ -126,6 +126,11 @@ EOF
   # UAT content appended
   grep -q "## UAT Remediation Issues" "$PHASE_DIR/01-CONTEXT.md"
   grep -q "Issue 1: Something broken" "$PHASE_DIR/01-CONTEXT.md"
+
+  # init emits CONTEXT.md content in output after ---CONTEXT--- separator
+  echo "$output" | grep -q "^---CONTEXT---$"
+  echo "$output" | grep -q "Issue 1: Something broken"
+  echo "$output" | grep -q "pre_seeded: true"
 }
 
 @test "init adds frontmatter to CONTEXT without existing frontmatter" {
@@ -184,11 +189,65 @@ EOF
 
   bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major" >/dev/null
 
-  # Second init should not re-append
+  # Second init with same UAT should not duplicate
   bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major" >/dev/null
 
   count=$(grep -c "## UAT Remediation Issues" "$PHASE_DIR/01-CONTEXT.md")
   [ "$count" -eq 1 ]
+  # Content still present
+  grep -q "Issue X" "$PHASE_DIR/01-CONTEXT.md"
+}
+
+@test "init replaces stale UAT content on subsequent remediation turn" {
+  # Simulate first remediation turn: CONTEXT gets pre-seeded with round-01 UAT
+  cat > "$PHASE_DIR/01-CONTEXT.md" <<'EOF'
+---
+phase: 01
+title: Milestone UAT remediation
+source_milestone: test-milestone
+pre_seeded: true
+---
+
+This phase remediates unresolved UAT issues.
+
+---
+
+## UAT Remediation Issues
+
+# Round 1 UAT
+- Old issue from round 1
+EOF
+
+  # New UAT after re-verification (round 2) — different content
+  cat > "$PHASE_DIR/01-UAT.md" <<'EOF'
+# Round 2 UAT
+- New issue A from round 2
+- New issue B from round 2
+EOF
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+
+  # Old UAT content should be gone
+  ! grep -q "Old issue from round 1" "$PHASE_DIR/01-CONTEXT.md"
+  ! grep -q "Round 1 UAT" "$PHASE_DIR/01-CONTEXT.md"
+
+  # New UAT content should be present
+  grep -q "New issue A from round 2" "$PHASE_DIR/01-CONTEXT.md"
+  grep -q "New issue B from round 2" "$PHASE_DIR/01-CONTEXT.md"
+
+  # Original preamble preserved
+  grep -q "This phase remediates unresolved UAT issues" "$PHASE_DIR/01-CONTEXT.md"
+  grep -q "pre_seeded: true" "$PHASE_DIR/01-CONTEXT.md"
+
+  # Only one UAT section
+  count=$(grep -c "## UAT Remediation Issues" "$PHASE_DIR/01-CONTEXT.md")
+  [ "$count" -eq 1 ]
+
+  # init emits updated CONTEXT.md content with new UAT, not old
+  echo "$output" | grep -q "^---CONTEXT---$"
+  echo "$output" | grep -q "New issue A from round 2"
+  ! echo "$output" | grep -q "Old issue from round 1"
 }
 
 @test "init without UAT file does not modify CONTEXT" {
@@ -205,4 +264,7 @@ EOF
 
   # No pre_seeded added when there's no UAT report to append
   ! grep -q "pre_seeded" "$PHASE_DIR/01-CONTEXT.md"
+
+  # No CONTEXT emitted in output when no UAT file exists
+  ! echo "$output" | grep -q "^---CONTEXT---$"
 }

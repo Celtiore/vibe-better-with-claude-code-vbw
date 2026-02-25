@@ -3,6 +3,11 @@ set -u
 # PostToolUse: Auto-update STATE.md, ROADMAP.md + .execution-state.json on PLAN/SUMMARY writes
 # Non-blocking, fail-open (always exit 0)
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/uat-utils.sh" ]; then
+  source "$SCRIPT_DIR/uat-utils.sh"
+fi
+
 planning_root_from_phase_dir() {
   local phase_dir="$1"
   local phases_dir root
@@ -27,8 +32,8 @@ update_state_md() {
   [ -f "$state_md" ] || return 0
 
   local plan_count summary_count pct
-  plan_count=$(ls -1 "$phase_dir"/*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
-  summary_count=$(ls -1 "$phase_dir"/*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
+  plan_count=$(find "$phase_dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+  summary_count=$(find "$phase_dir" -maxdepth 1 -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
 
   if [ "$plan_count" -gt 0 ]; then
     pct=$(( (summary_count * 100) / plan_count ))
@@ -46,36 +51,15 @@ slug_to_name() {
   echo "$1" | sed 's/^[0-9]*-//' | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1'
 }
 
-# Find the latest non-SOURCE UAT file in a phase directory
-latest_non_source_uat() {
-  local dir="$1"
-  local f latest=""
-  case "$dir" in */) ;; *) dir="$dir/" ;; esac
-  for f in "${dir}"[0-9]*-UAT.md; do
-    [ -e "$f" ] || continue
-    case "$f" in *SOURCE-UAT.md) continue ;; esac
-    latest="$f"
-  done
-  [ -n "$latest" ] && printf '%s\n' "$latest"
-  return 0
-}
-
 # Check if a phase has unresolved UAT issues
+# Uses shared extract_status_value() + latest_non_source_uat() from uat-utils.sh
 phase_has_uat_issues() {
   local phase_dir="$1"
-  local uat_file
+  local uat_file status_val
   uat_file=$(latest_non_source_uat "$phase_dir")
   [ -f "$uat_file" ] || return 1
-  awk '
-    { line = $0 }
-    tolower(line) ~ /^[[:space:]]*status[[:space:]]*:/ {
-      value = line
-      sub(/^[^:]*:[[:space:]]*/, "", value)
-      gsub(/[[:space:]]+$/, "", value)
-      if (tolower(value) == "issues_found") exit 0
-      else exit 1
-    }
-  ' "$uat_file" 2>/dev/null
+  status_val=$(extract_status_value "$uat_file")
+  [ "$status_val" = "issues_found" ]
 }
 
 update_roadmap() {
@@ -92,8 +76,8 @@ update_roadmap() {
   phase_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
   [ -z "$phase_num" ] && return 0
 
-  plan_count=$(ls -1 "$phase_dir"/*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
-  summary_count=$(ls -1 "$phase_dir"/*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
+  plan_count=$(find "$phase_dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+  summary_count=$(find "$phase_dir" -maxdepth 1 -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
 
   [ "$plan_count" -eq 0 ] && return 0
 

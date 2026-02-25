@@ -19,7 +19,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # regression anthropics/claude-code#24371), we extract it here and inject it
 # via CLAUDE_ENV_FILE so command templates get per-session isolation.
 # Stdin is ephemeral — must be consumed before any other read.
-HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""
+# Use timeout to avoid blocking when stdin is not piped (e.g., in tests).
+if [ -t 0 ]; then
+  HOOK_INPUT=""
+else
+  HOOK_INPUT=$(cat 2>/dev/null) || HOOK_INPUT=""
+fi
 _VBW_SESSION_ID=""
 if [ -n "$HOOK_INPUT" ]; then
   _VBW_SESSION_ID=$(printf '%s' "$HOOK_INPUT" | jq -r '.session_id // empty' 2>/dev/null) || _VBW_SESSION_ID=""
