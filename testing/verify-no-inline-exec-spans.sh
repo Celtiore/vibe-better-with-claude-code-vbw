@@ -39,7 +39,7 @@ warn() {
 # Files not yet fixed for #157. These produce WARN (not FAIL) to avoid
 # blocking CI. Remove entries as files are fixed. When this list is empty,
 # issue #157 is fully resolved.
-KNOWN_UNFIXED="config debug discuss doctor fix help init list-todos map qa research resume status teach todo uninstall update whats-new"
+KNOWN_UNFIXED="config debug discuss doctor fix help init list-todos map qa release research resume status teach todo uninstall update whats-new"
 
 is_known_unfixed() {
   local name="$1"
@@ -51,8 +51,8 @@ is_known_unfixed() {
 
 echo "=== Inline Execution Span Verification (Issue #157) ==="
 
-# Scan all command and reference files
-for dir in "$ROOT/commands" "$ROOT/references"; do
+# Scan all command, reference, and internal files
+for dir in "$ROOT/commands" "$ROOT/references" "$ROOT/internal"; do
   [ -d "$dir" ] || continue
   dir_label="$(basename "$dir")"
 

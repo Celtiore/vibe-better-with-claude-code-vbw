@@ -41,7 +41,8 @@ extract_frontmatter() {
 
 echo "=== Command Contract Verification ==="
 
-for file in "$COMMANDS_DIR"/*.md; do
+# Scan both commands/ (consumer-facing) and internal/ (maintainer-only)
+for file in "$COMMANDS_DIR"/*.md "$ROOT/internal"/*.md; do
   base="$(basename "$file" .md)"
 
   if [ "$(head -1 "$file" 2>/dev/null || true)" != "---" ]; then
@@ -192,7 +193,7 @@ while IFS= read -r ref; do
   else
     fail "reference missing target: $ref -> $rel"
   fi
-done < <(grep -RhoE '\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9._/*{}-]+' "$COMMANDS_DIR"/*.md | sort -u)
+done < <(grep -RhoE '\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9._/*{}-]+' "$COMMANDS_DIR"/*.md "$ROOT/internal"/*.md 2>/dev/null | sort -u)
 
 echo ""
 echo "==============================="
