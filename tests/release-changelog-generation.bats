@@ -470,7 +470,10 @@ extract_version_precompute() {
   guard7=$(extract_guard "7. Existing release branch")
   # Must list multiple not-found patterns for cross-version/transport robustness
   echo "$guard7" | grep -qi 'remote ref does not exist'
-  echo "$guard7" | grep -qi 'not found'
+  echo "$guard7" | grep -qi 'does not exist'
+  echo "$guard7" | grep -qi 'unable to delete'
+  # Must NOT use bare 'not found' (over-broad — catches repo-level errors)
+  echo "$guard7" | grep -qi 'do not match bare\|too broad'
   # Must describe conservative fallback for unknown messages
   echo "$guard7" | grep -qi 'conservative\|false failure'
 }
@@ -522,11 +525,9 @@ extract_version_precompute() {
   local guard5_content
   guard5_content=$(echo "$finalize_guard" | awk '/^5\. \*\*Tag already exists/{found=1; print; next} found && /^[0-9]+\./{found=0} found && /^###/{found=0} found{print}')
   if [ -z "$guard5_content" ]; then
-    # Fallback: search within Finalize Guard section (not full Finalize Phase)
-    # This is less precise but still scoped to guards, not steps.
-    # NOTE: finalize_guard extraction stops at ^### (next heading), so this
-    # fallback is guard-scoped and cannot leak Finalize Step content.
-    guard5_content="$finalize_guard"
+    # No fallback — if the Guard 5 anchor drifts (renumbered/reworded),
+    # fail explicitly so the test is updated, rather than broadening scope.
+    fail "Guard 5 anchor '5. **Tag already exists' not found in Finalize Guard section — update test if guard was renumbered/reworded"
   fi
   # Must explicitly warn that git tag -l always exits 0
   echo "$guard5_content" | grep -qi 'always exits 0\|exit code'

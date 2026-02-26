@@ -44,7 +44,7 @@ Git status:
    - If `{failed} > 0` and `{cleaned} == 0` → STOP: "All branch deletions failed. Check permissions and retry."
    - If `{failed} > 0` → display: "⚠ {failed} branch deletion(s) failed ({failed_branches} could not be fully cleaned) — check warnings above."
    - Display cleanup summary: "ℹ Cleaned up {cleaned} stale release branch(es). Proceeding with fresh release."
-   - **Remote deletion error classification:** When `git push origin --delete` exits non-zero, classify the error by stderr content: (1) if stderr contains `remote ref does not exist`, `does not exist`, `not found`, or `unable to delete.*not found` → treat as success (branch already gone), increment `{cleaned}`; (2) for any other stderr content → treat as failure, increment `{failed}`. This list covers Git's known not-found messages across versions and transports (HTTPS, SSH). If a future Git version changes the message, the worst case is a false failure (conservative), not a false success.
+   - **Remote deletion error classification:** When `git push origin --delete` exits non-zero, classify the error by stderr content: (1) if stderr contains `remote ref does not exist`, `does not exist`, or `unable to delete.*not found` → treat as success (branch already gone), increment `{cleaned}`; (2) for any other stderr content → treat as failure, increment `{failed}`. **Do not match bare `not found`** — it is too broad and would misclassify repo-level errors like `repository 'X' not found` as success. The specific patterns above cover Git's known branch-not-found messages across versions and transports (HTTPS, SSH). If a future Git version changes the message, the worst case is a false failure (conservative), not a false success.
 
 ## Pre-release Audit
 
@@ -175,7 +175,7 @@ Otherwise: Extract changelog for this version from CHANGELOG.md. Auth resolution
 ### Finalize Step 4: Clean up release branch
 
 Delete local release branch if it still exists: `git branch -d release/v{version} 2>/dev/null || true`
-Delete remote release branch: `git push origin --delete release/v{version} 2>&1`. If stderr contains a not-found message (`remote ref does not exist`, `does not exist`, `not found`, `unable to delete.*not found`), treat as success (already gone). If deletion fails for another reason, display: "⚠ Could not delete remote branch `release/v{version}` — delete manually." This is non-fatal (release is already tagged); continue to Step 5 regardless.
+Delete remote release branch: `git push origin --delete release/v{version} 2>&1`. If stderr contains a branch-not-found message (`remote ref does not exist`, `does not exist`, `unable to delete.*not found`), treat as success (already gone). Do not match bare `not found` (too broad — see Guard 7 classification note). If deletion fails for another reason, display: "⚠ Could not delete remote branch `release/v{version}` — delete manually." This is non-fatal (release is already tagged); continue to Step 5 regardless.
 
 ### Finalize Step 5: Present summary
 
