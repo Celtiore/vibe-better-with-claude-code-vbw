@@ -43,9 +43,10 @@ extract_audit1() {
   awk '/\*\*Audit 1/{found=1; print; next} found && /^\*\*Audit [2-9]/{found=0} found{print}' "$RELEASE_CMD"
 }
 
-# Helper: extract version pre-computation section
+# Helper: extract version pre-computation/resolution section
+# Supports both the legacy ### heading and promoted ## heading
 extract_version_precompute() {
-  awk '/^### Version Pre-computation/{found=1; print; next} found && /^(### |## )/{found=0} found{print}' "$RELEASE_CMD"
+  awk '/^##+ (Version Pre-computation|Version Resolution)/{found=1; print; next} found && /^## /{found=0} found{print}' "$RELEASE_CMD"
 }
 
 @test "release command file exists" {
@@ -300,7 +301,7 @@ extract_version_precompute() {
   echo "$precompute" | grep -qi 'VERSION\|bump'
   # Must appear before Audit 1 in the file
   local precompute_line audit1_line
-  precompute_line=$(grep -n 'Version Pre-computation' "$RELEASE_CMD" | head -1 | cut -d: -f1)
+  precompute_line=$(grep -nE '(Version Pre-computation|Version Resolution)' "$RELEASE_CMD" | head -1 | cut -d: -f1)
   audit1_line=$(grep -n '\*\*Audit 1' "$RELEASE_CMD" | head -1 | cut -d: -f1)
   [ -n "$precompute_line" ]
   [ -n "$audit1_line" ]
@@ -581,4 +582,60 @@ extract_version_precompute() {
   [ -n "$precompute" ]
   # Must explicitly say to use the higher/highest of VERSION vs pending
   echo "$precompute" | grep -qi 'higher of\|highest.*version\|whichever is greater\|maximum of'
+}
+
+# --- QA Round 1: Structural fixes ---
+
+@test "version resolution is a top-level section not nested under pre-release audit" {
+  # Version resolution must be its own ## section, not a ### under Pre-release Audit.
+  # This ensures --skip-audit cannot skip version computation.
+  # Check that ## Version Resolution (or equivalent) exists as a top-level heading
+  grep -qE '^## .*(Version Resolution|Version Pre-computation)' "$RELEASE_CMD"
+}
+
+@test "skip-audit does not skip version resolution" {
+  # The skip-audit note must NOT cover the version resolution section.
+  # Extract the Pre-release Audit section and verify it does NOT contain
+  # the version pre-computation/resolution logic.
+  local audit_section
+  audit_section=$(awk '/^## Pre-release Audit/{found=1; next} found && /^## /{found=0} found{print}' "$RELEASE_CMD")
+  [ -n "$audit_section" ]
+  # The audit section should NOT contain the version computation logic
+  ! echo "$audit_section" | grep -qi 'pending.*version.*bump base\|higher of.*VERSION.*pending'
+}
+
+@test "step 2 uses pre-computed new-version not VERSION file" {
+  local step2
+  step2=$(awk '/^### Step 2/{found=1; print; next} found && /^### /{found=0} found{print}' "$RELEASE_CMD")
+  [ -n "$step2" ]
+  # Step 2 must reference {new-version} from the resolution phase
+  echo "$step2" | grep -qi '{new-version}'
+  # Step 2 must NOT say "read VERSION" or "compute.*version" inline
+  ! echo "$step2" | grep -qi 'read VERSION.*apply bump\|read VERSION.*compute'
+}
+
+@test "step 3 uses pre-computed new-version for all bump levels" {
+  local step3
+  step3=$(awk '/^### Step 3/{found=1; print; next} found && /^### /{found=0} found{print}' "$RELEASE_CMD")
+  [ -n "$step3" ]
+  # Step 3 must reference writing {new-version} to all 4 files
+  echo "$step3" | grep -qi '{new-version}'
+  # Step 3 must NOT call bump-version.sh for the default path
+  ! echo "$step3" | grep -qi 'bash scripts/bump-version\.sh[^-]'
+}
+
+@test "guard 7 semver comparison hints at sort -V" {
+  local guard7
+  guard7=$(extract_guard "7. **Existing release branch")
+  [ -n "$guard7" ]
+  # Must provide implementation guidance for semver comparison
+  echo "$guard7" | grep -qi 'sort -V\|sort.*version'
+}
+
+@test "guard 7 notes ambiguity with divergent pending major versions" {
+  local guard7
+  guard7=$(extract_guard "7. **Existing release branch")
+  [ -n "$guard7" ]
+  # Must mention/warn about multiple pending branches with divergent versions
+  echo "$guard7" | grep -qi 'multiple.*branch\|divergent\|more than one\|several.*release'
 }

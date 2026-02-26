@@ -36,7 +36,7 @@ Git status:
    - **Local:** `git branch --list 'release/v*'` — note: `git branch --list` always exits 0 regardless of matches; check that stdout is non-empty to detect existing branches.
    - **Remote:** `git ls-remote --heads origin 'refs/heads/release/v*'` — note: `git ls-remote` always exits 0 when the remote is reachable, even with no matches; check stdout content for matches. A non-zero exit code indicates auth/network failure (see below).
    - If remote check exits non-zero (auth/network/repo failure) → STOP: "Could not verify remote release branches (`origin` unreachable or unauthorized). Fix remote access and retry."
-   - If local or remote checks produce non-empty stdout (indicating matching branches exist) → **extract pending versions, then auto-cleanup** all stale release branches before proceeding. Collect all matching branch names (local + remote, deduplicated). Extract the version from each branch name (e.g., `release/v1.32.0` → `1.32.0`) and capture the highest pending version as `{pending-version}` using semver comparison (compare major, then minor, then patch numerically). If no valid semver is found, set `{pending-version}` to empty. Initialize counters: `{cleaned}=0`, `{failed}=0`. For each `release/v{version}` branch:
+   - If local or remote checks produce non-empty stdout (indicating matching branches exist) → **extract pending versions, then auto-cleanup** all stale release branches before proceeding. Collect all matching branch names (local + remote, deduplicated). Extract the version from each branch name (e.g., `release/v1.32.0` → `1.32.0`) and capture the highest pending version as `{pending-version}` using semver comparison (compare major, then minor, then patch numerically; e.g., `printf '%s\n' "$v1" "$v2" | sort -V | tail -1`). If no valid semver is found, set `{pending-version}` to empty. Initialize counters: `{cleaned}=0`, `{failed}=0`. For each `release/v{version}` branch:
      - Find associated open PR: `gh pr list --state open --head release/v{version} --json number,state --limit 1`. If `gh` is unavailable or the command exits non-zero (auth/network/API failure), skip PR lookup and display: "⚠ gh CLI unavailable or failed — deleting branch; check for orphaned PRs manually."
      - Display: "⚠ Cleaning up stale release branch `release/v{version}` (PR #{N}, {state})" (or without PR info if `gh` unavailable/failed).
      - Delete local branch: `git branch -D release/v{version}`. If the branch doesn't exist locally, skip silently. If deletion fails for another reason (non-zero exit), increment `{failed}` and display: "⚠ Failed to delete local branch `release/v{version}`."
@@ -45,18 +45,19 @@ Git status:
    - If `{failed} > 0` → display: "⚠ {failed} branch deletion(s) failed ({failed_branches} could not be fully cleaned) — check warnings above."
    - Display cleanup summary: "ℹ Cleaned up {cleaned} stale release branch(es). Proceeding with fresh release."
    - **Remote deletion error classification:** When `git push origin --delete` exits non-zero, classify the error by stderr content: (1) if stderr contains `remote ref does not exist`, `does not exist`, or `unable to delete.*not found` → treat as success (branch already gone), increment `{cleaned}`; (2) for any other stderr content → treat as failure, increment `{failed}`. **Do not match bare `not found`** — it is too broad and would misclassify repo-level errors like `repository 'X' not found` as success. The specific patterns above cover Git's known branch-not-found messages across versions and transports (HTTPS, SSH). If a future Git version changes the message, the worst case is a false failure (conservative), not a false success.
+   - **Multiple pending branches note:** When several `release/v*` branches exist with divergent version numbers (e.g., `release/v1.32.0` and `release/v2.0.0`), the highest version by semver wins as `{pending-version}`. This is intentional — the highest pending version represents the "furthest along" release attempt, and bumping from it avoids version collisions. All stale branches are cleaned up regardless.
+
+## Version Resolution
+
+Always runs (not skipped by `--skip-audit`). Compute `{new-version}` before the audit so changelog entries use the final version header directly:
+- Read `VERSION` to get the current version.
+- **Pending release awareness:** If Guard 7 captured a `{pending-version}` from stale release branches, use the higher of `VERSION` and `{pending-version}` as the bump base (compare major, then minor, then patch numerically; e.g., `printf '%s\n' "$v1" "$v2" | sort -V | tail -1`). This ensures that if a previous release was prepared but not finalized (e.g., a pending `release/v1.32.0` when VERSION is `1.31.0`), the next bump increments from `1.32.0` rather than from `1.31.0`. If no pending version exists, use `VERSION` as before.
+- Apply the bump level to the chosen base: `--major` increments major and resets minor.patch to 0, `--minor` increments minor and resets patch to 0, default (no flag) increments patch.
+- Store `{new-version}` and `{release-date}` (today's date, `YYYY-MM-DD`) for use in the prepare phase and audit remediation.
 
 ## Pre-release Audit
 
 Skip if `--skip-audit`.
-
-### Version Pre-computation
-
-Compute `{new-version}` before the audit so changelog entries use the final version header directly:
-- Read `VERSION` to get the current version.
-- **Pending release awareness:** If Guard 7 captured a `{pending-version}` from stale release branches, use the higher of `VERSION` and `{pending-version}` as the bump base (compare major, then minor, then patch numerically). This ensures that if a previous release was prepared but not finalized (e.g., a pending `release/v1.32.0` when VERSION is `1.31.0`), the next bump increments from `1.32.0` rather than from `1.31.0`. If no pending version exists, use `VERSION` as before.
-- Apply the bump level to the chosen base: `--major` increments major and resets minor.patch to 0, `--minor` increments minor and resets patch to 0, default (no flag) increments patch.
-- Store `{new-version}` and `{release-date}` (today's date, `YYYY-MM-DD`) for use in audit remediation.
 
 **Audit 1: Collect changes since last release.**
 - Find last release commit: `git log --extended-regexp --grep="^chore(\(release\))?!?: (release )?v[0-9]" --format="%H %s"`, then subject-verify each candidate to find the first true match (fallback: root commit). **Subject verification procedure:** For each candidate line, split on the first space to separate `{hash}` and `{subject}`. Test `{subject}` against the regex `^chore(\(release\))?!?: (release )?v[0-9]`. Take the first candidate whose subject matches. If no candidate's subject matches after exhausting the full list, fall back to the repository root commit (`git rev-list --max-parents=0 HEAD | head -1`). **No truncation:** The candidate list is not truncated (no `head` pipe); this avoids silently dropping the true release commit when many body-line false positives precede it. In practice this list is small (release commits are infrequent), so full iteration is cheap. The `--extended-regexp` pattern matches `chore: release v{x}` (no scope), `chore(release): v{x}` (scoped), `chore(release): release v{x}` (scoped with redundant prefix), and `chore(release)!: v{x}` (breaking-change marker). The `(\(release\))?` group restricts the scope to exactly `(release)` or no scope, preventing false positives from other scopes like `chore(deps): v2.0.0`. The `!?` allows an optional breaking-change indicator after the scope. The `(release )?v[0-9]` anchor excludes `chore(release): bump version` commits. **Limitation:** `git log --grep` matches any line in the commit message (subject + body), so the subject-verification step is required to avoid false positives from body lines like `chore: release v1.30.0 was the previous release`. Capture the match's date via `git log -1 --format='%cd' --date=short {hash}` (fallback: empty string, which omits the `merged:>=` filter). **Note:** `--format='%cd'` with `--date=short` produces `YYYY-MM-DD`. Do NOT use `--format=%Y-%m-%d` — in git's format language `%Y`/`%m`/`%d` are not date placeholders (they output literal text, left/right marks, and ref decorations respectively).
@@ -104,13 +105,12 @@ No flags = patch bump (default).
 
 ### Step 2: Create release branch
 
-Compute new version (read VERSION, apply bump level).
+Use `{new-version}` from the Version Resolution phase.
 Create and switch to release branch: `git checkout -b release/v{new-version}`
 
-### Step 3: Bump version
+### Step 3: Write version
 
---major/--minor: read VERSION, compute new version, write to all 4 files (VERSION, .claude-plugin/plugin.json, .claude-plugin/marketplace.json, marketplace.json).
-Neither flag: `bash scripts/bump-version.sh`. Capture new version.
+Write `{new-version}` (from Version Resolution) to all 4 files: VERSION, .claude-plugin/plugin.json, .claude-plugin/marketplace.json, marketplace.json. This applies uniformly for all bump levels (--major, --minor, or default patch) since the version was already computed during Version Resolution.
 
 ### Step 4: Verify version sync
 
