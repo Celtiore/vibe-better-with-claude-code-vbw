@@ -184,6 +184,24 @@ extract_version_precompute() {
   echo "$guard7" | grep -qi 'STOP.*unreachable\|STOP.*unauthorized\|Could not verify'
 }
 
+@test "guard 7 dry-run mode previews cleanup without mutations" {
+  local guard7
+  guard7=$(extract_guard "7. Existing release branch")
+  [ -n "$guard7" ]
+  # Must explicitly gate cleanup under --dry-run and avoid branch deletion
+  echo "$guard7" | grep -qi -- '--dry-run'
+  echo "$guard7" | grep -qi 'do \*\*not\*\* delete local or remote branches\|dry run.*would clean up\|no branch cleanup performed'
+}
+
+@test "guard 7 no-push mode skips remote deletion operations" {
+  local guard7
+  guard7=$(extract_guard "7. Existing release branch")
+  [ -n "$guard7" ]
+  # Must explicitly gate remote deletion under --no-push
+  echo "$guard7" | grep -qi -- '--no-push'
+  echo "$guard7" | grep -qi 'do \*\*not\*\* run `git push origin --delete\|skipping remote deletion\|remote-skipped'
+}
+
 # --- Audit 1: Change collection ---
 
 @test "audit 1 collects merged PRs as primary changelog source" {
@@ -584,6 +602,23 @@ extract_version_precompute() {
   echo "$precompute" | grep -qi 'higher of\|highest.*version\|whichever is greater\|maximum of'
 }
 
+@test "version resolution includes remote VERSION baseline with fallback" {
+  local precompute
+  precompute=$(extract_version_precompute)
+  [ -n "$precompute" ]
+  # Must mention authoritative remote VERSION and fallback behavior
+  echo "$precompute" | grep -qi 'remote.*VERSION\|raw\.githubusercontent\|authoritative source'
+  echo "$precompute" | grep -qi 'fetch fails\|returns empty\|fall back\|fallback'
+}
+
+@test "version resolution uses highest of local remote and pending versions" {
+  local precompute
+  precompute=$(extract_version_precompute)
+  [ -n "$precompute" ]
+  # Must include all three baselines in the comparison logic
+  echo "$precompute" | grep -qi 'highest of.*local.*remote.*pending\|local-version.*remote-version.*pending-version'
+}
+
 # --- QA Round 1: Structural fixes ---
 
 @test "version resolution is a top-level section not nested under pre-release audit" {
@@ -621,7 +656,7 @@ extract_version_precompute() {
   # Step 3 must reference writing {new-version} to all 4 files
   echo "$step3" | grep -qi '{new-version}'
   # Step 3 must NOT call bump-version.sh for the default path
-  ! echo "$step3" | grep -qi 'bash scripts/bump-version\.sh[^-]'
+  ! echo "$step3" | grep -qi 'bump-version\.sh'
 }
 
 @test "guard 7 semver comparison hints at sort -V" {
