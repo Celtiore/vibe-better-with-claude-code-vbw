@@ -9,24 +9,24 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 RELEASE_CMD="$REPO_ROOT/internal/release.md"
 
 # Helper: extract guard section by number (anchored to guard number prefix)
-# Stops at the next guard number OR at a markdown ## heading (prevents
-# capturing finalize guards that share the same number).
+# Stops at the next guard number OR at a markdown ## heading. Uses a "done"
+# flag to prevent re-entry on finalize guards that share the same number.
 extract_guard() {
   local keyword="$1"
   local num
   num=$(echo "$keyword" | grep -oE '^[0-9]+')
   if [ -n "$num" ]; then
     awk -v n="$num" '
-      $0 ~ "^"n"\\. \\*\\*" {found=1; print; next}
-      found && /^[0-9]+\./ {found=0}
-      found && /^## / {found=0}
+      !done && $0 ~ "^"n"\\. \\*\\*" {found=1; print; next}
+      found && /^[0-9]+\./ {found=0; done=1}
+      found && /^## / {found=0; done=1}
       found {print}
     ' "$RELEASE_CMD"
   else
     awk -v kw="$keyword" '
-      index($0, kw) {found=1; print; next}
-      found && /^[0-9]+\./ {found=0}
-      found && /^## / {found=0}
+      !done && index($0, kw) {found=1; print; next}
+      found && /^[0-9]+\./ {found=0; done=1}
+      found && /^## / {found=0; done=1}
       found {print}
     ' "$RELEASE_CMD"
   fi
