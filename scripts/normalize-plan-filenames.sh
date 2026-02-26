@@ -14,6 +14,10 @@ set -u
 
 PHASE_DIR="${1:-}"
 if [ -z "$PHASE_DIR" ] || [ ! -d "$PHASE_DIR" ]; then
+  # Warn if it looks like an unexpanded template placeholder (e.g., "{phase_dir}")
+  case "$PHASE_DIR" in
+    *\{*\}*) echo "normalize-plan-filenames: skipped — path looks like unexpanded placeholder: $PHASE_DIR" >&2 ;;
+  esac
   exit 0
 fi
 

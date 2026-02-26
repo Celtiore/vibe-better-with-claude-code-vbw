@@ -343,6 +343,50 @@ else
   fail "phase-detect compound — output missing misnamed_plans=false, got: $(echo "$OUTPUT" | grep misnamed)"
 fi
 
+# --- Type-aware error messages, path normalization, placeholder guard ---
+echo ""
+echo "Type-aware error messages and path handling:"
+
+# Test 29: file-guard error message references SUMMARY (not PLAN) for SUMMARY-01.md
+OUTPUT=$(echo '{"tool_input":{"file_path":".vbw-planning/phases/01-setup/SUMMARY-01.md"}}' | bash "$SCRIPT_DIR/scripts/file-guard.sh" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 2 ] && echo "$OUTPUT" | grep -q "SUMMARY artifact" && echo "$OUTPUT" | grep -q "{NN}-SUMMARY.md"; then
+  pass "error references SUMMARY type for SUMMARY-01.md"
+else
+  fail "type-aware SUMMARY — got rc=$RC, output: $OUTPUT"
+fi
+
+# Test 30: file-guard error message references CONTEXT for CONTEXT-02.md
+OUTPUT=$(echo '{"tool_input":{"file_path":".vbw-planning/phases/02-impl/CONTEXT-02.md"}}' | bash "$SCRIPT_DIR/scripts/file-guard.sh" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 2 ] && echo "$OUTPUT" | grep -q "CONTEXT artifact" && echo "$OUTPUT" | grep -q "{NN}-CONTEXT.md"; then
+  pass "error references CONTEXT type for CONTEXT-02.md"
+else
+  fail "type-aware CONTEXT — got rc=$RC, output: $OUTPUT"
+fi
+
+# Test 31: file-guard error message references PLAN for plain PLAN-01.md
+OUTPUT=$(echo '{"tool_input":{"file_path":".vbw-planning/phases/01-setup/PLAN-01.md"}}' | bash "$SCRIPT_DIR/scripts/file-guard.sh" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 2 ] && echo "$OUTPUT" | grep -q "PLAN artifact" && echo "$OUTPUT" | grep -q "{NN}-PLAN.md"; then
+  pass "error references PLAN type for PLAN-01.md"
+else
+  fail "type-aware PLAN — got rc=$RC, output: $OUTPUT"
+fi
+
+# Test 32: file-guard blocks .. traversal path (e.g., phases/01-setup/../01-setup/PLAN-01.md)
+OUTPUT=$(echo '{"tool_input":{"file_path":".vbw-planning/phases/01-setup/../01-setup/PLAN-01.md"}}' | bash "$SCRIPT_DIR/scripts/file-guard.sh" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 2 ] && echo "$OUTPUT" | grep -q "wrong naming convention"; then
+  pass "blocks PLAN-01.md via .. traversal path"
+else
+  fail ".. traversal — got rc=$RC, output: $OUTPUT"
+fi
+
+# Test 33: normalize warns on unexpanded placeholder path
+OUTPUT=$(bash "$NORM_SCRIPT" '{phase_dir}' 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && echo "$OUTPUT" | grep -q "unexpanded placeholder"; then
+  pass "warns on unexpanded placeholder {phase_dir}"
+else
+  fail "placeholder guard — got rc=$RC, output: $OUTPUT"
+fi
+
 echo ""
 echo "==============================="
 echo "Plan filename convention: $PASS passed, $FAIL failed"
