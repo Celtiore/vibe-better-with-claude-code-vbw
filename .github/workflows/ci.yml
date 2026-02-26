@@ -54,7 +54,7 @@ jobs:
 
       - name: Install bats-core
         run: |
-          git clone --depth 1 --branch v1.12.0 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats-core
           sudo /tmp/bats-core/install.sh /usr/local
           bats -v
 
