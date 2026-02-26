@@ -128,6 +128,10 @@ _stale_cache_mtime_pattern() {
   printf '[ "$P_M" -lt "$S_M" ]'
 }
 
+_stamp_file_pattern() {
+  printf '/tmp/.vbw-phase-detect-stamp-'
+}
+
 _conditional_wait_pattern() {
   printf 'if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do'
 }
@@ -135,6 +139,7 @@ _conditional_wait_pattern() {
 _simulate_phase_detect_reader() {
   local L="$1"
   local P="$2"
+  local S="$3"
   local PD=""
 
   [ -f "$P" ] && PD=$(cat "$P")
@@ -148,7 +153,7 @@ _simulate_phase_detect_reader() {
 
     S_M=0
     P_M=0
-    [ -L "$L" ] && S_M=$(stat -f %m "$L" 2>/dev/null || stat -c %Y "$L" 2>/dev/null || echo 0)
+    [ -f "$S" ] && S_M=$(stat -f %m "$S" 2>/dev/null || stat -c %Y "$S" 2>/dev/null || echo 0)
     [ -f "$P" ] && P_M=$(stat -f %m "$P" 2>/dev/null || stat -c %Y "$P" 2>/dev/null || echo 0)
 
     if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then
@@ -156,7 +161,7 @@ _simulate_phase_detect_reader() {
     fi
   fi
 
-  if [ -n "$PD" ] && [ "$PD" != "phase_detect_error=true" ]; then
+  if [ -n "$(printf '%s' "$PD" | tr -d '[:space:]')" ] && [ "$PD" != "phase_detect_error=true" ]; then
     printf '%s' "$PD"
   else
     echo "phase_detect_error=true"
@@ -168,6 +173,14 @@ _simulate_phase_detect_reader() {
     local count
     count=$(grep -cF "$(_atomic_pd_preamble_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
     [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing atomic phase-detect in preamble"; return 1; }
+  done
+}
+
+@test "commands with phase-detect preamble write stamp file" {
+  for cmd in resume status vibe discuss qa verify; do
+    local count
+    count=$(grep -cF "$(_stamp_file_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
+    [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing phase-detect stamp file path"; return 1; }
   done
 }
 
@@ -203,14 +216,20 @@ _simulate_phase_detect_reader() {
   done
 }
 
+@test "vibe/verify secondary readers no longer use legacy empty-only fallback" {
+  run bash -c "grep -nF '[ -z \"\$PD\" ] && [ -L \"\$L\" ] && [ -f \"\$L/scripts/phase-detect.sh\" ]' \"$PROJECT_ROOT/commands/vibe.md\" \"$PROJECT_ROOT/commands/verify.md\""
+  [ "$status" -eq 1 ]
+}
+
 @test "reader bypasses error cache when live script is available" {
-  local td root link cache out
+  local td root link cache stamp out
   td=$(mktemp -d)
   trap 'rm -rf "$td"' EXIT
 
   root="$td/root"
   link="$td/link"
   cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
   mkdir -p "$root/scripts"
 
   cat > "$root/scripts/phase-detect.sh" <<'EOF'
@@ -220,21 +239,23 @@ EOF
   chmod +x "$root/scripts/phase-detect.sh"
 
   ln -s "$root" "$link"
+  : > "$stamp"
   echo "phase_detect_error=true" > "$cache"
 
-  out=$(_simulate_phase_detect_reader "$link" "$cache")
+  out=$(_simulate_phase_detect_reader "$link" "$cache" "$stamp")
   [[ "$out" == *"next_phase_state=fresh_live"* ]]
   [[ "$out" != *"phase_detect_error=true"* ]]
 }
 
-@test "reader refreshes stale cache older than symlink" {
-  local td root link cache out
+@test "reader refreshes stale cache older than stamp" {
+  local td root link cache stamp out
   td=$(mktemp -d)
   trap 'rm -rf "$td"' EXIT
 
   root="$td/root"
   link="$td/link"
   cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
   mkdir -p "$root/scripts"
 
   cat > "$root/scripts/phase-detect.sh" <<'EOF'
@@ -245,29 +266,56 @@ EOF
 
   echo "next_phase_state=stale_cache" > "$cache"
   sleep 1
+  : > "$stamp"
   ln -s "$root" "$link"
 
-  out=$(_simulate_phase_detect_reader "$link" "$cache")
+  out=$(_simulate_phase_detect_reader "$link" "$cache" "$stamp")
   [[ "$out" == *"next_phase_state=fresh_live"* ]]
   [[ "$out" != *"next_phase_state=stale_cache"* ]]
 }
 
 @test "reader skips wait when cache is valid and symlink is absent" {
-  local td cache out slept
+  local td cache stamp out slept
   td=$(mktemp -d)
   trap 'rm -rf "$td"' EXIT
 
   cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
   echo "next_phase_state=cached_ok" > "$cache"
   slept=0
 
   sleep() { slept=1; }
 
-  _simulate_phase_detect_reader "$td/no-link" "$cache" > "$td/out.txt"
+  _simulate_phase_detect_reader "$td/no-link" "$cache" "$stamp" > "$td/out.txt"
   out=$(cat "$td/out.txt")
 
   [ "$slept" -eq 0 ]
   [[ "$out" == *"next_phase_state=cached_ok"* ]]
+}
+
+@test "reader treats whitespace-only output as error" {
+  local td root link cache stamp out
+  td=$(mktemp -d)
+  trap 'rm -rf "$td"' EXIT
+
+  root="$td/root"
+  link="$td/link"
+  cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
+  mkdir -p "$root/scripts"
+
+  cat > "$root/scripts/phase-detect.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '   \n\n'
+EOF
+  chmod +x "$root/scripts/phase-detect.sh"
+
+  ln -s "$root" "$link"
+  : > "$stamp"
+  : > "$cache"
+
+  out=$(_simulate_phase_detect_reader "$link" "$cache" "$stamp")
+  [[ "$out" == "phase_detect_error=true" ]]
 }
 
 @test "vibe.md reads phase-detect live with temp-file fallback" {
