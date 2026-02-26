@@ -372,27 +372,35 @@ echo "(Exercises symlink glob fallback, grep -oE extraction, and no-match safety
 PASS=0
 FAIL=0
 
+# Trap-based cleanup for Phase 4 temp artifacts (EC-3)
+BTEST_CLEANUP_LIST=""
+btest_cleanup() { for item in $BTEST_CLEANUP_LIST; do rm -rf "$item" 2>/dev/null; done; }
+trap btest_cleanup EXIT
+
 # Check 15: Symlink glob fallback resolves when a valid symlink exists
+# Uses a scoped glob pattern so ambient session symlinks don't interfere
 BTEST_DIR=$(mktemp -d)
 mkdir -p "$BTEST_DIR/scripts"
 echo "#!/bin/bash" > "$BTEST_DIR/scripts/hook-wrapper.sh"
 BTEST_LINK="/tmp/.vbw-plugin-root-link-test-behavioral-$$"
 ln -s "$BTEST_DIR" "$BTEST_LINK"
+BTEST_CLEANUP_LIST="$BTEST_CLEANUP_LIST $BTEST_LINK $BTEST_DIR"
 resolved=""
-for f in /tmp/.vbw-plugin-root-link-*/scripts/hook-wrapper.sh; do
+for f in /tmp/.vbw-plugin-root-link-test-behavioral-$$/scripts/hook-wrapper.sh; do
   [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
 done
 rm -f "$BTEST_LINK"
 rm -rf "$BTEST_DIR"
-if [ -n "$resolved" ]; then
-  pass "symlink glob fallback resolves when valid symlink exists"
+if [ "$resolved" = "$BTEST_LINK" ]; then
+  pass "symlink glob fallback resolves to our fixture symlink"
 else
-  fail "symlink glob fallback failed to resolve despite existing symlink"
+  fail "symlink glob fallback resolved to '$resolved' instead of fixture '$BTEST_LINK'"
 fi
 
 # Check 15b: Symlink glob fallback skips stale symlinks (target does not exist)
 BTEST_STALE="/tmp/.vbw-plugin-root-link-test-stale-$$"
 ln -s "/nonexistent/path/$$" "$BTEST_STALE"
+BTEST_CLEANUP_LIST="$BTEST_CLEANUP_LIST $BTEST_STALE"
 resolved=""
 # Only glob over this specific stale symlink — not the generic * pattern
 for f in "$BTEST_STALE/scripts/hook-wrapper.sh"; do
@@ -403,6 +411,27 @@ if [ -z "$resolved" ]; then
   pass "symlink glob fallback correctly skips stale symlinks"
 else
   fail "symlink glob fallback incorrectly resolved stale symlink to: $resolved"
+fi
+
+# Check 15c: Mixed stale + valid symlinks — glob resolves the valid one
+BTEST_STALE_MIX="/tmp/.vbw-plugin-root-link-test-mix-stale-$$"
+BTEST_VALID_DIR=$(mktemp -d)
+mkdir -p "$BTEST_VALID_DIR/scripts"
+echo "#!/bin/bash" > "$BTEST_VALID_DIR/scripts/hook-wrapper.sh"
+BTEST_VALID_MIX="/tmp/.vbw-plugin-root-link-test-mix-valid-$$"
+ln -s "/nonexistent/path/$$" "$BTEST_STALE_MIX"
+ln -s "$BTEST_VALID_DIR" "$BTEST_VALID_MIX"
+BTEST_CLEANUP_LIST="$BTEST_CLEANUP_LIST $BTEST_STALE_MIX $BTEST_VALID_MIX $BTEST_VALID_DIR"
+resolved=""
+for f in /tmp/.vbw-plugin-root-link-test-mix-*-$$/scripts/hook-wrapper.sh; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+rm -f "$BTEST_STALE_MIX" "$BTEST_VALID_MIX"
+rm -rf "$BTEST_VALID_DIR"
+if [ "$resolved" = "$BTEST_VALID_MIX" ]; then
+  pass "mixed stale+valid symlinks: glob resolves the valid one"
+else
+  fail "mixed stale+valid symlinks: resolved to '$resolved' instead of '$BTEST_VALID_MIX'"
 fi
 
 # Check 16: grep -oE extracts --plugin-dir value from ps-style output
