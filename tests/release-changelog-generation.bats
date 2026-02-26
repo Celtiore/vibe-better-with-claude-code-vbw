@@ -501,8 +501,8 @@ extract_version_precompute() {
   # %Y is literal in git, %m is left/right mark, %d is ref decoration
   ! echo "$audit1" | grep -q 'format=%Y-%m-%d'
   ! echo "$audit1" | grep -q "format='%Y-%m-%d'"
-  # Must use a valid git date format: %cd with --date=short, or %ci piped through cut
-  echo "$audit1" | grep -qE '%cd.*--date=short|%ci'
+  # Must use a valid git date format: %cd with --date=short (spec-documented approach)
+  echo "$audit1" | grep -qE '%cd.*--date=short'
 }
 
 @test "audit 5 stale section tag check warns about exit code pitfall" {
@@ -518,12 +518,38 @@ extract_version_precompute() {
   local finalize_guard
   finalize_guard=$(awk '/^### Finalize Guard/{found=1; next} /^## /{found=0} found{print}' "$RELEASE_CMD")
   [ -n "$finalize_guard" ]
-  # If Finalize Guard doesn't mention tag check, check full finalize section
-  if ! echo "$finalize_guard" | grep -qi 'git tag -l'; then
-    finalize_guard=$(awk '/^## Finalize Phase/{found=1; next} /^## [^F]/{found=0} found{print}' "$RELEASE_CMD")
+  # Narrow extraction: target Guard 5 specifically ("Tag already exists")
+  local guard5_content
+  guard5_content=$(echo "$finalize_guard" | awk '/^5\. \*\*Tag already exists/{found=1; print; next} found && /^[0-9]+\./{found=0} found && /^###/{found=0} found{print}')
+  if [ -z "$guard5_content" ]; then
+    # Fallback: search within Finalize Guard section (not full Finalize Phase)
+    # This is less precise but still scoped to guards, not steps
+    guard5_content="$finalize_guard"
   fi
   # Must explicitly warn that git tag -l always exits 0
-  echo "$finalize_guard" | grep -qi 'always exits 0\|exit code'
+  echo "$guard5_content" | grep -qi 'always exits 0\|exit code'
   # Must instruct to check stdout content
-  echo "$finalize_guard" | grep -qi 'stdout\|non-empty\|outputs a match'
+  echo "$guard5_content" | grep -qi 'stdout\|non-empty\|outputs a match'
+}
+
+@test "finalize step 2 ls-remote tag check warns about exit code pitfall" {
+  local step2
+  step2=$(awk '/^### Finalize Step 2/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
+  [ -n "$step2" ]
+  # Must mention git ls-remote --tags
+  echo "$step2" | grep -qi 'git ls-remote.*tags'
+  # Must explicitly warn that git ls-remote always exits 0 (same class as git tag -l)
+  echo "$step2" | grep -qi 'always exits 0\|exit code'
+  # Must instruct to check stdout content, not exit code
+  echo "$step2" | grep -qi 'stdout\|non-empty'
+}
+
+@test "guard 7 clarifies stdout-vs-exit-code for branch list checks" {
+  local guard7
+  guard7=$(extract_guard "7. Existing release branch")
+  [ -n "$guard7" ]
+  # git branch --list always exits 0 — spec must clarify
+  echo "$guard7" | grep -qi 'branch --list.*always exits 0\|branch --list.*stdout'
+  # git ls-remote exits 0 when reachable — spec must clarify stdout check for matches
+  echo "$guard7" | grep -qi 'ls-remote.*always exits 0\|ls-remote.*stdout'
 }

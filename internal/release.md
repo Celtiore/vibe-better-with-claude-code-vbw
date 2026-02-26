@@ -32,9 +32,9 @@ Git status:
    - If `--dry-run` (with or without `--skip-audit`): display "ℹ Would create CHANGELOG.md" but do NOT write. Skip to Guard 6.
    - Otherwise: create CHANGELOG.md with `# Changelog\n\nAll notable changes to VBW will be documented in this file.\n`. Display: "ℹ Created CHANGELOG.md." Skip to Guard 6.
 6. **Version sync:** `bash scripts/bump-version.sh --verify`. Out of sync → WARN but proceed (bump fixes it).
-7. **Existing release branch:** Check local first (`git branch --list 'release/v*'`) and remote second (`git ls-remote --heads origin 'refs/heads/release/v*'`).
+7. **Existing release branch:** Check local first (`git branch --list 'release/v*'` — note: `git branch --list` always exits 0 regardless of matches, check that stdout is non-empty) and remote second (`git ls-remote --heads origin 'refs/heads/release/v*'` — note: `git ls-remote` always exits 0 when the remote is reachable, even with no matches; check stdout content for matches, and a non-zero exit code for auth/network failures).
    - If remote check exits non-zero (auth/network/repo failure) → STOP: "Could not verify remote release branches (`origin` unreachable or unauthorized). Fix remote access and retry."
-   - If local or remote checks return matches → **auto-cleanup** all stale release branches before proceeding. Collect all matching branch names (local + remote, deduplicated). Initialize counters: `{cleaned}=0`, `{failed}=0`. For each `release/v{version}` branch:
+   - If local or remote checks produce non-empty stdout (indicating matching branches exist) → **auto-cleanup** all stale release branches before proceeding. Collect all matching branch names (local + remote, deduplicated). Initialize counters: `{cleaned}=0`, `{failed}=0`. For each `release/v{version}` branch:
      - Find associated open PR: `gh pr list --state open --head release/v{version} --json number,state --limit 1`. If `gh` is unavailable or the command exits non-zero (auth/network/API failure), skip PR lookup and display: "⚠ gh CLI unavailable or failed — deleting branch; check for orphaned PRs manually."
      - Display: "⚠ Cleaning up stale release branch `release/v{version}` (PR #{N}, {state})" (or without PR info if `gh` unavailable/failed).
      - Delete local branch: `git branch -D release/v{version}`. If the branch doesn't exist locally, skip silently. If deletion fails for another reason (non-zero exit), increment `{failed}` and display: "⚠ Failed to delete local branch `release/v{version}`."
@@ -161,7 +161,7 @@ Run after the release PR has been merged into `main`. Tags the exact release com
 
 ### Finalize Step 2: Push tag
 
-If tag was already pushed (`git ls-remote --tags origin "v{version}"` returns a match) → display "○ Tag already on remote." and skip.
+If tag was already pushed (`git ls-remote --tags origin "v{version}"` produces non-empty stdout — note: `git ls-remote` always exits 0 regardless of matches, so check that stdout is non-empty, not the exit code) → display "○ Tag already on remote." and skip.
 Otherwise: `git push origin v{version}`. Display ✓.
 
 ### Finalize Step 3: GitHub Release
