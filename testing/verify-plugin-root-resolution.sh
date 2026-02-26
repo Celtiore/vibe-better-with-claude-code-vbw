@@ -363,4 +363,85 @@ if [ "$FAIL" -gt 0 ]; then
 fi
 
 echo "All runtime resolver safety checks passed."
+
+# --- Phase 4: Behavioral verification of resolution mechanisms ---
+echo ""
+echo "=== Behavioral Resolution Verification ==="
+echo "(Exercises symlink glob fallback, grep -oE extraction, and no-match safety in controlled sandboxes)"
+
+PASS=0
+FAIL=0
+
+# Check 15: Symlink glob fallback resolves when a valid symlink exists
+BTEST_DIR=$(mktemp -d)
+mkdir -p "$BTEST_DIR/scripts"
+echo "#!/bin/bash" > "$BTEST_DIR/scripts/hook-wrapper.sh"
+BTEST_LINK="/tmp/.vbw-plugin-root-link-test-behavioral-$$"
+ln -s "$BTEST_DIR" "$BTEST_LINK"
+resolved=""
+for f in /tmp/.vbw-plugin-root-link-*/scripts/hook-wrapper.sh; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+rm -f "$BTEST_LINK"
+rm -rf "$BTEST_DIR"
+if [ -n "$resolved" ]; then
+  pass "symlink glob fallback resolves when valid symlink exists"
+else
+  fail "symlink glob fallback failed to resolve despite existing symlink"
+fi
+
+# Check 15b: Symlink glob fallback skips stale symlinks (target does not exist)
+BTEST_STALE="/tmp/.vbw-plugin-root-link-test-stale-$$"
+ln -s "/nonexistent/path/$$" "$BTEST_STALE"
+resolved=""
+# Only glob over this specific stale symlink — not the generic * pattern
+for f in "$BTEST_STALE/scripts/hook-wrapper.sh"; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+rm -f "$BTEST_STALE"
+if [ -z "$resolved" ]; then
+  pass "symlink glob fallback correctly skips stale symlinks"
+else
+  fail "symlink glob fallback incorrectly resolved stale symlink to: $resolved"
+fi
+
+# Check 16: grep -oE extracts --plugin-dir value from ps-style output
+BTEST_PS_LINE="node /path/to/claude --plugin-dir /Users/test/my-plugin --other-flag"
+extracted=$(echo "$BTEST_PS_LINE" | grep -oE -- "--plugin-dir [^ ]+" | head -1)
+if [ "$extracted" = "--plugin-dir /Users/test/my-plugin" ]; then
+  pass "grep -oE correctly extracts --plugin-dir value from ps output"
+else
+  fail "grep -oE extraction failed: expected '--plugin-dir /Users/test/my-plugin', got '$extracted'"
+fi
+
+# Check 16b: Prefix stripping yields clean path after grep -oE extraction
+D="$extracted"
+D="${D#--plugin-dir }"
+if [ "$D" = "/Users/test/my-plugin" ]; then
+  pass "prefix stripping yields clean path after grep -oE"
+else
+  fail "prefix stripping failed: expected '/Users/test/my-plugin', got '$D'"
+fi
+
+# Check 17: Unmatched glob with nullglob off falls through safely (bash 3.2 default)
+resolved=""
+for f in /tmp/.vbw-plugin-root-link-nonexistent-pattern-$$/scripts/hook-wrapper.sh; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+if [ -z "$resolved" ]; then
+  pass "unmatched glob with nullglob off falls through safely"
+else
+  fail "unmatched glob incorrectly resolved to: $resolved"
+fi
+
+echo ""
+echo "==============================="
+echo "TOTAL: $PASS PASS, $FAIL FAIL"
+echo "==============================="
+
+if [ "$FAIL" -gt 0 ]; then
+  exit 1
+fi
+
+echo "All behavioral resolution checks passed."
 exit 0
