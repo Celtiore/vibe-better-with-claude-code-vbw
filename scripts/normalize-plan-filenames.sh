@@ -24,8 +24,8 @@ fi
 # Strip trailing slash for consistent path joining
 PHASE_DIR="${PHASE_DIR%/}"
 
-# Pattern: PLAN-NN.md → NN-PLAN.md (case-insensitive extension)
-for f in "$PHASE_DIR"/PLAN-[0-9]*.[mM][dD]; do
+# Pattern: PLAN-NN.md → NN-PLAN.md (case-insensitive prefix and extension)
+for f in "$PHASE_DIR"/[Pp][Ll][Aa][Nn]-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
   [ ! -L "$f" ] || continue  # skip symlinks
   BASENAME=$(basename "$f")
@@ -34,16 +34,16 @@ for f in "$PHASE_DIR"/PLAN-[0-9]*.[mM][dD]; do
     echo "skipped: $BASENAME (unknown compound form)" >&2
     continue
   fi
-  # Extract number: PLAN-01.md → 01, PLAN-02-SUMMARY.md → 02
-  NUM=$(echo "$BASENAME" | sed 's/^PLAN-\([0-9]*\).*/\1/')
+  # Extract number: PLAN-01.md → 01, PLAN-02-SUMMARY.md → 02 (case-insensitive)
+  NUM=$(echo "$BASENAME" | sed 's/^[Pp][Ll][Aa][Nn]-\([0-9]*\).*/\1/')
   [ -z "$NUM" ] && continue
   # Zero-pad to 2 digits
   NUM=$(printf "%02d" "$((10#$NUM))")
 
-  if echo "$BASENAME" | grep -qi '^PLAN-[0-9]*-SUMMARY\.[mM][dD]$'; then
+  if echo "$BASENAME" | grep -qi '^[Pp][Ll][Aa][Nn]-[0-9]*-[Ss][Uu][Mm][Mm][Aa][Rr][Yy]\.[mM][dD]$'; then
     # PLAN-NN-SUMMARY.md → NN-SUMMARY.md
     TARGET="$PHASE_DIR/${NUM}-SUMMARY.md"
-  elif echo "$BASENAME" | grep -qi '^PLAN-[0-9]*-CONTEXT\.[mM][dD]$'; then
+  elif echo "$BASENAME" | grep -qi '^[Pp][Ll][Aa][Nn]-[0-9]*-[Cc][Oo][Nn][Tt][Ee][Xx][Tt]\.[mM][dD]$'; then
     # PLAN-NN-CONTEXT.md → NN-CONTEXT.md
     TARGET="$PHASE_DIR/${NUM}-CONTEXT.md"
   else
@@ -59,8 +59,8 @@ for f in "$PHASE_DIR"/PLAN-[0-9]*.[mM][dD]; do
   echo "renamed: $BASENAME -> $(basename "$TARGET")"
 done
 
-# Pattern: SUMMARY-NN.md → NN-SUMMARY.md (case-insensitive extension)
-for f in "$PHASE_DIR"/SUMMARY-[0-9]*.[mM][dD]; do
+# Pattern: SUMMARY-NN.md → NN-SUMMARY.md (case-insensitive prefix and extension)
+for f in "$PHASE_DIR"/[Ss][Uu][Mm][Mm][Aa][Rr][Yy]-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
   [ ! -L "$f" ] || continue  # skip symlinks
   BASENAME=$(basename "$f")
@@ -69,7 +69,7 @@ for f in "$PHASE_DIR"/SUMMARY-[0-9]*.[mM][dD]; do
     echo "skipped: $BASENAME (unknown compound form)" >&2
     continue
   fi
-  NUM=$(echo "$BASENAME" | sed 's/^SUMMARY-\([0-9]*\).*/\1/')
+  NUM=$(echo "$BASENAME" | sed 's/^[Ss][Uu][Mm][Mm][Aa][Rr][Yy]-\([0-9]*\).*/\1/')
   [ -z "$NUM" ] && continue
   NUM=$(printf "%02d" "$((10#$NUM))")
   TARGET="$PHASE_DIR/${NUM}-SUMMARY.md"
@@ -81,8 +81,8 @@ for f in "$PHASE_DIR"/SUMMARY-[0-9]*.[mM][dD]; do
   echo "renamed: $BASENAME -> $(basename "$TARGET")"
 done
 
-# Pattern: CONTEXT-NN.md → NN-CONTEXT.md (case-insensitive extension)
-for f in "$PHASE_DIR"/CONTEXT-[0-9]*.[mM][dD]; do
+# Pattern: CONTEXT-NN.md → NN-CONTEXT.md (case-insensitive prefix and extension)
+for f in "$PHASE_DIR"/[Cc][Oo][Nn][Tt][Ee][Xx][Tt]-[0-9]*.[mM][dD]; do
   [ -f "$f" ] || continue
   [ ! -L "$f" ] || continue  # skip symlinks
   BASENAME=$(basename "$f")
@@ -91,7 +91,7 @@ for f in "$PHASE_DIR"/CONTEXT-[0-9]*.[mM][dD]; do
     echo "skipped: $BASENAME (unknown compound form)" >&2
     continue
   fi
-  NUM=$(echo "$BASENAME" | sed 's/^CONTEXT-\([0-9]*\).*/\1/')
+  NUM=$(echo "$BASENAME" | sed 's/^[Cc][Oo][Nn][Tt][Ee][Xx][Tt]-\([0-9]*\).*/\1/')
   [ -z "$NUM" ] && continue
   NUM=$(printf "%02d" "$((10#$NUM))")
   TARGET="$PHASE_DIR/${NUM}-CONTEXT.md"

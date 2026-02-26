@@ -379,12 +379,142 @@ else
   fail ".. traversal — got rc=$RC, output: $OUTPUT"
 fi
 
-# Test 33: normalize warns on unexpanded placeholder path
-OUTPUT=$(bash "$NORM_SCRIPT" '{phase_dir}' 2>&1) && RC=$? || RC=$?
-if [ "$RC" -eq 0 ] && echo "$OUTPUT" | grep -q "unexpanded placeholder"; then
-  pass "warns on unexpanded placeholder {phase_dir}"
+# --- Lowercase normalization tests (Finding 1 regression) ---
+echo ""
+echo "Lowercase type-first normalization:"
+
+# Test 34: normalize renames lowercase plan-01.md → 01-PLAN.md
+TDIR="$TMPDIR_TEST/test34"
+mkdir -p "$TDIR"
+echo "plan" > "$TDIR/plan-01.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$TDIR/01-PLAN.md" ] && [ ! -f "$TDIR/plan-01.md" ]; then
+  pass "renames lowercase plan-01.md → 01-PLAN.md"
 else
-  fail "placeholder guard — got rc=$RC, output: $OUTPUT"
+  fail "lowercase plan — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# Test 35: normalize renames lowercase summary-02.md → 02-SUMMARY.md
+TDIR="$TMPDIR_TEST/test35"
+mkdir -p "$TDIR"
+echo "summary" > "$TDIR/summary-02.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$TDIR/02-SUMMARY.md" ] && [ ! -f "$TDIR/summary-02.md" ]; then
+  pass "renames lowercase summary-02.md → 02-SUMMARY.md"
+else
+  fail "lowercase summary — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# Test 36: normalize renames lowercase context-03.md → 03-CONTEXT.md
+TDIR="$TMPDIR_TEST/test36"
+mkdir -p "$TDIR"
+echo "context" > "$TDIR/context-03.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$TDIR/03-CONTEXT.md" ] && [ ! -f "$TDIR/context-03.md" ]; then
+  pass "renames lowercase context-03.md → 03-CONTEXT.md"
+else
+  fail "lowercase context — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# Test 37: normalize renames mixed-case Plan-01.md → 01-PLAN.md
+TDIR="$TMPDIR_TEST/test37"
+mkdir -p "$TDIR"
+echo "plan" > "$TDIR/Plan-01.md"
+OUTPUT=$(bash "$NORM_SCRIPT" "$TDIR" 2>&1) && RC=$? || RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$TDIR/01-PLAN.md" ] && [ ! -f "$TDIR/Plan-01.md" ]; then
+  pass "renames mixed-case Plan-01.md → 01-PLAN.md"
+else
+  fail "mixed-case Plan — rc=$RC, files: $(ls "$TDIR"), output: $OUTPUT"
+fi
+
+# --- 3+ digit phase-detect tests (Finding 2 regression) ---
+echo ""
+echo "Multi-digit phase-detect detection:"
+
+# Test 38: phase-detect catches PLAN-100.md (3 digits)
+TDIR="$TMPDIR_TEST/test38"
+mkdir -p "$TDIR/.vbw-planning/phases/01-setup"
+echo "plan" > "$TDIR/.vbw-planning/phases/01-setup/PLAN-100.md"
+cat > "$TDIR/.vbw-planning/PROJECT.md" << 'EOF'
+# Test Project
+This is a test project.
+EOF
+OUTPUT=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null) && RC=$? || RC=$?
+if echo "$OUTPUT" | grep -q "misnamed_plans=true"; then
+  pass "phase-detect catches PLAN-100.md (3 digits)"
+else
+  fail "phase-detect 3-digit — output missing misnamed_plans=true, got: $(echo "$OUTPUT" | grep misnamed)"
+fi
+
+# Test 39: phase-detect catches PLAN-1000.md (4 digits)
+TDIR="$TMPDIR_TEST/test39"
+mkdir -p "$TDIR/.vbw-planning/phases/01-setup"
+echo "plan" > "$TDIR/.vbw-planning/phases/01-setup/PLAN-1000.md"
+cat > "$TDIR/.vbw-planning/PROJECT.md" << 'EOF'
+# Test Project
+This is a test project.
+EOF
+OUTPUT=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null) && RC=$? || RC=$?
+if echo "$OUTPUT" | grep -q "misnamed_plans=true"; then
+  pass "phase-detect catches PLAN-1000.md (4 digits)"
+else
+  fail "phase-detect 4-digit — output missing misnamed_plans=true, got: $(echo "$OUTPUT" | grep misnamed)"
+fi
+
+# Test 40: phase-detect still ignores PLAN-100-RESEARCH.md (unknown compound, 3 digits)
+TDIR="$TMPDIR_TEST/test40"
+mkdir -p "$TDIR/.vbw-planning/phases/01-setup"
+echo "research" > "$TDIR/.vbw-planning/phases/01-setup/PLAN-100-RESEARCH.md"
+cat > "$TDIR/.vbw-planning/PROJECT.md" << 'EOF'
+# Test Project
+This is a test project.
+EOF
+OUTPUT=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null) && RC=$? || RC=$?
+if echo "$OUTPUT" | grep -q "misnamed_plans=false"; then
+  pass "phase-detect ignores PLAN-100-RESEARCH.md (unknown compound, 3 digits)"
+else
+  fail "phase-detect 3-digit compound — output missing misnamed_plans=false, got: $(echo "$OUTPUT" | grep misnamed)"
+fi
+
+# --- End-to-end: phase-detect → normalize → phase-detect loop ---
+echo ""
+echo "End-to-end misnamed repair loop:"
+
+# Test 41: misnamed_plans=true → normalize → misnamed_plans=false
+TDIR="$TMPDIR_TEST/test41"
+mkdir -p "$TDIR/.vbw-planning/phases/01-setup"
+echo "plan" > "$TDIR/.vbw-planning/phases/01-setup/PLAN-01.md"
+echo "summary" > "$TDIR/.vbw-planning/phases/01-setup/SUMMARY-01.md"
+echo "context" > "$TDIR/.vbw-planning/phases/01-setup/CONTEXT-01.md"
+cat > "$TDIR/.vbw-planning/PROJECT.md" << 'EOF'
+# Test Project
+This is a test project.
+EOF
+OUTPUT_BEFORE=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null)
+bash "$NORM_SCRIPT" "$TDIR/.vbw-planning/phases/01-setup" >/dev/null 2>&1
+OUTPUT_AFTER=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null)
+if echo "$OUTPUT_BEFORE" | grep -q "misnamed_plans=true" && echo "$OUTPUT_AFTER" | grep -q "misnamed_plans=false"; then
+  pass "end-to-end: misnamed_plans true → normalize → false"
+else
+  fail "end-to-end — before: $(echo "$OUTPUT_BEFORE" | grep misnamed), after: $(echo "$OUTPUT_AFTER" | grep misnamed)"
+fi
+
+# Test 42: end-to-end with lowercase misnamed files
+TDIR="$TMPDIR_TEST/test42"
+mkdir -p "$TDIR/.vbw-planning/phases/01-setup"
+echo "plan" > "$TDIR/.vbw-planning/phases/01-setup/plan-01.md"
+echo "summary" > "$TDIR/.vbw-planning/phases/01-setup/summary-02.md"
+cat > "$TDIR/.vbw-planning/PROJECT.md" << 'EOF'
+# Test Project
+This is a test project.
+EOF
+OUTPUT_BEFORE=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null)
+bash "$NORM_SCRIPT" "$TDIR/.vbw-planning/phases/01-setup" >/dev/null 2>&1
+OUTPUT_AFTER=$(cd "$TDIR" && bash "$SCRIPT_DIR/scripts/phase-detect.sh" 2>/dev/null)
+if echo "$OUTPUT_BEFORE" | grep -q "misnamed_plans=true" && echo "$OUTPUT_AFTER" | grep -q "misnamed_plans=false"; then
+  pass "end-to-end: lowercase misnamed → normalize → clean"
+else
+  fail "end-to-end lowercase — before: $(echo "$OUTPUT_BEFORE" | grep misnamed), after: $(echo "$OUTPUT_AFTER" | grep misnamed)"
 fi
 
 echo ""

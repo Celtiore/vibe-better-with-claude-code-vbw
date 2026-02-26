@@ -416,7 +416,8 @@ MISNAMED_PLANS=false
 if [ ${#PHASE_DIRS[@]} -gt 0 ]; then
   for _mn_dir in ${PHASE_DIRS[@]+"${PHASE_DIRS[@]}"}; do
     [ -d "$_mn_dir" ] || continue
-    if find "$_mn_dir" -maxdepth 1 \( -iname 'PLAN-[0-9][0-9].md' -o -iname 'PLAN-[0-9].md' -o -iname 'PLAN-[0-9][0-9]-SUMMARY.md' -o -iname 'PLAN-[0-9]-SUMMARY.md' -o -iname 'PLAN-[0-9][0-9]-CONTEXT.md' -o -iname 'PLAN-[0-9]-CONTEXT.md' -o -iname 'SUMMARY-[0-9][0-9].md' -o -iname 'SUMMARY-[0-9].md' -o -iname 'CONTEXT-[0-9][0-9].md' -o -iname 'CONTEXT-[0-9].md' \) 2>/dev/null | grep -q .; then
+    # Use -iregex for proper multi-digit matching without false positives on compounds like PLAN-01-RESEARCH.md
+    if find "$_mn_dir" -maxdepth 1 \( -iname 'PLAN-[0-9].md' -o -iname 'PLAN-[0-9][0-9].md' -o -iname 'PLAN-[0-9]-SUMMARY.md' -o -iname 'PLAN-[0-9][0-9]-SUMMARY.md' -o -iname 'PLAN-[0-9]-CONTEXT.md' -o -iname 'PLAN-[0-9][0-9]-CONTEXT.md' -o -iname 'SUMMARY-[0-9].md' -o -iname 'SUMMARY-[0-9][0-9].md' -o -iname 'CONTEXT-[0-9].md' -o -iname 'CONTEXT-[0-9][0-9].md' -o -iregex '.*/plan-[0-9][0-9][0-9][0-9]*\.md' -o -iregex '.*/plan-[0-9][0-9][0-9][0-9]*-summary\.md' -o -iregex '.*/plan-[0-9][0-9][0-9][0-9]*-context\.md' -o -iregex '.*/summary-[0-9][0-9][0-9][0-9]*\.md' -o -iregex '.*/context-[0-9][0-9][0-9][0-9]*\.md' \) 2>/dev/null | grep -q .; then
       MISNAMED_PLANS=true
       break
     fi
