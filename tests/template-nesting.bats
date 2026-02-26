@@ -45,28 +45,28 @@ _guard_pattern() {
   printf 'while [ ! -L "$L" ] && [ $i -lt 20 ]'
 }
 
-@test "vibe.md has 4 guarded symlink template expressions" {
+@test "vibe.md has 5 guarded symlink template expressions" {
   local count
   count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/vibe.md")
+  [ "$count" -eq 5 ]
+}
+
+@test "qa.md has 2 guarded symlink template expressions" {
+  local count
+  count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/qa.md")
+  [ "$count" -eq 2 ]
+}
+
+@test "verify.md has 4 guarded symlink template expressions" {
+  local count
+  count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/verify.md")
   [ "$count" -eq 4 ]
 }
 
-@test "qa.md has 1 guarded symlink template expression" {
-  local count
-  count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/qa.md")
-  [ "$count" -eq 1 ]
-}
-
-@test "verify.md has 3 guarded symlink template expressions" {
-  local count
-  count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/verify.md")
-  [ "$count" -eq 3 ]
-}
-
-@test "discuss.md has 1 guarded symlink template expression" {
+@test "discuss.md has 2 guarded symlink template expressions" {
   local count
   count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/discuss.md")
-  [ "$count" -eq 1 ]
+  [ "$count" -eq 2 ]
 }
 
 @test "help.md has 1 guarded symlink template expression" {
@@ -81,16 +81,22 @@ _guard_pattern() {
   [ "$count" -eq 1 ]
 }
 
-@test "resume.md has 0 guarded symlink template expressions (uses atomic cat)" {
+@test "resume.md has 1 guarded symlink template expression" {
   local count
   count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/resume.md" || true)
-  [ "${count:-0}" -eq 0 ]
+  [ "${count:-0}" -eq 1 ]
 }
 
-@test "total guarded symlink template expressions across commands is 11" {
+@test "status.md has 1 guarded symlink template expression" {
+  local count
+  count=$(grep -cF "$(_guard_pattern)" "$PROJECT_ROOT/commands/status.md" || true)
+  [ "${count:-0}" -eq 1 ]
+}
+
+@test "total guarded symlink template expressions across commands is 17" {
   local count
   count=$(grep -rcF "$(_guard_pattern)" "$PROJECT_ROOT/commands/" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
-  [ "$count" -eq 11 ]
+  [ "$count" -eq 17 ]
 }
 
 @test "guarded expressions use symlink path variable not direct path" {
@@ -110,28 +116,217 @@ _atomic_pd_preamble_pattern() {
   printf 'phase-detect.sh" > "/tmp/.vbw-phase-detect-'
 }
 
-_atomic_pd_cat_pattern() {
-  printf 'cat "/tmp/.vbw-phase-detect-'
+_atomic_pd_temp_read_pattern() {
+  printf '[ -f "$P" ] && PD=$(cat "$P")'
+}
+
+_error_cache_bypass_pattern() {
+  printf '[ "$PD" = "phase_detect_error=true" ]'
+}
+
+_stale_cache_mtime_pattern() {
+  printf '[ "$P_M" -lt "$S_M" ]'
+}
+
+_stamp_file_pattern() {
+  printf '/tmp/.vbw-phase-detect-stamp-'
+}
+
+setup() {
+  TMP_TEST_DIRS=()
+}
+
+_new_tmp_test_dir() {
+  local d
+  d=$(mktemp -d)
+  TMP_TEST_DIRS+=("$d")
+  printf '%s' "$d"
+}
+
+teardown() {
+  local d
+  for d in "${TMP_TEST_DIRS[@]}"; do
+    [ -n "$d" ] && rm -rf "$d"
+  done
+}
+
+_conditional_wait_pattern() {
+  printf 'if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do'
+}
+
+_simulate_phase_detect_reader() {
+  local L="$1"
+  local P="$2"
+  local S="$3"
+  local PD=""
+
+  [ -f "$P" ] && PD=$(cat "$P")
+
+  if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then
+    i=0
+    while [ ! -L "$L" ] && [ $i -lt 20 ]; do
+      sleep 0.1
+      i=$((i+1))
+    done
+
+    S_M=0
+    P_M=0
+    [ -f "$S" ] && S_M=$(stat -c %Y "$S" 2>/dev/null || stat -f %m "$S" 2>/dev/null || echo 0)
+    [ -f "$P" ] && P_M=$(stat -c %Y "$P" 2>/dev/null || stat -f %m "$P" 2>/dev/null || echo 0)
+
+    if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then
+      PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""
+    fi
+  fi
+
+  if [ -n "$(printf '%s' "$PD" | tr -d '[:space:]')" ] && [ "$PD" != "phase_detect_error=true" ]; then
+    printf '%s' "$PD"
+  else
+    echo "phase_detect_error=true"
+  fi
 }
 
 @test "commands with phase-detect run it atomically in preamble" {
-  for cmd in resume vibe discuss qa verify; do
+  for cmd in resume status vibe discuss qa verify; do
     local count
     count=$(grep -cF "$(_atomic_pd_preamble_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
     [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing atomic phase-detect in preamble"; return 1; }
   done
 }
 
-@test "commands with phase-detect use cat for temp file read" {
-  for cmd in resume vibe discuss qa verify; do
-    if [ "$cmd" = "vibe" ]; then
-      grep -qF 'cat "$P"' "$PROJECT_ROOT/commands/${cmd}.md" || { echo "FAIL: ${cmd}.md missing cat for phase-detect temp file"; return 1; }
-    else
-      local count
-      count=$(grep -cF "$(_atomic_pd_cat_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
-      [ "$count" -eq 1 ] || { echo "FAIL: ${cmd}.md missing cat for phase-detect temp file"; return 1; }
-    fi
+@test "commands with phase-detect preamble write stamp file" {
+  for cmd in resume status vibe discuss qa verify; do
+    local count
+    count=$(grep -cF "$(_stamp_file_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
+    [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing phase-detect stamp file path"; return 1; }
   done
+}
+
+@test "commands with phase-detect use guarded temp-file read fallback" {
+  for cmd in resume status vibe discuss qa verify; do
+    local count
+    count=$(grep -cF "$(_atomic_pd_temp_read_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
+    [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing guarded phase-detect temp-file read"; return 1; }
+  done
+}
+
+@test "commands with phase-detect treat error cache as cache miss" {
+  for cmd in resume status vibe discuss qa verify; do
+    local count
+    count=$(grep -cF "$(_error_cache_bypass_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
+    [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing error-cache bypass"; return 1; }
+  done
+}
+
+@test "commands with phase-detect refresh stale cache via mtime guard" {
+  for cmd in resume status vibe discuss qa verify; do
+    local count
+    count=$(grep -cF "$(_stale_cache_mtime_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
+    [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing stale-cache mtime guard"; return 1; }
+  done
+}
+
+@test "commands with phase-detect wait conditionally (not always)" {
+  for cmd in resume status vibe discuss qa verify; do
+    local count
+    count=$(grep -cF "$(_conditional_wait_pattern)" "$PROJECT_ROOT/commands/${cmd}.md")
+    [ "$count" -ge 1 ] || { echo "FAIL: ${cmd}.md missing conditional wait guard"; return 1; }
+  done
+}
+
+@test "vibe/verify secondary readers no longer use legacy empty-only fallback" {
+  run bash -c "grep -nF '[ -z \"\$PD\" ] && [ -L \"\$L\" ] && [ -f \"\$L/scripts/phase-detect.sh\" ]' \"$PROJECT_ROOT/commands/vibe.md\" \"$PROJECT_ROOT/commands/verify.md\""
+  [ "$status" -eq 1 ]
+}
+
+@test "reader bypasses error cache when live script is available" {
+  local td root link cache stamp out
+  td=$(_new_tmp_test_dir)
+
+  root="$td/root"
+  link="$td/link"
+  cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
+  mkdir -p "$root/scripts"
+
+  cat > "$root/scripts/phase-detect.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "next_phase_state=fresh_live"
+EOF
+  chmod +x "$root/scripts/phase-detect.sh"
+
+  ln -s "$root" "$link"
+  : > "$stamp"
+  echo "phase_detect_error=true" > "$cache"
+
+  out=$(_simulate_phase_detect_reader "$link" "$cache" "$stamp")
+  [[ "$out" == *"next_phase_state=fresh_live"* ]]
+  [[ "$out" != *"phase_detect_error=true"* ]]
+}
+
+@test "reader refreshes stale cache older than stamp" {
+  local td root link cache stamp out
+  td=$(_new_tmp_test_dir)
+
+  root="$td/root"
+  link="$td/link"
+  cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
+  mkdir -p "$root/scripts"
+
+  cat > "$root/scripts/phase-detect.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "next_phase_state=fresh_live"
+EOF
+  chmod +x "$root/scripts/phase-detect.sh"
+
+  echo "next_phase_state=stale_cache" > "$cache"
+  : > "$stamp"
+  touch -t 202402020101 "$cache"
+  touch -t 202402020102 "$stamp"
+  ln -s "$root" "$link"
+
+  out=$(_simulate_phase_detect_reader "$link" "$cache" "$stamp")
+  [[ "$out" == *"next_phase_state=fresh_live"* ]]
+  [[ "$out" != *"next_phase_state=stale_cache"* ]]
+}
+
+@test "reader skips wait when cache is valid and symlink is absent" {
+  local td cache stamp out
+  td=$(_new_tmp_test_dir)
+
+  cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
+  echo "next_phase_state=cached_ok" > "$cache"
+
+  _simulate_phase_detect_reader "$td/no-link" "$cache" "$stamp" > "$td/out.txt"
+  out=$(cat "$td/out.txt")
+
+  [[ "$out" == *"next_phase_state=cached_ok"* ]]
+}
+
+@test "reader treats whitespace-only output as error" {
+  local td root link cache stamp out
+  td=$(_new_tmp_test_dir)
+
+  root="$td/root"
+  link="$td/link"
+  cache="$td/pd.txt"
+  stamp="$td/stamp.txt"
+  mkdir -p "$root/scripts"
+
+  cat > "$root/scripts/phase-detect.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '   \n\n'
+EOF
+  chmod +x "$root/scripts/phase-detect.sh"
+
+  ln -s "$root" "$link"
+  : > "$stamp"
+  : > "$cache"
+
+  out=$(_simulate_phase_detect_reader "$link" "$cache" "$stamp")
+  [[ "$out" == "phase_detect_error=true" ]]
 }
 
 @test "vibe.md reads phase-detect live with temp-file fallback" {
