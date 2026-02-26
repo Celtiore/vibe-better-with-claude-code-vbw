@@ -46,7 +46,26 @@ extract_audit1() {
 # Helper: extract version pre-computation/resolution section
 # Supports both the legacy ### heading and promoted ## heading
 extract_version_precompute() {
-  awk '/^##+ (Version Pre-computation|Version Resolution)/{found=1; print; next} found && /^## /{found=0} found{print}' "$RELEASE_CMD"
+  awk '
+    function heading_level(line) {
+      if (line !~ /^#+ /) return 0
+      match(line, /^#+/)
+      return RLENGTH
+    }
+    {
+      level = heading_level($0)
+      if (!found && ($0 ~ /^## Version Resolution$/ || $0 ~ /^### Version Pre-computation$/)) {
+        found = 1
+        start_level = level
+        print
+        next
+      }
+      if (found && level > 0 && level <= start_level) {
+        found = 0
+      }
+      if (found) print
+    }
+  ' "$RELEASE_CMD"
 }
 
 @test "release command file exists" {
@@ -161,7 +180,15 @@ extract_version_precompute() {
 @test "guard 7 stops when all deletions fail" {
   local guard7
   guard7=$(extract_guard "7. Existing release branch")
-  echo "$guard7" | grep -qi 'STOP.*All branch deletions failed\|All.*deletions failed.*STOP'
+  echo "$guard7" | grep -qi 'STOP.*All attempted branch cleanups failed\|All attempted branch cleanups failed.*STOP'
+}
+
+@test "guard 7 stop condition still applies in no-push when local cleanup fully fails" {
+  local guard7
+  guard7=$(extract_guard "7. Existing release branch")
+  # STOP condition must remain reachable in --no-push when nothing is cleaned.
+  echo "$guard7" | grep -qi '{failed} > 0.*{cleaned} == 0.*{local-cleaned} == 0'
+  ! echo "$guard7" | grep -qi '{failed} > 0.*{cleaned} == 0.*{remote-skipped} == 0'
 }
 
 @test "guard 7 summary reports remaining uncleanable branches" {
@@ -178,6 +205,15 @@ extract_version_precompute() {
   echo "$guard7" | grep -qi 'each\|all\|every'
 }
 
+@test "guard 7 filters malformed extracted versions before semver sort" {
+  local guard7
+  guard7=$(extract_guard "7. Existing release branch")
+  [ -n "$guard7" ]
+  # Must include strict semver filtering and malformed-version handling guidance
+  echo "$guard7" | grep -qi 'strict semver\|\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$\|^[0-9]+\.[0-9]+\.[0-9]+$'
+  echo "$guard7" | grep -qi 'ignore malformed\|malformed.*warning\|release/vfoo'
+}
+
 @test "guard 7 still stops on remote unreachable" {
   local guard7
   guard7=$(extract_guard "7. Existing release branch")
@@ -190,7 +226,9 @@ extract_version_precompute() {
   [ -n "$guard7" ]
   # Must explicitly gate cleanup under --dry-run and avoid branch deletion
   echo "$guard7" | grep -qi -- '--dry-run'
-  echo "$guard7" | grep -qi 'do \*\*not\*\* delete local or remote branches\|dry run.*would clean up\|no branch cleanup performed'
+  echo "$guard7" | grep -qi 'do \*\*not\*\* delete local or remote branches'
+  echo "$guard7" | grep -qi 'dry run.*would clean up'
+  echo "$guard7" | grep -qi 'no branch cleanup performed'
 }
 
 @test "guard 7 no-push mode skips remote deletion operations" {
@@ -199,7 +237,17 @@ extract_version_precompute() {
   [ -n "$guard7" ]
   # Must explicitly gate remote deletion under --no-push
   echo "$guard7" | grep -qi -- '--no-push'
-  echo "$guard7" | grep -qi 'do \*\*not\*\* run `git push origin --delete\|skipping remote deletion\|remote-skipped'
+  echo "$guard7" | grep -qi 'do \*\*not\*\* run `git push origin --delete'
+  echo "$guard7" | grep -qi 'skipping remote deletion'
+}
+
+@test "guard 7 no-push remote-skipped accounting excludes local-only branches" {
+  local guard7
+  guard7=$(extract_guard "7. Existing release branch")
+  [ -n "$guard7" ]
+  # Must tie remote-skipped increments to remote presence and message local-only explicitly
+  echo "$guard7" | grep -qi 'present in the remote branch list\|remote branch list from `git ls-remote --heads`'
+  echo "$guard7" | grep -qi 'local-only; no remote deletion needed'
 }
 
 # --- Audit 1: Change collection ---
@@ -580,10 +628,22 @@ extract_version_precompute() {
 
 @test "guard 7 extracts versions from release branches before cleanup" {
   local guard7
-  guard7=$(extract_guard "7. **Existing release branch")
+  guard7=$(extract_guard "7. Existing release branch")
   [ -n "$guard7" ]
   # Must extract version numbers from branch names before deleting
   echo "$guard7" | grep -qi 'extract.*version\|capture.*version\|pending.*version\|highest.*version'
+}
+
+@test "guard 7 extracts pending versions before dry-run gating" {
+  local guard7
+  guard7=$(extract_guard "7. Existing release branch")
+  [ -n "$guard7" ]
+  local extract_line dryrun_line
+  extract_line=$(echo "$guard7" | grep -n -i 'extract pending versions' | head -1 | cut -d: -f1)
+  dryrun_line=$(echo "$guard7" | grep -n -i 'Dry-run gating' | head -1 | cut -d: -f1)
+  [ -n "$extract_line" ]
+  [ -n "$dryrun_line" ]
+  [ "$extract_line" -lt "$dryrun_line" ]
 }
 
 @test "version pre-computation considers pending release branch versions" {
@@ -635,8 +695,9 @@ extract_version_precompute() {
   local audit_section
   audit_section=$(awk '/^## Pre-release Audit/{found=1; next} found && /^## /{found=0} found{print}' "$RELEASE_CMD")
   [ -n "$audit_section" ]
-  # The audit section should NOT contain the version computation logic
-  ! echo "$audit_section" | grep -qi 'pending.*version.*bump base\|higher of.*VERSION.*pending'
+  # The audit section should NOT contain version-resolution variables or heading
+  ! echo "$audit_section" | grep -qi '{local-version}\|{remote-version}\|{pending-version}\|highest of.*local.*remote.*pending'
+  ! echo "$audit_section" | grep -qi 'Version Resolution\|Version Pre-computation'
 }
 
 @test "step 2 uses pre-computed new-version not VERSION file" {
@@ -661,7 +722,7 @@ extract_version_precompute() {
 
 @test "guard 7 semver comparison hints at sort -V" {
   local guard7
-  guard7=$(extract_guard "7. **Existing release branch")
+  guard7=$(extract_guard "7. Existing release branch")
   [ -n "$guard7" ]
   # Must provide implementation guidance for semver comparison
   echo "$guard7" | grep -qi 'sort -V\|sort.*version'
@@ -669,7 +730,7 @@ extract_version_precompute() {
 
 @test "guard 7 notes ambiguity with divergent pending major versions" {
   local guard7
-  guard7=$(extract_guard "7. **Existing release branch")
+  guard7=$(extract_guard "7. Existing release branch")
   [ -n "$guard7" ]
   # Must mention/warn about multiple pending branches with divergent versions
   echo "$guard7" | grep -qi 'multiple.*branch\|divergent\|more than one\|several.*release'
