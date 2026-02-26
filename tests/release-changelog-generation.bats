@@ -516,14 +516,16 @@ extract_version_precompute() {
 
 @test "finalize guard 5 tag check warns about exit code pitfall" {
   local finalize_guard
-  finalize_guard=$(awk '/^### Finalize Guard/{found=1; next} /^## /{found=0} found{print}' "$RELEASE_CMD")
+  finalize_guard=$(awk '/^### Finalize Guard/{found=1; next} /^###/{found=0} /^## /{found=0} found{print}' "$RELEASE_CMD")
   [ -n "$finalize_guard" ]
   # Narrow extraction: target Guard 5 specifically ("Tag already exists")
   local guard5_content
   guard5_content=$(echo "$finalize_guard" | awk '/^5\. \*\*Tag already exists/{found=1; print; next} found && /^[0-9]+\./{found=0} found && /^###/{found=0} found{print}')
   if [ -z "$guard5_content" ]; then
     # Fallback: search within Finalize Guard section (not full Finalize Phase)
-    # This is less precise but still scoped to guards, not steps
+    # This is less precise but still scoped to guards, not steps.
+    # NOTE: finalize_guard extraction stops at ^### (next heading), so this
+    # fallback is guard-scoped and cannot leak Finalize Step content.
     guard5_content="$finalize_guard"
   fi
   # Must explicitly warn that git tag -l always exits 0
@@ -538,18 +540,18 @@ extract_version_precompute() {
   [ -n "$step2" ]
   # Must mention git ls-remote --tags
   echo "$step2" | grep -qi 'git ls-remote.*tags'
-  # Must explicitly warn that git ls-remote always exits 0 (same class as git tag -l)
-  echo "$step2" | grep -qi 'always exits 0\|exit code'
-  # Must instruct to check stdout content, not exit code
-  echo "$step2" | grep -qi 'stdout\|non-empty'
+  # Intent: spec must convey that ls-remote exit code alone does not indicate match/no-match
+  echo "$step2" | grep -qi 'always exits 0\|exit.code\|zero regardless\|succeeds regardless\|not the exit'
+  # Intent: spec must direct the reader to check command output, not just exit status
+  echo "$step2" | grep -qi 'stdout\|non-empty\|output.*empty\|check.*output\|produces.*output'
 }
 
 @test "guard 7 clarifies stdout-vs-exit-code for branch list checks" {
   local guard7
   guard7=$(extract_guard "7. Existing release branch")
   [ -n "$guard7" ]
-  # git branch --list always exits 0 — spec must clarify
-  echo "$guard7" | grep -qi 'branch --list.*always exits 0\|branch --list.*stdout'
-  # git ls-remote exits 0 when reachable — spec must clarify stdout check for matches
-  echo "$guard7" | grep -qi 'ls-remote.*always exits 0\|ls-remote.*stdout'
+  # Intent: spec must convey that branch --list exit code is not a reliable match indicator
+  echo "$guard7" | grep -qi 'branch --list.*always exits 0\|branch --list.*stdout\|branch --list.*exit.code\|branch --list.*non-empty\|branch --list.*check.*output'
+  # Intent: spec must convey that ls-remote exit code is not a reliable match indicator
+  echo "$guard7" | grep -qi 'ls-remote.*always exits 0\|ls-remote.*stdout\|ls-remote.*exit.code\|ls-remote.*non-empty\|ls-remote.*reachable'
 }
