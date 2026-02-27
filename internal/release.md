@@ -207,7 +207,7 @@ Auth resolution (try in order): (1) `gh auth token` — preferred, uses gh CLI's
 ### Finalize Step 4: Clean up release branch
 
 Delete local release branch if it still exists: `git branch -d release/v{version} 2>/dev/null || true`
-Delete remote release branch (if not already deleted by `gh pr merge --delete-branch` in Guard 4): `git push origin --delete release/v{version} 2>&1`. If stderr contains a branch-not-found message (`remote ref does not exist`, `does not exist`, `unable to delete.*not found`), treat as success (already gone — likely deleted by the PR merge step). Do not match bare `not found` (too broad — see Guard 7 classification note). If deletion fails for another reason, display: "⚠ Could not delete remote branch `release/v{version}` — delete manually." This is non-fatal (release is already tagged); continue to Step 5 regardless.
+Delete remote release branch (if not already deleted by `gh pr merge --delete-branch` in Guard 4): First check if the remote branch still exists: `git ls-remote --heads origin refs/heads/release/v{version}`. If output is empty, the branch is already gone (likely deleted by the PR merge step); display "✓ Remote branch already cleaned up." and skip deletion. If output is non-empty, delete it: `git push origin --delete release/v{version} 2>&1`. If deletion fails, display: "⚠ Could not delete remote branch `release/v{version}` — delete manually." This is non-fatal (release is already tagged); continue to Step 5 regardless.
 
 ### Finalize Step 5: Present summary
 

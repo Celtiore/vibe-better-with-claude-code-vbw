@@ -547,16 +547,25 @@ extract_version_precompute() {
 
 # --- Runtime behavior: finalize step 4 visibility (Finding 5) ---
 
-@test "finalize step 4 reports remote deletion failure instead of suppressing" {
+@test "finalize step 4 checks remote branch existence before attempting deletion" {
   local step4
   step4=$(awk '/^### Finalize Step 4/{found=1; next} /^###/{found=0} found{print}' "$RELEASE_CMD")
   [ -n "$step4" ]
-  # Must NOT use || true for remote deletion (old behavior)
-  local remote_line
-  remote_line=$(echo "$step4" | grep -i 'push origin --delete')
-  [ -n "$remote_line" ]
-  ! echo "$remote_line" | grep -q '|| true'
-  # Must display a warning on failure
+  # Must check remote branch existence via ls-remote BEFORE git push --delete
+  echo "$step4" | grep -qi 'ls-remote.*heads'
+  # The ls-remote check must appear before push --delete in the text
+  # (They may be on the same line in a single paragraph, so check character order)
+  local combined
+  combined=$(echo "$step4" | tr '\n' ' ')
+  local lsremote_pos push_pos
+  lsremote_pos=$(echo "$combined" | grep -bo -i 'ls-remote.*heads' | head -1 | cut -d: -f1)
+  push_pos=$(echo "$combined" | grep -bo -i 'push origin --delete' | head -1 | cut -d: -f1)
+  [ -n "$lsremote_pos" ]
+  [ -n "$push_pos" ]
+  [ "$lsremote_pos" -lt "$push_pos" ]
+  # When remote branch is gone, must skip deletion (not attempt and error)
+  echo "$step4" | grep -qi 'already gone\|skip deletion\|skip'
+  # Must display a warning on actual deletion failure
   echo "$step4" | grep -qi 'Could not delete\|delete manually'
   # Must be non-fatal (release is already tagged)
   echo "$step4" | grep -qi 'non-fatal\|continue'
