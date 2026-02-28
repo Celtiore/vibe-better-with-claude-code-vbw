@@ -6,7 +6,11 @@ name: Linked Issue
 
 on:
   pull_request:
-    types: [opened, edited, reopened]
+    types: [opened, synchronize, edited, reopened]
+
+permissions:
+  issues: read
+  pull-requests: read
 
 jobs:
   linked-issue-check:
@@ -23,10 +27,10 @@ jobs:
           # Also matches standalone #N references and full GitHub issue URLs
           body_has_ref=false
 
-          if printf '%s\n' "$PR_BODY" | grep -qiE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)?#[0-9]+'; then
+          if printf '%s\n' "$PR_BODY" | grep -qiE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)?#[1-9][0-9]*'; then
             body_has_ref=true
             echo "Found closing keyword issue reference in PR body"
-          elif printf '%s\n' "$PR_BODY" | grep -qE 'https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/issues/[0-9]+'; then
+          elif printf '%s\n' "$PR_BODY" | grep -qE 'https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/issues/[1-9][0-9]*'; then
             body_has_ref=true
             echo "Found full GitHub issue URL in PR body"
           elif printf '%s\n' "$PR_BODY" | grep -qE '#[1-9][0-9]*'; then
