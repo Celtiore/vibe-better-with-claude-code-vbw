@@ -27,13 +27,13 @@ jobs:
           # Also matches standalone #N references and full GitHub issue URLs
           body_has_ref=false
 
-          if printf '%s\n' "$PR_BODY" | grep -qiE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)?#[1-9][0-9]*'; then
+          if printf '%s\n' "$PR_BODY" | grep -qiE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)?#[1-9][0-9]*\b'; then
             body_has_ref=true
             echo "Found closing keyword issue reference in PR body"
-          elif printf '%s\n' "$PR_BODY" | grep -qE 'https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/issues/[1-9][0-9]*'; then
+          elif printf '%s\n' "$PR_BODY" | grep -qE 'https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/issues/[1-9][0-9]*\b'; then
             body_has_ref=true
             echo "Found full GitHub issue URL in PR body"
-          elif printf '%s\n' "$PR_BODY" | grep -qE '#[1-9][0-9]*'; then
+          elif printf '%s\n' "$PR_BODY" | grep -qE '(^|[^#&a-zA-Z0-9])#[1-9][0-9]*\b'; then
             body_has_ref=true
             echo "Found issue reference (#N) in PR body"
           fi
@@ -46,12 +46,12 @@ jobs:
               echo "Found sidebar-linked issue via GitHub timeline"
             fi
           else
-            echo "Warning: could not query timeline API — skipping sidebar-link check"
+            echo "Warning: could not query timeline API — sidebar-link detection unavailable. If you linked an issue via the GitHub sidebar, re-run this check or add a text reference to the PR body."
           fi
 
           if [ "$body_has_ref" = "true" ] || [ "$sidebar_linked" = "true" ]; then
             echo "Linked issue check passed"
           else
-            echo "::error::PR must reference a tracking issue. Add 'Fixes #N', 'Closes #N', or 'Resolves #N' to the PR body, or link an issue via the GitHub sidebar. See CONTRIBUTING.md."
+            echo "::error::PR must reference a tracking issue. Accepted formats: 'Fixes #N' / 'Closes #N' / 'Resolves #N', a full GitHub issue URL, a bare '#N' reference, or a sidebar-linked issue. See CONTRIBUTING.md."
             exit 1
           fi
