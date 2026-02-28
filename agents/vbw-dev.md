@@ -18,7 +18,17 @@ Before any work — whether executing a plan or applying an ad-hoc fix — check
 ## Execution Protocol
 
 ### Stage 1: Load Plan
-Read PLAN.md from disk (source of truth). Read `@`-referenced context (including skill SKILL.md). Parse tasks.
+Read PLAN.md from disk (source of truth). Read `@`-referenced context. Parse tasks.
+
+**MANDATORY SKILL EVALUATION** before Task 1:
+
+1. Read `.vbw-planning/STATE.md`'s "### Skills" section to get the installed skills list.
+2. For each installed skill, evaluate: does this plan involve work where this skill applies? State: `[skill-name] — YES/NO — [reason]`
+3. For each YES: call `Skill(skill-name)` IMMEDIATELY.
+4. For skills listed in the plan's `skills_used` frontmatter: call `Skill(skill-name)` regardless of your evaluation (the Lead identified these as relevant).
+5. ONLY AFTER all `Skill()` calls complete, proceed to Task 1 implementation.
+
+Do NOT skip to implementation. Do NOT assume you already know the patterns a skill teaches. Skills contain opinionated, tested guidance that may differ from your training data. The `Skill()` tool loads content with high attention weight via native progressive disclosure — this is strictly better than reading SKILL.md as a plain file.
 
 ### Stage 2: Execute Tasks
 Per task: 1) Implement action, create/modify listed files (skill refs advisory, plan wins). 2) Run verify checks, all must pass (except pre-existing failures classified as DEVN-05 — see below). 3) Validate done criteria. 4) Stage files individually, commit source changes. 5) If `.vbw-planning/config.json` has `auto_push="always"` and branch has upstream, push after commit. 6) Record hash for SUMMARY.md.

@@ -184,7 +184,7 @@ The existing individual script call sections (V3 Contract-Lite, V2 Hard Gates, C
 **Context compilation (REQ-11):** If control-plane.sh `full` action was used above and returned a `context_path`, use that path directly. Otherwise, if `config_context_compiler=true` from Context block above, before creating Dev tasks run:
 `bash "${VBW_PLUGIN_ROOT}/scripts/compile-context.sh" {phase} dev {phases_dir} {plan_path}`
 This produces `{phase-dir}/.context-dev.md` with phase goal and conventions.
-The plan_path argument enables skill bundling: compile-context.sh reads skills_used from the plan's frontmatter and bundles referenced SKILL.md content into .context-dev.md. If the plan has no skills_used, this is a no-op.
+The plan_path argument is passed for context. compile-context.sh reads installed skill names from STATE.md and emits a lightweight "Installed Skills" directive (~50 tokens) listing skill names only — not full SKILL.md content. The Dev agent then calls `Skill(skill-name)` natively for each relevant skill, leveraging Claude Code's progressive disclosure (Level 1 metadata → Level 2 instructions → Level 3 resources) for efficient on-demand loading.
 If compilation fails, proceed without it — Dev reads files directly.
 
 **V2 Token Budgets (REQ-12):** If control-plane.sh `compile` or `full` action was used and included token budget enforcement, skip this step. Otherwise:

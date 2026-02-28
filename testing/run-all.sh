@@ -37,6 +37,10 @@ echo "Running plan filename convention checks..."
 bash "$ROOT/testing/verify-plan-filename-convention.sh"
 
 echo ""
+echo "Running skill activation pipeline checks..."
+bash "$ROOT/testing/verify-skill-activation.sh"
+
+echo ""
 if command -v bats &>/dev/null && ls "$ROOT/tests/"*.bats &>/dev/null; then
   echo "Running bats test suites..."
   bats_pass=0

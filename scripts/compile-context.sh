@@ -5,9 +5,6 @@ set -euo pipefail
 # Produces .context-{role}.md in the phase directory with role-specific context.
 # Exit 0 on success, exit 1 when phase directory not found.
 
-# shellcheck source=resolve-claude-dir.sh
-. "$(dirname "$0")/resolve-claude-dir.sh"
-
 if [ $# -lt 2 ]; then
   echo "Usage: compile-context.sh <phase-number> <role> [phases-dir]" >&2
   exit 1
@@ -288,21 +285,20 @@ case "$ROLE" in
           echo "$CONVENTIONS"
         fi
       fi
-      # --- Skill bundling (REQ-12) ---
-      if [ -n "$PLAN_PATH" ] && [ -f "$PLAN_PATH" ]; then
-        SKILLS=$(sed -n '/^---$/,/^---$/p' "$PLAN_PATH" | grep 'skills_used:' | sed 's/skills_used: *\[//' | sed 's/\]//' | tr ',' '\n' | sed 's/^ *//;s/ *$//;s/^"//;s/"$//' | grep -v '^$' || true)
-        if [ -n "$SKILLS" ]; then
+      # --- Installed skills directive (REQ-12, issue #191) ---
+      # Emit skill names only (not full SKILL.md content). Dev agent calls Skill()
+      # natively for on-demand loading with progressive disclosure.
+      if [ -f "$PLANNING_DIR/STATE.md" ]; then
+        INSTALLED_SKILLS=$(sed -n '/^### Skills$/,/^### \|^## /p' "$PLANNING_DIR/STATE.md" | grep '^- ' | sed 's/^- //' | grep -v '^$' || true)
+        if [ -n "$INSTALLED_SKILLS" ]; then
           echo ""
-          echo "### Skills Reference"
+          echo "### Installed Skills"
           echo ""
-          while IFS= read -r skill; do
-            SKILL_FILE="$CLAUDE_DIR/skills/${skill}/SKILL.md"
-            if [ -f "$SKILL_FILE" ]; then
-              echo "#### ${skill}"
-              cat "$SKILL_FILE"
-              echo ""
-            fi
-          done <<< "$SKILLS"
+          echo "The following skills are installed. Evaluate each for relevance to this plan and call \`Skill(skill-name)\` for relevant ones before starting implementation."
+          echo ""
+          while IFS= read -r skill_line; do
+            echo "- ${skill_line}"
+          done <<< "$INSTALLED_SKILLS"
         fi
       fi
       # --- Codebase mapping hint (issue #78) ---
