@@ -41,7 +41,15 @@ log() {
 
 log "Watchdog started for session: $SESSION (PID=$$)"
 
-COMPACTION_TIMEOUT="${VBW_COMPACTION_TIMEOUT:-300}"  # 5 minutes, overridable via env
+# Clean stale compaction markers from previous (possibly crashed) sessions
+rm -rf "$PLANNING_DIR/.compacting" 2>/dev/null || true
+
+# Validate timeout: must be a positive integer, fallback to 300
+COMPACTION_TIMEOUT="${VBW_COMPACTION_TIMEOUT:-300}"
+if ! echo "$COMPACTION_TIMEOUT" | grep -Eq '^[1-9][0-9]*$'; then
+  log "Invalid VBW_COMPACTION_TIMEOUT='$COMPACTION_TIMEOUT', using default 300"
+  COMPACTION_TIMEOUT=300
+fi
 
 # --- Compaction timeout check ---
 # Scans .compacting/*.json for agents stuck longer than COMPACTION_TIMEOUT.
@@ -94,7 +102,8 @@ check_compaction_timeouts() {
 
       log "COMPACTION TIMEOUT: agent=$agent_name pid=$pid pane=$pane_id age=${age}s (limit=${COMPACTION_TIMEOUT}s)"
 
-      # Kill agent process and pane in background to avoid blocking the poll loop
+      # Kill agent process then pane in background to avoid blocking the poll loop.
+      # Order matters: SIGTERM first so the Stop hook can fire, then kill pane.
       (
         log "Sending SIGTERM to stuck agent PID $pid"
         kill -TERM "$pid" 2>/dev/null || true
@@ -103,13 +112,12 @@ check_compaction_timeouts() {
           log "Agent PID $pid survived SIGTERM, sending SIGKILL"
           kill -KILL "$pid" 2>/dev/null || true
         fi
+        # Kill tmux pane after agent process is terminated
+        if [ -n "$pane_id" ]; then
+          log "Killing tmux pane $pane_id"
+          tmux kill-pane -t "$pane_id" 2>/dev/null || true
+        fi
       ) &
-
-      # Kill tmux pane
-      if [ -n "$pane_id" ]; then
-        log "Killing tmux pane $pane_id"
-        tmux kill-pane -t "$pane_id" 2>/dev/null || true
-      fi
 
       # Unregister from PID tracker
       if [ -f "$SCRIPT_DIR/agent-pid-tracker.sh" ]; then
@@ -181,11 +189,12 @@ while true; do
         log "Agent cleanup complete"
       fi
 
-      # Clean up PID file
+      # Clean up PID file and compaction markers
       if [ -f "$PLANNING_DIR/.agent-pids" ]; then
         rm -f "$PLANNING_DIR/.agent-pids" 2>/dev/null || true
         log "Removed .agent-pids file"
       fi
+      rm -rf "$PLANNING_DIR/.compacting" 2>/dev/null || true
 
       # Exit after cleanup
       log "Watchdog exiting"
