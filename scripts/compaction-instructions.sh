@@ -61,6 +61,35 @@ if [ -d ".vbw-planning" ]; then
   date +%s > .vbw-planning/.compaction-marker 2>/dev/null || true
 fi
 
+# Write per-agent compaction marker for stuck-compaction watchdog
+# The tmux-watchdog polls these files and kills agents stuck > 5 minutes
+if [ -d ".vbw-planning" ]; then
+  COMPACT_PID="$PPID"
+  # Walk parent chain to find a registered agent PID
+  PANE_MAP=".vbw-planning/.agent-panes"
+  COMPACT_PANE_ID=""
+  if [ -f "$PANE_MAP" ]; then
+    _cpid="$COMPACT_PID"
+    while [ -n "$_cpid" ] && [ "$_cpid" != "0" ] && [ "$_cpid" != "1" ]; do
+      COMPACT_PANE_ID=$(awk -v p="$_cpid" '$1 == p { print $2; exit }' "$PANE_MAP" 2>/dev/null)
+      if [ -n "$COMPACT_PANE_ID" ]; then
+        COMPACT_PID="$_cpid"  # Use the PID that matched in the pane map
+        break
+      fi
+      _cpid=$(ps -o ppid= -p "$_cpid" 2>/dev/null | tr -d ' ')
+    done
+  fi
+  mkdir -p ".vbw-planning/.compacting" 2>/dev/null || true
+  COMPACT_TS=$(date +%s)
+  jq -n \
+    --arg pid "$COMPACT_PID" \
+    --arg pane_id "$COMPACT_PANE_ID" \
+    --arg agent "$AGENT_NAME" \
+    --argjson ts "$COMPACT_TS" \
+    '{pid: $pid, pane_id: $pane_id, agent_name: $agent, started_at: $ts}' \
+    > ".vbw-planning/.compacting/${COMPACT_PID}.json" 2>/dev/null || true
+fi
+
 # --- Save agent state snapshot ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f ".vbw-planning/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-resume.sh" ]; then

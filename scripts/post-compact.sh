@@ -10,6 +10,33 @@ INPUT=$(cat)
 # after compaction. These are cleaned up by agent-stop.sh and session-stop.sh.
 rm -f .vbw-planning/.cost-ledger.json .vbw-planning/.compaction-marker 2>/dev/null
 
+# Clean up per-agent compaction marker (this agent completed compaction successfully)
+if [ -d ".vbw-planning/.compacting" ]; then
+  # Find our PID by walking parent chain (same as compaction-instructions.sh)
+  _cleanup_pid="$PPID"
+  PANE_MAP=".vbw-planning/.agent-panes"
+  if [ -f "$PANE_MAP" ]; then
+    _cpid="$_cleanup_pid"
+    while [ -n "$_cpid" ] && [ "$_cpid" != "0" ] && [ "$_cpid" != "1" ]; do
+      if awk -v p="$_cpid" '$1 == p { found=1; exit } END { exit !found }' "$PANE_MAP" 2>/dev/null; then
+        _cleanup_pid="$_cpid"
+        break
+      fi
+      _cpid=$(ps -o ppid= -p "$_cpid" 2>/dev/null | tr -d ' ')
+    done
+  fi
+  rm -f ".vbw-planning/.compacting/${_cleanup_pid}.json" 2>/dev/null || true
+
+  # Also clean stale markers for dead PIDs
+  for _marker in .vbw-planning/.compacting/*.json; do
+    [ ! -f "$_marker" ] && continue
+    _mpid=$(jq -r '.pid // ""' "$_marker" 2>/dev/null)
+    if [ -n "$_mpid" ] && ! kill -0 "$_mpid" 2>/dev/null; then
+      rm -f "$_marker" 2>/dev/null || true
+    fi
+  done
+fi
+
 # Try to identify agent role from input context
 ROLE=""
 for pattern in vbw-lead vbw-dev vbw-qa vbw-scout vbw-debugger vbw-architect vbw-docs; do

@@ -1,12 +1,15 @@
 #!/bin/bash
 set -u
 # tmux-watchdog.sh — Terminate orphaned agents when tmux session detaches
+#                     and kill agents stuck in compaction (> 5 minutes)
 #
 # Usage: tmux-watchdog.sh [session-name]
 #
 # Polls `tmux list-clients -t SESSION` every 5 seconds. Requires 2 consecutive
 # empty results before cleanup. On confirmed detach: reads PIDs from
 # agent-pid-tracker.sh list, sends SIGTERM, waits 3s, sends SIGKILL if needed.
+# Also checks .vbw-planning/.compacting/*.json for agents stuck in compaction
+# longer than COMPACTION_TIMEOUT seconds (default 300 = 5 minutes).
 # Logs to stderr. Exits when session is gone (not just detached).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -37,6 +40,77 @@ log() {
 }
 
 log "Watchdog started for session: $SESSION (PID=$$)"
+
+COMPACTION_TIMEOUT=300  # 5 minutes
+
+# --- Compaction timeout check ---
+# Scans .compacting/*.json for agents stuck longer than COMPACTION_TIMEOUT.
+# Kills the agent process and its tmux pane, then cleans up.
+check_compaction_timeouts() {
+  local compacting_dir="$PLANNING_DIR/.compacting"
+  [ ! -d "$compacting_dir" ] && return
+
+  local now marker pid pane_id agent_name started_at age
+  now=$(date +%s)
+
+  for marker in "$compacting_dir"/*.json; do
+    [ ! -f "$marker" ] && continue
+
+    pid=$(jq -r '.pid // ""' "$marker" 2>/dev/null)
+    pane_id=$(jq -r '.pane_id // ""' "$marker" 2>/dev/null)
+    agent_name=$(jq -r '.agent_name // "unknown"' "$marker" 2>/dev/null)
+    started_at=$(jq -r '.started_at // 0' "$marker" 2>/dev/null)
+
+    # Skip if missing critical data
+    if [ -z "$pid" ] || [ "$started_at" -eq 0 ] 2>/dev/null; then
+      continue
+    fi
+
+    # Clean stale markers for dead PIDs (compaction finished but cleanup missed)
+    if ! kill -0 "$pid" 2>/dev/null; then
+      log "Compaction marker for dead PID $pid ($agent_name), cleaning up"
+      rm -f "$marker" 2>/dev/null || true
+      continue
+    fi
+
+    age=$((now - started_at))
+    if [ "$age" -gt "$COMPACTION_TIMEOUT" ]; then
+      log "COMPACTION TIMEOUT: agent=$agent_name pid=$pid pane=$pane_id age=${age}s (limit=${COMPACTION_TIMEOUT}s)"
+
+      # Kill agent process: SIGTERM then SIGKILL
+      log "Sending SIGTERM to stuck agent PID $pid"
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 2
+      if kill -0 "$pid" 2>/dev/null; then
+        log "Agent PID $pid survived SIGTERM, sending SIGKILL"
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
+
+      # Kill tmux pane
+      if [ -n "$pane_id" ]; then
+        log "Killing tmux pane $pane_id"
+        tmux kill-pane -t "$pane_id" 2>/dev/null || true
+      fi
+
+      # Unregister from PID tracker
+      if [ -f "$SCRIPT_DIR/agent-pid-tracker.sh" ]; then
+        bash "$SCRIPT_DIR/agent-pid-tracker.sh" unregister "$pid" 2>/dev/null || true
+      fi
+
+      # Remove pane mapping entry
+      local pane_map="$PLANNING_DIR/.agent-panes"
+      if [ -f "$pane_map" ]; then
+        grep -v "^${pid} " "$pane_map" > "${pane_map}.tmp" 2>/dev/null || true
+        mv "${pane_map}.tmp" "$pane_map" 2>/dev/null || true
+      fi
+
+      # Clean up marker
+      rm -f "$marker" 2>/dev/null || true
+
+      log "Compaction timeout cleanup complete for $agent_name (PID $pid)"
+    fi
+  done
+}
 
 # --- Main polling loop ---
 consecutive_empty=0
@@ -105,6 +179,9 @@ while true; do
     fi
     consecutive_empty=0
   fi
+
+  # Check for agents stuck in compaction
+  check_compaction_timeouts
 
   sleep 5
 done
