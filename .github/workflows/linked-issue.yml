@@ -2,7 +2,7 @@
 # Split from ci.yml so that PR body edits (the `edited` event) only re-run this
 # lightweight check — not the full lint/test/QA matrix. Avoids the classic branch
 # protection issue where skipped required checks block merges.
-name: Linked Issue
+name: CI
 
 on:
   pull_request:
@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   linked-issue-check:
+    name: Linked Issue
     runs-on: ubuntu-latest
     steps:
       - name: Check for linked issue
@@ -24,32 +25,40 @@ jobs:
           # Method 1: Check PR body for issue references
           # Matches: Fixes #N, Closes #N, Resolves #N (with optional owner/repo prefix)
           # Also matches standalone #N references and full GitHub issue URLs
-          body_has_ref=false
+          body_refs=""
 
-          if printf '%s\n' "$PR_BODY" | grep -qiE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)?#[1-9][0-9]*\b'; then
-            body_has_ref=true
-            echo "Found closing keyword issue reference in PR body"
-          elif printf '%s\n' "$PR_BODY" | grep -qE 'https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/issues/[1-9][0-9]*\b'; then
-            body_has_ref=true
-            echo "Found full GitHub issue URL in PR body"
-          elif printf '%s\n' "$PR_BODY" | grep -qE '(^|[^#&a-zA-Z0-9])#[1-9][0-9]*\b'; then
-            body_has_ref=true
-            echo "Found issue reference (#N) in PR body"
+          # Closing keywords (Fixes #N, Closes #N, Resolves #N)
+          keyword_matches=$(printf '%s\n' "$PR_BODY" | grep -ioE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)?#[1-9][0-9]*\b' || true)
+          if [ -n "$keyword_matches" ]; then
+            body_refs="$keyword_matches"
+          fi
+
+          # Full GitHub issue URLs
+          url_matches=$(printf '%s\n' "$PR_BODY" | grep -oE 'https://github\.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/issues/[1-9][0-9]*\b' || true)
+          if [ -n "$url_matches" ]; then
+            body_refs="${body_refs:+$body_refs }$url_matches"
+          fi
+
+          # Bare #N references
+          bare_matches=$(printf '%s\n' "$PR_BODY" | grep -oE '(^|[^#&a-zA-Z0-9])#[1-9][0-9]*\b' | grep -oE '#[1-9][0-9]*' || true)
+          if [ -n "$bare_matches" ]; then
+            body_refs="${body_refs:+$body_refs }$bare_matches"
           fi
 
           # Method 2: Check GitHub timeline for sidebar-linked issues
-          sidebar_linked=false
-          if timeline=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/timeline" --paginate --jq '[.[] | select(.event == "connected")] | length' 2>/dev/null); then
-            if [ "${timeline:-0}" -gt 0 ]; then
-              sidebar_linked=true
-              echo "Found sidebar-linked issue via GitHub timeline"
-            fi
+          sidebar_refs=""
+          if timeline_json=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/timeline" --paginate --jq '[.[] | select(.event == "connected") | .source.issue.number // empty] | unique | .[]' 2>/dev/null); then
+            for num in $timeline_json; do
+              sidebar_refs="${sidebar_refs:+$sidebar_refs }#$num"
+            done
           else
-            echo "Warning: could not query timeline API — sidebar-link detection unavailable. If you linked an issue via the GitHub sidebar, re-run this check or add a text reference to the PR body."
+            echo "Warning: could not query timeline API — sidebar-link detection unavailable."
           fi
 
-          if [ "$body_has_ref" = "true" ] || [ "$sidebar_linked" = "true" ]; then
+          if [ -n "$body_refs" ] || [ -n "$sidebar_refs" ]; then
             echo "Linked issue check passed"
+            [ -n "$body_refs" ] && echo "  PR body references: $body_refs"
+            [ -n "$sidebar_refs" ] && echo "  Sidebar-linked issues: $sidebar_refs"
           else
             echo "::error::PR must reference a tracking issue. Accepted formats: 'Fixes #N' / 'Closes #N' / 'Resolves #N', a full GitHub issue URL, a bare '#N' reference, or a sidebar-linked issue. See CONTRIBUTING.md."
             exit 1
