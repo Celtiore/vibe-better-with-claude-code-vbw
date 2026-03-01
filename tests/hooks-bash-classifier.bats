@@ -5,7 +5,7 @@ load test_helper
 # Test suite for VBW hook bash patterns against CC 2.1.47 stricter classifier
 # REQ-10: Audit bash permission patterns against CC 2.1.47's stricter classifier
 #
-# All 21 hook handlers in hooks.json use a common quad-resolution pattern:
+# All 22 hook handlers in hooks.json use a common quad-resolution pattern:
 # 1. Version-sorted plugin cache resolution: ls -1 | sort -V | tail -1
 # 2. Fallback to CLAUDE_PLUGIN_ROOT
 # 3. Fallback to per-session symlink (/tmp/.vbw-plugin-root-link-*)
@@ -36,6 +36,7 @@ load test_helper
 # - compaction-instructions.sh (PreCompact)
 # - session-stop.sh (Stop)
 # - agent-health.sh cleanup (Stop)
+# - skill-eval-prompt-gate.sh (UserPromptSubmit)
 # - prompt-preflight.sh (UserPromptSubmit)
 # - notification-log.sh (Notification)
 
@@ -48,8 +49,8 @@ setup() {
   # Count unique bash commands in hooks.json
   HOOK_COUNT=$(grep -c '"command":' "$PROJECT_ROOT/hooks/hooks.json")
 
-  # We should have 27 total hook entries (22 unique scripts, some duplicated across events)
-  [ "$HOOK_COUNT" -eq 27 ]
+  # We should have 28 total hook entries (23 unique scripts, some duplicated across events)
+  [ "$HOOK_COUNT" -eq 28 ]
 }
 
 @test "all hooks use quad-resolution pattern" {
@@ -57,7 +58,7 @@ setup() {
   PATTERN_COUNT=$(grep -c 'sort -V' "$PROJECT_ROOT/hooks/hooks.json")
 
   # Should match total hook count
-  [ "$PATTERN_COUNT" -eq 27 ]
+  [ "$PATTERN_COUNT" -eq 28 ]
 }
 
 @test "all hooks have CLAUDE_PLUGIN_ROOT fallback" {
@@ -65,7 +66,7 @@ setup() {
   FALLBACK_COUNT=$(grep -c 'CLAUDE_PLUGIN_ROOT:+' "$PROJECT_ROOT/hooks/hooks.json")
 
   # Should match total hook count
-  [ "$FALLBACK_COUNT" -eq 27 ]
+  [ "$FALLBACK_COUNT" -eq 28 ]
 }
 
 @test "all hooks exit 0 for graceful degradation" {
@@ -73,10 +74,10 @@ setup() {
   EXIT_COUNT=$(grep -c 'exit 0' "$PROJECT_ROOT/hooks/hooks.json")
 
   # Should match total hook count
-  [ "$EXIT_COUNT" -eq 27 ]
+  [ "$EXIT_COUNT" -eq 28 ]
 }
 
-# Unique hook script invocations (21 total)
+# Unique hook script invocations (22 total)
 @test "documented scripts: validate-summary.sh appears 2x" {
   COUNT=$(grep -c 'validate-summary.sh' "$PROJECT_ROOT/hooks/hooks.json")
   [ "$COUNT" -eq 2 ]
@@ -187,6 +188,11 @@ setup() {
   [ "$COUNT" -eq 1 ]
 }
 
+@test "documented scripts: skill-eval-prompt-gate.sh appears 1x" {
+  COUNT=$(grep -c 'skill-eval-prompt-gate.sh' "$PROJECT_ROOT/hooks/hooks.json")
+  [ "$COUNT" -eq 1 ]
+}
+
 # Task 2: Test hook-wrapper.sh resolution pattern
 # CC 2.1.47 stricter classifier validation for complex chained bash patterns
 
@@ -237,8 +243,8 @@ setup() {
   # All hooks use 'bash -c' to wrap the resolution logic
   BASH_C_COUNT=$(grep -c 'bash -c' "$PROJECT_ROOT/hooks/hooks.json")
 
-  # Should match total hook count (27)
-  [ "$BASH_C_COUNT" -eq 27 ]
+  # Should match total hook count (28)
+  [ "$BASH_C_COUNT" -eq 28 ]
 }
 
 @test "hook resolution: variable substitution uses safe patterns" {
@@ -255,13 +261,13 @@ setup() {
 @test "hook resolution: per-session symlink fallback present" {
   # All hooks should have /tmp/.vbw-plugin-root-link-* fallback for local dev
   SYMLINK_COUNT=$(grep -c 'vbw-plugin-root-link-' "$PROJECT_ROOT/hooks/hooks.json")
-  [ "$SYMLINK_COUNT" -eq 27 ]
+  [ "$SYMLINK_COUNT" -eq 28 ]
 }
 
 @test "hook resolution: ps process-tree fallback present" {
   # All hooks should have ps-based --plugin-dir sniffing for local dev
   PS_COUNT=$(grep -c 'ps axww' "$PROJECT_ROOT/hooks/hooks.json")
-  [ "$PS_COUNT" -eq 27 ]
+  [ "$PS_COUNT" -eq 28 ]
 }
 
 @test "hook-wrapper: sibling script fallback via dirname" {
@@ -274,8 +280,8 @@ setup() {
   # Verify hooks use 'exec bash' to hand off to hook-wrapper.sh
   EXEC_COUNT=$(grep -c 'exec bash' "$PROJECT_ROOT/hooks/hooks.json")
 
-  # Should match total hook count (27)
-  [ "$EXEC_COUNT" -eq 27 ]
+  # Should match total hook count (28)
+  [ "$EXEC_COUNT" -eq 28 ]
 }
 
 @test "hook resolution: error suppression with 2>/dev/null" {
@@ -330,7 +336,7 @@ setup() {
   grep -q 'skill-hook-dispatch.sh PreToolUse' "$PROJECT_ROOT/hooks/hooks.json"
 }
 
-@test "script invocation: all 21 unique scripts are invoked correctly" {
+@test "script invocation: all 22 unique scripts are invoked correctly" {
   # Verify all documented scripts appear in hooks.json with correct invocation
 
   SCRIPTS=(
@@ -353,6 +359,7 @@ setup() {
     "post-compact.sh"
     "compaction-instructions.sh"
     "session-stop.sh"
+    "skill-eval-prompt-gate.sh"
     "prompt-preflight.sh"
     "notification-log.sh"
   )

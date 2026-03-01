@@ -104,6 +104,47 @@ else
   fail "skill-evaluation-gate.sh: missing additionalContext output"
 fi
 
+# --- skill-eval-prompt-gate.sh checks (UserPromptSubmit primary path) ---
+
+PROMPT_GATE="$ROOT/scripts/skill-eval-prompt-gate.sh"
+HOOKS_FILE_EARLY="$ROOT/hooks/hooks.json"
+
+if [ -f "$PROMPT_GATE" ]; then
+  pass "skill-eval-prompt-gate.sh: exists"
+else
+  fail "skill-eval-prompt-gate.sh: missing"
+fi
+
+if [ -x "$PROMPT_GATE" ]; then
+  pass "skill-eval-prompt-gate.sh: is executable"
+else
+  fail "skill-eval-prompt-gate.sh: not executable"
+fi
+
+if grep -q 'UserPromptSubmit' "$PROMPT_GATE"; then
+  pass "skill-eval-prompt-gate.sh: contains UserPromptSubmit hookEventName"
+else
+  fail "skill-eval-prompt-gate.sh: missing UserPromptSubmit hookEventName"
+fi
+
+if grep -q 'evaluate-skills.sh' "$PROMPT_GATE"; then
+  pass "skill-eval-prompt-gate.sh: calls evaluate-skills.sh"
+else
+  fail "skill-eval-prompt-gate.sh: missing evaluate-skills.sh call"
+fi
+
+if grep -q 'skill-eval-markers' "$PROMPT_GATE"; then
+  pass "skill-eval-prompt-gate.sh: uses session-scoped markers"
+else
+  fail "skill-eval-prompt-gate.sh: missing session-scoped marker logic"
+fi
+
+if grep -q 'skill-eval-prompt-gate.sh' "$HOOKS_FILE_EARLY"; then
+  pass "hooks.json: has skill-eval-prompt-gate.sh in UserPromptSubmit"
+else
+  fail "hooks.json: missing skill-eval-prompt-gate.sh entry"
+fi
+
 # --- hooks.json check ---
 
 HOOKS_FILE="$ROOT/hooks/hooks.json"
@@ -118,10 +159,16 @@ fi
 
 DEV_AGENT="$ROOT/agents/vbw-dev.md"
 
-if grep -q 'MANDATORY SKILL EVALUATION SEQUENCE' "$DEV_AGENT"; then
-  pass "vbw-dev.md: references MANDATORY SKILL EVALUATION SEQUENCE"
+if grep -q 'skill evaluation protocol' "$DEV_AGENT"; then
+  pass "vbw-dev.md: uses unconditional skill evaluation phrasing"
 else
-  fail "vbw-dev.md: missing MANDATORY SKILL EVALUATION SEQUENCE reference"
+  fail "vbw-dev.md: missing unconditional skill evaluation phrasing"
+fi
+
+if ! grep -q 'If no sequence was injected' "$DEV_AGENT"; then
+  pass "vbw-dev.md: no conditional escape hatch"
+else
+  fail "vbw-dev.md: still has 'If no sequence was injected' escape hatch"
 fi
 
 if grep -q 'Skill(skill-name)' "$DEV_AGENT"; then
@@ -147,10 +194,16 @@ else
   fail "vbw-lead.md: Skill NOT in tools allowlist"
 fi
 
-if grep -q 'MANDATORY SKILL EVALUATION SEQUENCE' "$LEAD_AGENT"; then
-  pass "vbw-lead.md: references MANDATORY SKILL EVALUATION SEQUENCE"
+if grep -q 'skill evaluation protocol' "$LEAD_AGENT"; then
+  pass "vbw-lead.md: uses unconditional skill evaluation phrasing"
 else
-  fail "vbw-lead.md: missing MANDATORY SKILL EVALUATION SEQUENCE reference"
+  fail "vbw-lead.md: missing unconditional skill evaluation phrasing"
+fi
+
+if ! grep -q 'If no sequence was injected' "$LEAD_AGENT"; then
+  pass "vbw-lead.md: no conditional escape hatch"
+else
+  fail "vbw-lead.md: still has 'If no sequence was injected' escape hatch"
 fi
 
 if grep -q 'Skill completeness check' "$LEAD_AGENT"; then
@@ -191,10 +244,22 @@ else
   fail "execute-protocol.md: missing skill-evaluation-gate.sh documentation"
 fi
 
-if grep -q 'SubagentStart' "$PROTOCOL" && grep -q 'additionalContext' "$PROTOCOL"; then
-  pass "execute-protocol.md: documents hook-based additionalContext injection"
+if grep -q 'skill-eval-prompt-gate.sh' "$PROTOCOL"; then
+  pass "execute-protocol.md: documents skill-eval-prompt-gate.sh hook"
 else
-  fail "execute-protocol.md: missing hook-based injection documentation"
+  fail "execute-protocol.md: missing skill-eval-prompt-gate.sh documentation"
+fi
+
+if grep -q 'SubagentStart' "$PROTOCOL" && grep -q 'UserPromptSubmit' "$PROTOCOL"; then
+  pass "execute-protocol.md: documents dual-hook architecture (SubagentStart + UserPromptSubmit)"
+else
+  fail "execute-protocol.md: missing dual-hook documentation"
+fi
+
+if grep -q 'additionalContext' "$PROTOCOL"; then
+  pass "execute-protocol.md: documents additionalContext injection"
+else
+  fail "execute-protocol.md: missing additionalContext documentation"
 fi
 
 echo ""

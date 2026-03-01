@@ -4,7 +4,7 @@ set -u
 #
 # Primary skill evaluation gate. Fires on the FIRST prompt per session (including
 # agent team teammates). Injects a compact EVALUATE/ACTIVATE/IMPLEMENT protocol
-# into additionalContext. Uses PID-scoped marker to fire only once per session
+# into additionalContext. Uses session-scoped marker to fire only once per session
 # (avoids token waste on every prompt).
 #
 # This is the primary path for teammate coverage — SubagentStart does NOT fire
@@ -23,9 +23,10 @@ if [ ! -d "$PLANNING_DIR" ]; then
   exit 0
 fi
 
-# PID-scoped marker: fire only once per session
+# Session-scoped marker: fire only once per session
+# Cleaned up by session-stop.sh at session end
 MARKER_DIR="$PLANNING_DIR/.skill-eval-markers"
-MARKER="$MARKER_DIR/$$"
+MARKER="$MARKER_DIR/.done"
 
 if [ -f "$MARKER" ]; then
   exit 0
