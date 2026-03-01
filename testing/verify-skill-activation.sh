@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# verify-skill-activation.sh — Verify skill activation pipeline (issue #191)
+# verify-skill-activation.sh — Verify plan-driven skill activation pipeline
 #
 # Checks:
-# - evaluate-skills.sh exists and is executable
-# - skill-evaluation-gate.sh exists, calls evaluate-skills.sh, contains MANDATORY sequence
-# - hooks.json has skill-evaluation-gate.sh entry in SubagentStart
-# - vbw-dev.md has MANDATORY SKILL EVALUATION SEQUENCE reference
-# - vbw-lead.md has MANDATORY SKILL EVALUATION SEQUENCE reference + completeness gate
+# - evaluate-skills.sh exists and is executable (used by /vbw:init)
+# - vbw-dev.md references skills_used activation
+# - vbw-lead.md references skill evaluation and wiring
+# - hooks.json does NOT contain skill-evaluation-gate.sh or skill-eval-prompt-gate.sh
 # - All agents with explicit tools: allowlists include Skill
-# - compile-context.sh no longer has emit_skill_directive
-# - execute-protocol.md documents hook-based evaluation
+# - execute-protocol.md documents plan-driven approach
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -28,9 +26,9 @@ fail() {
   FAIL=$((FAIL + 1))
 }
 
-echo "=== Skill Activation Pipeline Verification (issue #191) ==="
+echo "=== Skill Activation Pipeline Verification (plan-driven model) ==="
 
-# --- evaluate-skills.sh checks ---
+# --- evaluate-skills.sh checks (still used by /vbw:init) ---
 
 EVAL_SCRIPT="$ROOT/scripts/evaluate-skills.sh"
 
@@ -64,111 +62,14 @@ else
   fail "evaluate-skills.sh: missing description extraction"
 fi
 
-# --- skill-evaluation-gate.sh checks ---
-
-GATE_SCRIPT="$ROOT/scripts/skill-evaluation-gate.sh"
-
-if [ -f "$GATE_SCRIPT" ]; then
-  pass "skill-evaluation-gate.sh: exists"
-else
-  fail "skill-evaluation-gate.sh: missing"
-fi
-
-if [ -x "$GATE_SCRIPT" ]; then
-  pass "skill-evaluation-gate.sh: is executable"
-else
-  fail "skill-evaluation-gate.sh: not executable"
-fi
-
-if grep -q 'evaluate-skills.sh' "$GATE_SCRIPT"; then
-  pass "skill-evaluation-gate.sh: calls evaluate-skills.sh"
-else
-  fail "skill-evaluation-gate.sh: missing evaluate-skills.sh call"
-fi
-
-if grep -q 'MANDATORY SKILL EVALUATION SEQUENCE' "$GATE_SCRIPT"; then
-  pass "skill-evaluation-gate.sh: contains MANDATORY SKILL EVALUATION SEQUENCE"
-else
-  fail "skill-evaluation-gate.sh: missing MANDATORY SKILL EVALUATION SEQUENCE"
-fi
-
-if grep -q 'hookSpecificOutput' "$GATE_SCRIPT"; then
-  pass "skill-evaluation-gate.sh: outputs hookSpecificOutput JSON"
-else
-  fail "skill-evaluation-gate.sh: missing hookSpecificOutput output"
-fi
-
-if grep -q 'additionalContext' "$GATE_SCRIPT"; then
-  pass "skill-evaluation-gate.sh: outputs additionalContext"
-else
-  fail "skill-evaluation-gate.sh: missing additionalContext output"
-fi
-
-# --- skill-eval-prompt-gate.sh checks (UserPromptSubmit primary path) ---
-
-PROMPT_GATE="$ROOT/scripts/skill-eval-prompt-gate.sh"
-HOOKS_FILE_EARLY="$ROOT/hooks/hooks.json"
-
-if [ -f "$PROMPT_GATE" ]; then
-  pass "skill-eval-prompt-gate.sh: exists"
-else
-  fail "skill-eval-prompt-gate.sh: missing"
-fi
-
-if [ -x "$PROMPT_GATE" ]; then
-  pass "skill-eval-prompt-gate.sh: is executable"
-else
-  fail "skill-eval-prompt-gate.sh: not executable"
-fi
-
-if grep -q 'UserPromptSubmit' "$PROMPT_GATE"; then
-  pass "skill-eval-prompt-gate.sh: contains UserPromptSubmit hookEventName"
-else
-  fail "skill-eval-prompt-gate.sh: missing UserPromptSubmit hookEventName"
-fi
-
-if grep -q 'evaluate-skills.sh' "$PROMPT_GATE"; then
-  pass "skill-eval-prompt-gate.sh: calls evaluate-skills.sh"
-else
-  fail "skill-eval-prompt-gate.sh: missing evaluate-skills.sh call"
-fi
-
-if grep -q 'skill-eval-markers' "$PROMPT_GATE"; then
-  pass "skill-eval-prompt-gate.sh: uses session-scoped markers"
-else
-  fail "skill-eval-prompt-gate.sh: missing session-scoped marker logic"
-fi
-
-if grep -q 'skill-eval-prompt-gate.sh' "$HOOKS_FILE_EARLY"; then
-  pass "hooks.json: has skill-eval-prompt-gate.sh in UserPromptSubmit"
-else
-  fail "hooks.json: missing skill-eval-prompt-gate.sh entry"
-fi
-
-# --- hooks.json check ---
-
-HOOKS_FILE="$ROOT/hooks/hooks.json"
-
-if grep -q 'skill-evaluation-gate.sh' "$HOOKS_FILE"; then
-  pass "hooks.json: has skill-evaluation-gate.sh entry"
-else
-  fail "hooks.json: missing skill-evaluation-gate.sh entry"
-fi
-
 # --- vbw-dev.md checks ---
 
 DEV_AGENT="$ROOT/agents/vbw-dev.md"
 
-if grep -q 'skill evaluation protocol' "$DEV_AGENT"; then
-  pass "vbw-dev.md: uses unconditional skill evaluation phrasing"
+if grep -q 'skills_used' "$DEV_AGENT"; then
+  pass "vbw-dev.md: references skills_used frontmatter"
 else
-  fail "vbw-dev.md: missing unconditional skill evaluation phrasing"
-fi
-
-if ! grep -q 'If no sequence was injected' "$DEV_AGENT"; then
-  pass "vbw-dev.md: no conditional escape hatch"
-else
-  fail "vbw-dev.md: still has 'If no sequence was injected' escape hatch"
+  fail "vbw-dev.md: missing skills_used reference"
 fi
 
 if grep -q 'Skill(skill-name)' "$DEV_AGENT"; then
@@ -177,10 +78,16 @@ else
   fail "vbw-dev.md: missing Skill() reference"
 fi
 
-if grep -q 'skills_used' "$DEV_AGENT"; then
-  pass "vbw-dev.md: references skills_used frontmatter"
+if ! grep -q 'protocol violation' "$DEV_AGENT"; then
+  pass "vbw-dev.md: no enforcement language"
 else
-  fail "vbw-dev.md: missing skills_used reference"
+  fail "vbw-dev.md: still has 'protocol violation' enforcement language"
+fi
+
+if grep -q 'clearly relevant but missing' "$DEV_AGENT"; then
+  pass "vbw-dev.md: has soft fallback for missing skills"
+else
+  fail "vbw-dev.md: missing soft fallback language"
 fi
 
 # --- vbw-lead.md checks ---
@@ -194,22 +101,46 @@ else
   fail "vbw-lead.md: Skill NOT in tools allowlist"
 fi
 
-if grep -q 'skill evaluation protocol' "$LEAD_AGENT"; then
-  pass "vbw-lead.md: uses unconditional skill evaluation phrasing"
+if grep -q 'Wire relevant skills into plans' "$LEAD_AGENT"; then
+  pass "vbw-lead.md: emphasizes wiring skills into plans"
 else
-  fail "vbw-lead.md: missing unconditional skill evaluation phrasing"
-fi
-
-if ! grep -q 'If no sequence was injected' "$LEAD_AGENT"; then
-  pass "vbw-lead.md: no conditional escape hatch"
-else
-  fail "vbw-lead.md: still has 'If no sequence was injected' escape hatch"
+  fail "vbw-lead.md: missing plan wiring language"
 fi
 
 if grep -q 'Skill completeness check' "$LEAD_AGENT"; then
   pass "vbw-lead.md: has skill completeness gate in self-review"
 else
   fail "vbw-lead.md: missing skill completeness gate in self-review"
+fi
+
+if ! grep -q 'write YES or NO' "$LEAD_AGENT"; then
+  pass "vbw-lead.md: no written YES/NO evaluation"
+else
+  fail "vbw-lead.md: still has written YES/NO evaluation"
+fi
+
+# --- hooks.json negative checks (enforcement gates removed) ---
+
+HOOKS_FILE="$ROOT/hooks/hooks.json"
+
+if ! grep -q 'skill-evaluation-gate.sh' "$HOOKS_FILE"; then
+  pass "hooks.json: skill-evaluation-gate.sh removed"
+else
+  fail "hooks.json: skill-evaluation-gate.sh still present"
+fi
+
+if ! grep -q 'skill-eval-prompt-gate.sh' "$HOOKS_FILE"; then
+  pass "hooks.json: skill-eval-prompt-gate.sh removed"
+else
+  fail "hooks.json: skill-eval-prompt-gate.sh still present"
+fi
+
+# --- hooks.json positive check (skill-hook-dispatch.sh preserved) ---
+
+if grep -q 'skill-hook-dispatch.sh' "$HOOKS_FILE"; then
+  pass "hooks.json: skill-hook-dispatch.sh preserved (runtime skill hooks)"
+else
+  fail "hooks.json: skill-hook-dispatch.sh missing (should be preserved)"
 fi
 
 # --- Skill in all agent tools: allowlists ---
@@ -238,28 +169,42 @@ fi
 
 PROTOCOL="$ROOT/references/execute-protocol.md"
 
-if grep -q 'skill-evaluation-gate.sh' "$PROTOCOL"; then
-  pass "execute-protocol.md: documents skill-evaluation-gate.sh hook"
+if grep -q 'plan-driven' "$PROTOCOL"; then
+  pass "execute-protocol.md: documents plan-driven architecture"
 else
-  fail "execute-protocol.md: missing skill-evaluation-gate.sh documentation"
+  fail "execute-protocol.md: missing plan-driven documentation"
 fi
 
-if grep -q 'skill-eval-prompt-gate.sh' "$PROTOCOL"; then
-  pass "execute-protocol.md: documents skill-eval-prompt-gate.sh hook"
+if grep -q 'skills_used' "$PROTOCOL"; then
+  pass "execute-protocol.md: references skills_used frontmatter"
 else
-  fail "execute-protocol.md: missing skill-eval-prompt-gate.sh documentation"
+  fail "execute-protocol.md: missing skills_used reference"
 fi
 
-if grep -q 'SubagentStart' "$PROTOCOL" && grep -q 'UserPromptSubmit' "$PROTOCOL"; then
-  pass "execute-protocol.md: documents dual-hook architecture (SubagentStart + UserPromptSubmit)"
+if grep -q 'skill-hook-dispatch.sh' "$PROTOCOL"; then
+  pass "execute-protocol.md: documents runtime skill hooks (separate concern)"
 else
-  fail "execute-protocol.md: missing dual-hook documentation"
+  fail "execute-protocol.md: missing skill-hook-dispatch.sh documentation"
 fi
 
-if grep -q 'additionalContext' "$PROTOCOL"; then
-  pass "execute-protocol.md: documents additionalContext injection"
+if ! grep -q 'three-layer' "$PROTOCOL"; then
+  pass "execute-protocol.md: old three-layer documentation removed"
 else
-  fail "execute-protocol.md: missing additionalContext documentation"
+  fail "execute-protocol.md: still has three-layer documentation"
+fi
+
+# --- Deleted scripts should not exist ---
+
+if [ ! -f "$ROOT/scripts/skill-eval-prompt-gate.sh" ]; then
+  pass "skill-eval-prompt-gate.sh: deleted"
+else
+  fail "skill-eval-prompt-gate.sh: still exists"
+fi
+
+if [ ! -f "$ROOT/scripts/skill-evaluation-gate.sh" ]; then
+  pass "skill-evaluation-gate.sh: deleted"
+else
+  fail "skill-evaluation-gate.sh: still exists"
 fi
 
 echo ""
