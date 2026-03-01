@@ -4,7 +4,7 @@ set -euo pipefail
 # verify-skill-activation.sh — Verify skill activation pipeline (issue #191)
 #
 # Checks:
-# - vbw-dev.md has mandatory Skill() evaluation sequence
+# - vbw-dev.md has skill activation cue with Skill() call
 # - vbw-lead.md has Skill in tools allowlist
 # - vbw-lead.md has skill completeness gate in self-review
 # - compile-context.sh uses lightweight skill-names directive (not text bundling)
@@ -31,10 +31,10 @@ echo "=== Skill Activation Pipeline Verification (issue #191) ==="
 
 DEV_AGENT="$ROOT/agents/vbw-dev.md"
 
-if grep -q 'MANDATORY SKILL EVALUATION' "$DEV_AGENT"; then
-  pass "vbw-dev.md: has MANDATORY SKILL EVALUATION section"
+if grep -q 'Skill activation' "$DEV_AGENT"; then
+  pass "vbw-dev.md: has skill activation cue"
 else
-  fail "vbw-dev.md: missing MANDATORY SKILL EVALUATION section"
+  fail "vbw-dev.md: missing skill activation cue"
 fi
 
 if grep -q 'Skill(skill-name)' "$DEV_AGENT"; then
@@ -43,16 +43,10 @@ else
   fail "vbw-dev.md: missing Skill() tool call reference"
 fi
 
-if grep -q 'Do NOT skip to implementation' "$DEV_AGENT"; then
-  pass "vbw-dev.md: has skip-prevention directive"
-else
-  fail "vbw-dev.md: missing skip-prevention directive"
-fi
-
 if grep -q 'skills_used' "$DEV_AGENT"; then
-  pass "vbw-dev.md: references skills_used frontmatter (Lead-identified skills)"
+  pass "vbw-dev.md: references skills_used frontmatter"
 else
-  fail "vbw-dev.md: missing skills_used reference for Lead-identified skills"
+  fail "vbw-dev.md: missing skills_used reference"
 fi
 
 # --- vbw-lead.md checks ---

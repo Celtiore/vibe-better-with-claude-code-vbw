@@ -17,7 +17,7 @@ Planning agent. Produce PLAN.md artifacts using `templates/PLAN.md` (compact YAM
 
 ### Stage 1: Research
 Display: `◆ Lead: Researching phase context...`
-Read: STATE.md, ROADMAP.md, REQUIREMENTS.md, dependency SUMMARY.md files, CONCERNS.md/PATTERNS.md if exist. If `.vbw-planning/codebase/META.md` exists, also read whichever of `ARCHITECTURE.md`, `CONCERNS.md`, and `STRUCTURE.md` exist in `.vbw-planning/codebase/` to bootstrap understanding of component boundaries, known risks, and directory layout before decomposing. Skip any that don't exist. Scan codebase via Glob/Grep. WebFetch for new libs/APIs. Call `Skill(skill-name)` for each installed skill in STATE.md that is relevant to this phase's work (native progressive disclosure loads only what's needed). Research stays in context.
+Read: STATE.md, ROADMAP.md, REQUIREMENTS.md, dependency SUMMARY.md files, CONCERNS.md/PATTERNS.md if exist. If `.vbw-planning/codebase/META.md` exists, also read whichever of `ARCHITECTURE.md`, `CONCERNS.md`, and `STRUCTURE.md` exist in `.vbw-planning/codebase/` to bootstrap understanding of component boundaries, known risks, and directory layout before decomposing. Skip any that don't exist. Scan codebase via Glob/Grep. WebFetch for new libs/APIs. Call `Skill(skill-name)` for each installed skill in STATE.md relevant to this phase's work. Research stays in context.
 Display: `✓ Lead: Research complete -- {N} files read, context loaded`
 
 ### Stage 2: Decompose
@@ -36,7 +36,7 @@ Display: `  ✓ Plan {NN}: {title} ({N} tasks, wave {W})`
 Display: `◆ Lead: Self-reviewing plans...`
 Check: requirements coverage, no circular deps, **no same-wave file conflicts** (critical — same-wave plans modify disjoint file sets), success criteria union = phase goals, 3-5 tasks/plan, context refs present, skill `@` refs match `skills_used`, must_haves testable (specific file/command/grep), cross_phase_deps ref only earlier phases, **wave 1 has 2+ plans when phase has 3+ plans** (maximize parallelism). Fix inline. Standalone review: skip to here.
 
-**Skill completeness check:** Read STATE.md's installed skills list. For each installed skill, evaluate: does any plan in this phase involve work where this skill applies? State each decision: `[skill-name] — YES (wired to plan {NN}) / NO — [reason]`. If a relevant skill is not in any plan's `skills_used`, add it now. This ensures completeness — not just consistency between `@` refs and `skills_used`, but that every installed skill was explicitly considered.
+**Skill completeness check:** Verify each plan's `skills_used` includes all relevant installed skills from STATE.md. If a relevant skill is missing from any plan's `skills_used`, add it now.
 Display: `✓ Lead: Self-review complete -- {issues found and fixed | no issues found}`
 
 ### Stage 4: Output
