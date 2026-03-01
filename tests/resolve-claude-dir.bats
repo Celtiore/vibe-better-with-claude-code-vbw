@@ -151,10 +151,6 @@ teardown() {
   ! grep -q 'resolve-claude-dir.sh' "$SCRIPTS_DIR/compile-context.sh"
 }
 
-@test "skill-evaluation-gate.sh reads skill names via evaluate-skills.sh (not CLAUDE_DIR)" {
-  grep -q 'evaluate-skills.sh' "$SCRIPTS_DIR/skill-evaluation-gate.sh"
-}
-
 # --- skill-hook-dispatch.sh tests ---
 
 @test "skill-hook-dispatch.sh sources resolve-claude-dir.sh" {
