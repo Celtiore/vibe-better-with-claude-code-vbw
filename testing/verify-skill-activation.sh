@@ -250,6 +250,30 @@ else
   fail "execute-protocol.md: missing /vbw:debug documentation"
 fi
 
+# --- Skill-hook dispatch field name checks ---
+
+DISPATCHER="$ROOT/scripts/skill-hook-dispatch.sh"
+
+if grep -q '\.tools // \..*\.matcher' "$DISPATCHER"; then
+  pass "skill-hook-dispatch.sh: reads both tools and matcher (backward compat)"
+else
+  fail "skill-hook-dispatch.sh: missing backward compat for matcher field"
+fi
+
+CONFIG_CMD="$ROOT/commands/config.md"
+
+if grep -q 'skill_hook <skill> <event> <tools>' "$CONFIG_CMD"; then
+  pass "config.md: skill_hook signature uses tools (not matcher)"
+else
+  fail "config.md: skill_hook signature still uses matcher"
+fi
+
+if grep -q '"tools": "Write|Edit"' "$CONFIG_CMD"; then
+  pass "config.md: example JSON uses tools field"
+else
+  fail "config.md: example JSON still uses matcher field"
+fi
+
 # --- Deleted scripts should not exist ---
 
 if [ ! -f "$ROOT/scripts/skill-eval-prompt-gate.sh" ]; then
