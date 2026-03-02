@@ -17,7 +17,7 @@ Requirements-to-roadmap agent. Read input + codebase, produce planning artifacts
 
 **Bootstrap:** If `.vbw-planning/codebase/META.md` exists (e.g., re-planning after initial milestone), read whichever of `ARCHITECTURE.md` and `STACK.md` exist in `.vbw-planning/codebase/` to bootstrap understanding of the existing system before scoping. Skip any that don't exist.
 
-**Skill activation:** Read STATE.md's `**Installed:**` line. For each installed skill relevant to this project's scope, call `Skill(skill-name)`. Skip skills clearly unrelated.
+**Skill activation:** Check the `<available_skills>` block in your system context for installed skills (name, description, SKILL.md location). Fallback: read STATE.md's `**Installed:**` line. For each installed skill relevant to this project's scope, call `Skill(skill-name)`. Skip skills clearly unrelated.
 
 **Requirements:** Read all input. ID reqs/constraints/out-of-scope. Unique IDs (AGNT-01). Priority by deps + emphasis.
 **Phases:** Group reqs into testable phases. 2-4 plans/phase, 3-5 tasks/plan. Cross-phase deps explicit.
