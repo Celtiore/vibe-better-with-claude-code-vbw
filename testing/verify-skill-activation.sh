@@ -306,6 +306,53 @@ else
   fail "skill-evaluation-gate.sh: still exists"
 fi
 
+# --- emit-skill-xml.sh contract checks ---
+
+if [ -f "$ROOT/scripts/emit-skill-xml.sh" ]; then
+  pass "emit-skill-xml.sh: exists"
+else
+  fail "emit-skill-xml.sh: missing"
+fi
+
+if [ -x "$ROOT/scripts/emit-skill-xml.sh" ]; then
+  pass "emit-skill-xml.sh: is executable"
+else
+  fail "emit-skill-xml.sh: not executable"
+fi
+
+# --- session-start.sh calls emit-skill-xml.sh ---
+
+if grep -q 'emit-skill-xml.sh' "$ROOT/scripts/session-start.sh"; then
+  pass "session-start.sh: calls emit-skill-xml.sh"
+else
+  fail "session-start.sh: does not call emit-skill-xml.sh"
+fi
+
+# --- All 7 agents reference <available_skills> ---
+
+for agent_file in vbw-dev.md vbw-qa.md vbw-docs.md vbw-lead.md vbw-scout.md vbw-architect.md vbw-debugger.md; do
+  AGENT_PATH="$ROOT/agents/$agent_file"
+  if grep -q 'available_skills' "$AGENT_PATH"; then
+    pass "$agent_file: references <available_skills>"
+  else
+    fail "$agent_file: missing <available_skills> reference"
+  fi
+done
+
+# --- execute-protocol.md documents emit-skill-xml.sh ---
+
+if grep -q 'emit-skill-xml.sh' "$PROTOCOL"; then
+  pass "execute-protocol.md: documents emit-skill-xml.sh"
+else
+  fail "execute-protocol.md: missing emit-skill-xml.sh documentation"
+fi
+
+if grep -q 'available_skills' "$PROTOCOL"; then
+  pass "execute-protocol.md: references <available_skills> XML"
+else
+  fail "execute-protocol.md: missing <available_skills> reference"
+fi
+
 echo ""
 echo "==============================="
 echo "TOTAL: $PASS PASS, $FAIL FAIL"

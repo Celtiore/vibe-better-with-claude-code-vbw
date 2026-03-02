@@ -23,8 +23,18 @@ xml_escape() {
 }
 
 # --- Collect skills from all three directories ---
-declare -A SEEN_SKILLS  # dedup by folder name (project wins)
+# Dedup by folder name using a delimited string (bash 3.2 compat, no declare -A)
+_SEEN_NAMES=""
 SKILL_ENTRIES=""
+
+_is_seen() {
+  case ",$_SEEN_NAMES," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+
+_mark_seen() {
+  _SEEN_NAMES="${_SEEN_NAMES:+$_SEEN_NAMES,}$1"
+}
 
 scan_skill_dir() {
   local dir="$1"
@@ -35,10 +45,10 @@ scan_skill_dir() {
     folder_name=$(basename "$skill_dir")
 
     # Dedup: skip if already seen (earlier dirs have priority)
-    if [ -n "${SEEN_SKILLS[$folder_name]+x}" ]; then
+    if _is_seen "$folder_name"; then
       continue
     fi
-    SEEN_SKILLS[$folder_name]=1
+    _mark_seen "$folder_name"
 
     local skill_md="$skill_dir/SKILL.md"
     [ -f "$skill_md" ] || continue
