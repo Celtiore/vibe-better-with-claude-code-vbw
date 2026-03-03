@@ -35,8 +35,9 @@ Config: Pre-injected by SessionStart hook.
     DEV_MAX_TURNS=$(bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/resolve-agent-max-turns.sh dev .vbw-planning/config.json turbo)
     ```
 
-    Spawn vbw-dev as subagent via Task tool with `model: "${DEV_MODEL}"` and
-    `maxTurns: ${DEV_MAX_TURNS}`:
+    Spawn vbw-dev as subagent via Task tool with `model: "${DEV_MODEL}"`.
+    If `DEV_MAX_TURNS` is a positive integer, also pass `maxTurns: ${DEV_MAX_TURNS}`.
+    If `DEV_MAX_TURNS` is 0, do NOT include maxTurns (omitting it = unlimited):
 
     ```text
     Quick fix (Turbo mode). Effort: low.

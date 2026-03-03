@@ -84,8 +84,9 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
         ```
 
     - Display: `◆ Spawning QA agent (${QA_MODEL})...`
-    - Spawn vbw-qa as subagent via Task tool. **Add `model: "${QA_MODEL}"` and
-      `maxTurns: ${QA_MAX_TURNS}` parameters.**
+    - Spawn vbw-qa as subagent via Task tool. **Add `model: "${QA_MODEL}"` to
+      the Task tool invocation. If `QA_MAX_TURNS` is a positive integer, also pass
+      `maxTurns: ${QA_MAX_TURNS}`. If `QA_MAX_TURNS` is 0, do NOT include maxTurns (omitting it = unlimited).**
 
         ```text
         Verify phase {NN}. Tier: {ACTIVE_TIER}.

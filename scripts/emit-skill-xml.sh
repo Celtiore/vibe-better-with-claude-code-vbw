@@ -37,7 +37,6 @@ xml_escape() {
 # Dedup by folder name using a delimited string (bash 3.2 compat, no declare -A)
 _SEEN_NAMES=""
 SKILL_ENTRIES=""
-SKILL_NAMES_LIST=""
 
 _is_seen() {
   # Use newline delimiter to avoid false matches on folder names containing commas
@@ -134,9 +133,6 @@ scan_skill_dir() {
     if [ "$COMPACT" = true ] && [ "${#description}" -gt 120 ]; then
       description="${description:0:117}..."
     fi
-
-    # Collect skill names for name-only output
-    SKILL_NAMES_LIST="${SKILL_NAMES_LIST:+${SKILL_NAMES_LIST}, }${name}"
 
     # XML-escape values
     local esc_name esc_desc esc_loc
