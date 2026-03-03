@@ -109,20 +109,20 @@ If empty → STOP: "⚠ The `next` branch does not exist on GitHub. The next cha
 **Clone and install:**
 
 ```bash
-TMPDIR=$(mktemp -d /tmp/vbw-next-clone-XXXXXX) && git clone --branch next --depth 1 https://github.com/yidakee/vibe-better-with-claude-code-vbw.git "$TMPDIR/vbw" 2>&1
+VBW_TMPDIR=$(mktemp -d /tmp/vbw-next-clone-XXXXXX) && git clone --branch next --depth 1 https://github.com/yidakee/vibe-better-with-claude-code-vbw.git "$VBW_TMPDIR/vbw" 2>&1
 ```
-If clone fails → clean up `$TMPDIR`, STOP: "⚠ Failed to clone the next branch."
+If clone fails → clean up `$VBW_TMPDIR`, STOP: "⚠ Failed to clone the next branch."
 
 Read version from clone:
 ```bash
-cat "$TMPDIR/vbw/VERSION" 2>/dev/null | tr -d '[:space:]'
+cat "$VBW_TMPDIR/vbw/VERSION" 2>/dev/null | tr -d '[:space:]'
 ```
-Store as `next_version`.
+Store as `next_version`. If empty → clean up `$VBW_TMPDIR`, STOP: "⚠ VERSION file missing or empty in next branch."
 
 Copy to cache:
 ```bash
 DEST="$CLAUDE_DIR/plugins/cache/vbw-marketplace/vbw/${next_version}"
-mkdir -p "$(dirname "$DEST")" && cp -R "$TMPDIR/vbw" "$DEST" && rm -rf "$DEST/.git" && rm -rf "$TMPDIR"
+mkdir -p "$(dirname "$DEST")" && cp -R "$VBW_TMPDIR/vbw" "$DEST" && rm -rf "$DEST/.git" && rm -rf "$VBW_TMPDIR"
 ```
 
 Write channel marker directly:
