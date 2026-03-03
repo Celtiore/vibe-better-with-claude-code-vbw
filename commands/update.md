@@ -54,7 +54,7 @@ If `--next` or `--stable` is present alongside `--check`, resolve the channel sw
 ```bash
 curl -sf --max-time 5 "https://raw.githubusercontent.com/yidakee/vibe-better-with-claude-code-vbw/${BRANCH}/VERSION"
 ```
-Store as `remote_version`. Curl fails → STOP: "⚠ Could not reach GitHub to check for updates."
+Store as `remote_version`. Curl fails → STOP: "⚠ Could not reach GitHub to check for updates." If channel is `next`, append: "If the next branch has been removed, try `/vbw:update --stable` to switch back."
 If remote == old: display "✓ Already at latest (v{old_version}). Refreshing cache..." Continue to Step 4 for clean cache refresh.
 
 When switching channels (`--next` or `--stable`), skip version comparison — always proceed to Step 4 (the user is explicitly requesting a channel change).
