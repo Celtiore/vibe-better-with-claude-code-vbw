@@ -87,7 +87,7 @@ Try in order (stop at first success):
 
 On success, write channel marker directly (do NOT source via symlink — it may be dangling after cache nuke):
 ```bash
-_CF=""; for _d in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do [ -z "$_d" ] && continue; [ -d "$_d" ] && _CF="$_d/plugins/cache/vbw-marketplace/.channel" && break; done; [ -n "$_CF" ] && mkdir -p "$(dirname "$_CF")" 2>/dev/null && printf 'stable\n' > "$_CF"
+_CF=""; if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then _CF="$CLAUDE_CONFIG_DIR/plugins/cache/vbw-marketplace/.channel"; else for _d in "$HOME/.config/claude-code" "$HOME/.claude"; do [ -d "$_d" ] && _CF="$_d/plugins/cache/vbw-marketplace/.channel" && break; done; fi; [ -n "$_CF" ] && mkdir -p "$(dirname "$_CF")" 2>/dev/null && printf 'stable\n' > "$_CF"
 ```
 
 #### Step 5b: Next channel (git-based)
@@ -122,12 +122,12 @@ Store as `next_version`. If empty → clean up `$VBW_TMPDIR`, STOP: "⚠ VERSION
 Copy to cache:
 ```bash
 DEST="$CLAUDE_DIR/plugins/cache/vbw-marketplace/vbw/${next_version}"
-mkdir -p "$(dirname "$DEST")" && cp -R "$VBW_TMPDIR/vbw" "$DEST" && rm -rf "$DEST/.git" && rm -rf "$VBW_TMPDIR"
+rm -rf "$DEST" 2>/dev/null; mkdir -p "$(dirname "$DEST")" && cp -R "$VBW_TMPDIR/vbw" "$DEST" && rm -rf "$DEST/.git" && rm -rf "$VBW_TMPDIR"
 ```
 
 Write channel marker directly:
 ```bash
-_CF=""; for _d in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do [ -z "$_d" ] && continue; [ -d "$_d" ] && _CF="$_d/plugins/cache/vbw-marketplace/.channel" && break; done; [ -n "$_CF" ] && mkdir -p "$(dirname "$_CF")" 2>/dev/null && printf 'next\n' > "$_CF"
+_CF=""; if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then _CF="$CLAUDE_CONFIG_DIR/plugins/cache/vbw-marketplace/.channel"; else for _d in "$HOME/.config/claude-code" "$HOME/.claude"; do [ -d "$_d" ] && _CF="$_d/plugins/cache/vbw-marketplace/.channel" && break; done; fi; [ -n "$_CF" ] && mkdir -p "$(dirname "$_CF")" 2>/dev/null && printf 'next\n' > "$_CF"
 ```
 
 **Clean stale global commands** (after stable or next install succeeds):
