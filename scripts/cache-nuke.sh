@@ -7,6 +7,10 @@
 #
 # Called by: /vbw:update, session-start.sh
 # Output: JSON summary of what was wiped.
+#
+# Note: The channel marker (.channel) lives in the parent directory
+# ($CLAUDE_DIR/plugins/cache/vbw-marketplace/.channel), NOT inside vbw/.
+# This is intentional — the user's channel preference survives cache nukes.
 
 set -eo pipefail
 

@@ -300,6 +300,10 @@ if [ ! -f "$VBW_MARKER" ]; then
   WELCOME_MSG="FIRST RUN -- Display this welcome to the user verbatim: Welcome to VBW -- Vibe Better with Claude Code. You're not an engineer anymore. You're a prompt jockey with commit access. At least do it properly. Quick start: /vbw:vibe -- describe your project and VBW handles the rest. Type /vbw:help for the full story. --- "
 fi
 
+# --- Channel detection (stable or next) ---
+. "$SCRIPT_DIR/channel.sh"
+VBW_BRANCH=$(vbw_github_branch)
+
 # --- Update check (once per day, fail-silent) ---
 
 CACHE="/tmp/vbw-update-check-$(id -u)"
@@ -314,23 +318,30 @@ if [ ! -f "$CACHE" ] || [ $((NOW - MT)) -gt 86400 ]; then
   # Get installed version from plugin.json next to this script
   LOCAL_VER=$(jq -r '.version // "0.0.0"' "$SCRIPT_DIR/../.claude-plugin/plugin.json" 2>/dev/null)
 
-  # Fetch latest version from GitHub (3s timeout)
+  # Fetch latest version from GitHub (3s timeout, branch-aware)
   REMOTE_VER=$(curl -sf --max-time 3 \
-    "https://raw.githubusercontent.com/yidakee/vibe-better-with-claude-code-vbw/main/.claude-plugin/plugin.json" \
+    "https://raw.githubusercontent.com/yidakee/vibe-better-with-claude-code-vbw/${VBW_BRANCH}/.claude-plugin/plugin.json" \
     2>/dev/null | jq -r '.version // "0.0.0"' 2>/dev/null)
 
   # Cache the result regardless
   echo "${LOCAL_VER:-0.0.0}|${REMOTE_VER:-0.0.0}" > "$CACHE" 2>/dev/null
 
+  _ch_label=""
+  [ "$VBW_CHANNEL" = "next" ] && _ch_label=" [next]"
+
   if [ -n "$REMOTE_VER" ] && [ "$REMOTE_VER" != "0.0.0" ] && [ "$REMOTE_VER" != "$LOCAL_VER" ]; then
-    UPDATE_MSG=" UPDATE AVAILABLE: v${LOCAL_VER} -> v${REMOTE_VER}. Run /vbw:update to upgrade."
+    UPDATE_MSG=" UPDATE AVAILABLE${_ch_label}: v${LOCAL_VER} -> v${REMOTE_VER}. Run /vbw:update to upgrade."
   fi
 else
   # Read cached result
   LOCAL_VER="" REMOTE_VER=""
   IFS='|' read -r LOCAL_VER REMOTE_VER < "$CACHE" 2>/dev/null || true
+
+  _ch_label=""
+  [ "$VBW_CHANNEL" = "next" ] && _ch_label=" [next]"
+
   if [ -n "${REMOTE_VER:-}" ] && [ "${REMOTE_VER:-}" != "0.0.0" ] && [ "${REMOTE_VER:-}" != "${LOCAL_VER:-}" ]; then
-    UPDATE_MSG=" UPDATE AVAILABLE: v${LOCAL_VER:-0.0.0} -> v${REMOTE_VER:-0.0.0}. Run /vbw:update to upgrade."
+    UPDATE_MSG=" UPDATE AVAILABLE${_ch_label}: v${LOCAL_VER:-0.0.0} -> v${REMOTE_VER:-0.0.0}. Run /vbw:update to upgrade."
   fi
 fi
 

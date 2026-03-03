@@ -76,6 +76,13 @@ PASS if 0. WARN if any, list which markers.
 If $TMUX is set, check if .vbw-planning/.watchdog-pid exists and process is alive via kill -0.
 PASS if alive or not in tmux. WARN if dead watchdog in tmux.
 
+### 16. Update channel
+Read the channel marker file:
+```bash
+for _d in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do [ -z "$_d" ] && continue; [ -f "$_d/plugins/cache/vbw-marketplace/.channel" ] && cat "$_d/plugins/cache/vbw-marketplace/.channel" 2>/dev/null && break; done
+```
+PASS with detail: `stable` (default if file missing or empty) or `next`. Always passes — this is informational.
+
 ## Output Format
 
 ```
@@ -96,8 +103,9 @@ VBW Doctor v{version}
  13. Dangling PIDs        {PASS|WARN} {count}
  14. Stale markers        {PASS|WARN} {markers}
  15. Watchdog status      {PASS|WARN}
+ 16. Update channel       PASS {stable|next}
 
-Result: {N}/15 passed, {W} warnings, {F} failures
+Result: {N}/16 passed, {W} warnings, {F} failures
 ```
 
 Use checkmark for PASS, warning triangle for WARN, X for FAIL.

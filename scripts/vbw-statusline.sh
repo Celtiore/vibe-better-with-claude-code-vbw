@@ -22,6 +22,18 @@ else
 fi
 _CACHE="/tmp/vbw-${_VER:-0}-${_UID}-${_REPO_HASH}"
 
+# Channel detection (stable or next)
+_VBW_CHANNEL="stable"
+_VBW_BRANCH="main"
+for _cd in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do
+  [ -z "$_cd" ] && continue
+  if [ -f "$_cd/plugins/cache/vbw-marketplace/.channel" ]; then
+    _ch=$(cat "$_cd/plugins/cache/vbw-marketplace/.channel" 2>/dev/null | tr -d '[:space:]')
+    [ "$_ch" = "next" ] && _VBW_CHANNEL="next" && _VBW_BRANCH="next"
+    break
+  fi
+done
+
 # Clean stale caches from previous versions on first run
 if ! [ -f "${_CACHE}-ok" ] || ! [ -O "${_CACHE}-ok" ]; then
   rm -f /tmp/vbw-*-"${_UID}"-* /tmp/vbw-sl-cache-"${_UID}" /tmp/vbw-usage-cache-"${_UID}" /tmp/vbw-gh-cache-"${_UID}" /tmp/vbw-team-cache-"${_UID}" /tmp/vbw-*-"${_UID}" 2>/dev/null
@@ -307,7 +319,7 @@ if ! cache_fresh "$SLOW_CF" 60; then
   fi
 
   UPDATE_AVAIL=""
-  REMOTE_VER=$(curl -sf --max-time 3 "https://raw.githubusercontent.com/yidakee/vibe-better-with-claude-code-vbw/main/VERSION" 2>/dev/null | tr -d '[:space:]')
+  REMOTE_VER=$(curl -sf --max-time 3 "https://raw.githubusercontent.com/yidakee/vibe-better-with-claude-code-vbw/${_VBW_BRANCH}/VERSION" 2>/dev/null | tr -d '[:space:]')
   if [ -n "$REMOTE_VER" ] && [ -n "$_VER" ] && [ "$REMOTE_VER" != "$_VER" ]; then
     NEWEST=$(printf '%s\n%s\n' "$_VER" "$REMOTE_VER" | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1)
     [ "$NEWEST" = "$REMOTE_VER" ] && UPDATE_AVAIL="$REMOTE_VER"
@@ -475,10 +487,12 @@ L2="$L2 ${D}│${X} Prompt Cache: ${CACHE_COLOR}${CACHE_HIT_PCT}% hit${X} ${CACH
 L3="$USAGE_LINE"
 L4="Model: ${D}${MODEL}${X} ${D}│${X} Time: ${DUR_FMT} (API: ${API_DUR_FMT})"
 [ -n "$AGENT_LINE" ] && L4="$L4 ${D}│${X} ${AGENT_LINE}"
+_CH_BADGE=""
+[ "$_VBW_CHANNEL" = "next" ] && _CH_BADGE=" ${Y}[next]${X}"
 if [ -n "$UPDATE_AVAIL" ]; then
-  L4="$L4 ${D}│${X} ${Y}${B}VBW ${_VER:-?} → ${UPDATE_AVAIL}${X} ${Y}/vbw:update${X} ${D}│${X} ${D}CC ${VER}${X}"
+  L4="$L4 ${D}│${X} ${Y}${B}VBW ${_VER:-?}${_CH_BADGE} → ${UPDATE_AVAIL}${X} ${Y}/vbw:update${X} ${D}│${X} ${D}CC ${VER}${X}"
 else
-  L4="$L4 ${D}│${X} ${D}VBW ${_VER:-?}${X} ${D}│${X} ${D}CC ${VER}${X}"
+  L4="$L4 ${D}│${X} ${D}VBW ${_VER:-?}${_CH_BADGE}${X} ${D}│${X} ${D}CC ${VER}${X}"
 fi
 
 printf '%b\n' "$L1"
