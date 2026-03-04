@@ -41,6 +41,10 @@ echo "Running skill activation pipeline checks..."
 bash "$ROOT/testing/verify-skill-activation.sh"
 
 echo ""
+echo "Running skill state sync checks..."
+bash "$ROOT/testing/verify-skill-state-sync.sh"
+
+echo ""
 echo "Running delegation guard checks..."
 bash "$ROOT/testing/verify-delegation-guard.sh"
 

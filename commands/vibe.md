@@ -282,12 +282,17 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh init "$PHASE_DIR" "major"
      # or "minor" when uat_issues_major_or_higher=false
      ```
-     The first line of output is the stage (`plan` or `fix`). After the `---CONTEXT---` separator, the full pre-seeded CONTEXT.md content follows — **use this directly as your remediation context. Do NOT separately read UAT.md or CONTEXT.md files.**
+     The first line of output is the stage (`research` or `fix`). After the `---CONTEXT---` separator, the full pre-seeded CONTEXT.md content follows — **use this directly as your remediation context. Do NOT separately read UAT.md or CONTEXT.md files.**
    - If `STAGE=done`: UAT remediation already completed for this phase. Display "Remediation already completed. Run `/vbw:verify --resume` to re-test." STOP.
    - Otherwise: resume at the persisted stage (handles compaction recovery).
 5. **Execute the current stage** based on `STAGE`:
    **File read prohibition:** Do NOT read `{phase}-UAT.md` or `{phase}-CONTEXT.md` — all UAT data is already available from step 2 (pre-computed issue lines) and step 4 (CONTEXT.md content emitted by `init`). Reading these files wastes tool calls.
-   - `plan`: Execute **Plan mode steps 1-11 above** for the same phase. The UAT report serves as the scoping document — no separate discussion is needed (CONTEXT.md content was emitted by `init` in step 4). **Scout context (CRITICAL):** When Plan mode step 3 spawns Scout, include the pre-computed UAT issue lines (`ID|SEVERITY|DESCRIPTION` from step 2) in Scout's task prompt so Scout knows what codebase areas to investigate for each issue. Without this, Scout searches blind. After planning completes, advance:
+   - `research`: Execute **Plan mode step 3 only** (research persistence) for this phase. Spawn Scout with the pre-computed UAT issue lines (`ID|SEVERITY|DESCRIPTION` from step 2) so Scout investigates the relevant code areas for each issue. After Scout completes and RESEARCH.md is written, advance:
+     ```bash
+     bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
+     ```
+     Then continue to the next stage (`plan`).
+   - `plan`: Execute **Plan mode steps 1-11 above** for the same phase. "No separate discussion" means skip Discuss assumption-gathering (step 2) — the UAT report serves as scope. Step 3 will find the existing RESEARCH.md from the `research` stage and include it in Lead's context (no re-run of Scout needed). After planning completes, advance:
      ```bash
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```
@@ -301,7 +306,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```
      Suggest `/vbw:verify --resume`.
-6. Present a remediation summary with: phase, issue count, severity mix, current stage, and chosen path (`plan -> execute` or quick-fix).
+6. Present a remediation summary with: phase, issue count, severity mix, current stage, and chosen path (`research -> plan -> execute` or quick-fix).
 
 ### Mode: Milestone UAT Recovery
 
@@ -344,14 +349,15 @@ This mode handles the case where a milestone was archived before UAT issues were
 1. **Parse args:** Phase number (optional, auto-detected), --effort (optional, falls back to config).
 2. **Phase context:** If `{phase-dir}/{phase}-CONTEXT.md` exists, include it in Lead agent context. If not, proceed without — users who want context run `/vbw:discuss {NN}` first.
 3. **Research persistence (REQ-08, graduated):** If effort != turbo:
-   - Check for `{phase-dir}/{phase}-RESEARCH.md`.
-   - **If missing:** Spawn Scout agent to research the phase goal, requirements, and relevant codebase patterns. Scout returns structured findings with sections: `## Findings`, `## Relevant Patterns`, `## Risks`, `## Recommendations`. The **orchestrator** (not Scout) writes the returned findings to `{phase-dir}/{phase}-RESEARCH.md`. Scout has `disallowedTools: Write` (platform-enforced) and cannot write files. Resolve Scout model:
+   - Determine the next plan number `{MM}`: glob `*-PLAN.md` in the phase dir, extract the highest `{MM}` value, add 1 (zero-padded to 2 digits). If no plans exist, `{MM}=01`.
+   - Check for per-plan research `{phase-dir}/{phase}-{MM}-RESEARCH.md` (preferred) or legacy `{phase-dir}/{phase}-RESEARCH.md` (fallback).
+   - **If neither exists:** Spawn Scout agent to research the phase goal, requirements, and relevant codebase patterns. Scout returns structured findings with sections: `## Findings`, `## Relevant Patterns`, `## Risks`, `## Recommendations`. The **orchestrator** (not Scout) writes the returned findings to `{phase-dir}/{phase}-{MM}-RESEARCH.md`. If a legacy `{phase-dir}/{phase}-RESEARCH.md` exists, delete it after writing the per-plan file to avoid stale context. Scout has `disallowedTools: Write` (platform-enforced) and cannot write files. Resolve Scout model:
      ```bash
      SCOUT_MODEL=$(bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-agent-model.sh scout .vbw-planning/config.json /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/config/model-profiles.json)
      SCOUT_MAX_TURNS=$(bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-agent-max-turns.sh scout .vbw-planning/config.json "{effort}")
      ```
    Pass `model: "${SCOUT_MODEL}"` to the Task tool. If `SCOUT_MAX_TURNS` is non-empty, also pass `maxTurns: ${SCOUT_MAX_TURNS}`. If `SCOUT_MAX_TURNS` is empty, do NOT include maxTurns (omitting it = unlimited).
-   - **If exists:** Include it in Lead's context for incremental refresh. Lead may update RESEARCH.md if new information emerges.
+   - **If exists (per-plan or legacy):** Include it in Lead's context for incremental refresh. Lead may update the per-plan RESEARCH.md if new information emerges.
    - **On failure:** Log warning, continue planning without research. Do not block.
    - If effort=turbo: skip entirely.
 4. **Context compilation:** If `config_context_compiler=true`, run `bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} lead {phases_dir}`. Include `.context-lead.md` in Lead agent context if produced.
@@ -431,7 +437,9 @@ This mode handles the case where a milestone was archived before UAT issues were
 
 Read `/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/references/execute-protocol.md` and follow its instructions.
 
-This mode delegates entirely to the protocol file. Before reading:
+This mode delegates entirely to the protocol file. **Orchestrator read-scope:** Do NOT read product source files. Your job is orchestration — read plans, check summaries, spawn Dev for remaining work. If you need product-code understanding to route or sequence, delegate that to Dev.
+
+Before reading:
 0. **Pre-normalize filenames:**
     ```bash
     NORM_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"

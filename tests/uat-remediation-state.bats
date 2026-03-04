@@ -18,12 +18,12 @@ teardown() {
   [ "$output" = "none" ]
 }
 
-@test "init major creates plan stage" {
+@test "init major creates research stage" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  [ "$(echo "$output" | head -1)" = "plan" ]
+  [ "$(echo "$output" | head -1)" = "research" ]
   [ -f "$PHASE_DIR/.uat-remediation-stage" ]
-  [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "plan" ]
+  [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "research" ]
 }
 
 @test "init minor creates fix stage" {
@@ -33,14 +33,17 @@ teardown() {
   [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "fix" ]
 }
 
-@test "init unknown severity defaults to plan" {
+@test "init unknown severity defaults to research" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "unknown"
   [ "$status" -eq 0 ]
-  [ "$(echo "$output" | head -1)" = "plan" ]
+  [ "$(echo "$output" | head -1)" = "research" ]
 }
 
-@test "advance major chain: plan -> execute -> done" {
+@test "advance major chain: research -> plan -> execute -> done" {
   bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major" >/dev/null
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
+  [ "$output" = "plan" ]
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
   [ "$output" = "execute" ]
@@ -63,12 +66,27 @@ teardown() {
   [ "$output" = "done" ]
 }
 
+@test "advance from research goes to plan" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
+  [ "$output" = "plan" ]
+}
+
+@test "legacy plan stage still advances to execute" {
+  # Backward compat: existing .uat-remediation-stage files with "plan"
+  echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
+  [ "$output" = "execute" ]
+}
+
 @test "get returns persisted stage after advance" {
   bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major" >/dev/null
   bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR" >/dev/null
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get "$PHASE_DIR"
-  [ "$output" = "execute" ]
+  [ "$output" = "plan" ]
 }
 
 @test "reset removes state file" {

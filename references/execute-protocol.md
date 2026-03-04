@@ -49,6 +49,8 @@ All runtime script invocations below assume `VBW_PLUGIN_ROOT` is set.
 
 ### Step 2: Load plans and detect resume state
 
+**Orchestrator read-scope boundary:** You may ONLY read planning/state artifacts: `*-PLAN.md`, `*-SUMMARY.md`, `*-RESEARCH.md`, `STATE.md`, `ROADMAP.md`, `REQUIREMENTS.md`, `.execution-state.json`, `.context-*.md`, `config.json`, and `.vbw-planning/` metadata. Do NOT read product source files (application code, tests, configs outside `.vbw-planning/`). If you need to understand product code to make a routing or sequencing decision, that understanding must come from Dev — delegate it via a task.
+
 1. Glob `*-PLAN.md` in phase dir. Read each plan's YAML frontmatter.
 2. Check existing SUMMARY.md files — a plan is complete only if its SUMMARY has `status: complete|partial` (use `is_summary_complete` from `scripts/summary-utils.sh`). A SUMMARY with `status: pending` or no status field is NOT complete.
 3. `git log --oneline -20` for committed tasks (crash recovery).
@@ -185,7 +187,7 @@ The existing individual script call sections (V3 Contract-Lite, V2 Hard Gates, C
 **Context compilation (REQ-11):** If control-plane.sh `full` action was used above and returned a `context_path`, use that path directly. Otherwise, if `config_context_compiler=true` from Context block above, before creating Dev tasks run:
 `bash "${VBW_PLUGIN_ROOT}/scripts/compile-context.sh" {phase} dev {phases_dir} {plan_path}`
 This produces `{phase-dir}/.context-dev.md` with phase goal and conventions.
-The plan_path argument is passed for context. Skill activation uses a plan-driven architecture:
+The plan_path argument is passed for context. **Per-plan research:** When loading context for a specific plan `{NN}-{MM}-PLAN.md`, also check for `{phase-dir}/{NN}-{MM}-RESEARCH.md`. If it exists, include it in the Dev task prompt alongside the compiled context. Fall back to `{phase-dir}/{NN}-RESEARCH.md` (legacy single-file format) if no per-plan research exists. Skill activation uses a plan-driven architecture:
 - **Session context injection (SessionStart):** `emit-skill-xml.sh` generates `<available_skills>` XML (name, description, SKILL.md location) for installed skills. Appended to `additionalContext`. Agents reference this for skill awareness. Fallback: STATE.md `**Installed:**` line when XML is absent.
 - **Lead (planning time):** Evaluates available skills during Stage 1 research — checks the `<available_skills>` block in system context and STATE.md's `**Installed:**` line as fallback. Calls `Skill(skill-name)` for each relevant skill, and wires them into plans via `skills_used` frontmatter and `@`-references to SKILL.md files. Stage 3 self-review includes a skill completeness gate verifying every plan's `skills_used` includes all relevant installed skills.
 - **Dev/QA/Scout/Docs (execution time):** Reads the plan's `skills_used` list and calls `Skill(skill-name)` for each listed skill before beginning work. If a skill listed in the `<available_skills>` block is clearly relevant but missing from `skills_used`, activates it too (soft fallback). No written YES/NO evaluation required.

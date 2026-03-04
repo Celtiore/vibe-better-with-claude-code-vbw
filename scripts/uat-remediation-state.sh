@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # uat-remediation-state.sh — Track UAT remediation chain progress on disk.
 #
-# Persists the current stage of the discuss → plan → execute chain so that
+# Persists the current stage of the research → plan → execute chain so that
 # the orchestrator can resume correctly after compaction or session restart.
 #
 # Usage:
@@ -10,7 +10,7 @@
 #   uat-remediation-state.sh reset   <phase-dir>             → removes state file
 #   uat-remediation-state.sh init    <phase-dir> <severity>  → initializes for severity
 #
-# Stages (major/critical path): plan → execute → done
+# Stages (major/critical path): research → plan → execute → done
 #   (discuss is skipped — the UAT report serves as the scoping document)
 # Stages (minor-only path):     fix → done
 #
@@ -46,7 +46,7 @@ esac
 STATE_FILE="$PHASE_DIR/.uat-remediation-stage"
 
 # Major/critical chain order (UAT report serves as discussion — no separate discuss step)
-MAJOR_STAGES=("plan" "execute" "done")
+MAJOR_STAGES=("research" "plan" "execute" "done")
 # Minor-only chain order
 MINOR_STAGES=("fix" "done")
 
@@ -64,7 +64,7 @@ next_stage() {
 
   # Determine which chain we're on based on current stage
   case "$current" in
-    plan|execute) stages=("${MAJOR_STAGES[@]}") ;;
+    research|plan|execute) stages=("${MAJOR_STAGES[@]}") ;;
     fix)                  stages=("${MINOR_STAGES[@]}") ;;
     done)                 echo "done"; return 0 ;;
     *)                    echo "done"; return 0 ;;
@@ -112,9 +112,9 @@ case "$CMD" in
       exit 1
     fi
     case "$SEVERITY_ARG" in
-      major|critical) echo "plan" > "$STATE_FILE"; echo "plan" ;;
+      major|critical) echo "research" > "$STATE_FILE"; echo "research" ;;
       minor)          echo "fix" > "$STATE_FILE"; echo "fix" ;;
-      *)              echo "plan" > "$STATE_FILE"; echo "plan" ;;
+      *)              echo "research" > "$STATE_FILE"; echo "research" ;;
     esac
 
     # Pre-seed the phase CONTEXT.md with UAT report content so the
