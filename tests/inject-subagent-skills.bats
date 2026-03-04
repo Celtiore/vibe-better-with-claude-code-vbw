@@ -96,3 +96,28 @@ create_skill() {
   echo '{"agent_type":"vbw-dev"}' | VBW_DEBUG=1 bash "$SCRIPTS_DIR/inject-subagent-skills.sh"
   grep -qE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z" "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log"
 }
+
+@test "inject-subagent-skills: debug log written when config.json debug_logging=true" {
+  create_skill "$TEST_TEMP_DIR/.claude/skills" "test-skill" "test-skill" "A test skill"
+  echo '{"debug_logging": true}' > "$TEST_TEMP_DIR/.vbw-planning/config.json"
+  cd "$TEST_TEMP_DIR"
+  echo '{"agent_type":"vbw-dev"}' | bash "$SCRIPTS_DIR/inject-subagent-skills.sh"
+  [ -f "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log" ]
+  grep -q "SubagentStart" "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log"
+}
+
+@test "inject-subagent-skills: no debug log when config.json debug_logging=false" {
+  create_skill "$TEST_TEMP_DIR/.claude/skills" "test-skill" "test-skill" "A test skill"
+  echo '{"debug_logging": false}' > "$TEST_TEMP_DIR/.vbw-planning/config.json"
+  cd "$TEST_TEMP_DIR"
+  echo '{"agent_type":"vbw-dev"}' | bash "$SCRIPTS_DIR/inject-subagent-skills.sh"
+  [ ! -f "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log" ]
+}
+
+@test "inject-subagent-skills: VBW_DEBUG=1 env var overrides config.json debug_logging=false" {
+  create_skill "$TEST_TEMP_DIR/.claude/skills" "test-skill" "test-skill" "A test skill"
+  echo '{"debug_logging": false}' > "$TEST_TEMP_DIR/.vbw-planning/config.json"
+  cd "$TEST_TEMP_DIR"
+  echo '{"agent_type":"vbw-dev"}' | VBW_DEBUG=1 bash "$SCRIPTS_DIR/inject-subagent-skills.sh"
+  [ -f "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log" ]
+}

@@ -79,8 +79,16 @@ EVAL_INSTRUCTION="SKILL ACTIVATION: Evaluate which of the skills below are relev
 CONTEXT="${EVAL_INSTRUCTION}
 ${SKILL_XML}"
 
+# --- Resolve debug_logging flag from config.json (env var override for backward compat) ---
+HOOK_DEBUG="${VBW_DEBUG:-0}"
+if [ "$HOOK_DEBUG" != "1" ] && [ -f "$PLANNING_DIR/config.json" ] && command -v jq &>/dev/null; then
+  HOOK_DEBUG=$(jq -r '.debug_logging // false' "$PLANNING_DIR/config.json" 2>/dev/null || echo "false")
+  # Normalize: true → 1, anything else → 0
+  case "$HOOK_DEBUG" in true|1) HOOK_DEBUG=1 ;; *) HOOK_DEBUG=0 ;; esac
+fi
+
 # --- Debug logging: deterministic proof of injection ---
-if [ "${VBW_DEBUG:-0}" = "1" ] && [ -d "$PLANNING_DIR" ]; then
+if [ "$HOOK_DEBUG" = "1" ] && [ -d "$PLANNING_DIR" ]; then
   DEBUG_LOG="$PLANNING_DIR/.hook-debug.log"
   TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%s")
   ROLE=$(normalize_agent_role "$AGENT_TYPE" 2>/dev/null || echo "unknown")
