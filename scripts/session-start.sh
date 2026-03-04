@@ -270,6 +270,23 @@ if [ -d "$PLANNING_DIR" ] && [ ! -f "$PLANNING_DIR/STATE.md" ]; then
   bash "$SCRIPT_DIR/migrate-orphaned-state.sh" "$PLANNING_DIR" 2>/dev/null || true
 fi
 
+# --- Brownfield: detect SUMMARY.md files without valid completion status ---
+# Projects bootstrapped before status-aware detection may have SUMMARY files
+# that were created empty (touch) or with non-terminal statuses. Warn so users
+# know these plans won't be counted as complete under the new detection.
+_bf_bad_summary_count=0
+if [ -d "$PLANNING_DIR/phases" ]; then
+  for _bf_phase_dir in "$PLANNING_DIR"/phases/*/; do
+    [ -d "$_bf_phase_dir" ] || continue
+    for _bf_sf in "$_bf_phase_dir"*-SUMMARY.md; do
+      [ -f "$_bf_sf" ] || continue
+      if ! is_summary_complete "$_bf_sf"; then
+        _bf_bad_summary_count=$((_bf_bad_summary_count + 1))
+      fi
+    done
+  done
+fi
+
 # --- Session-level config cache (performance optimization, REQ-01 #9) ---
 # Write commonly-read config flags to a flat file for fast sourcing.
 # Invalidation: overwritten every session start. Scripts can opt-in:
@@ -295,6 +312,11 @@ fi
 # Compaction marker cleanup moved to the early-exit check above and to post-compact.sh
 
 UPDATE_MSG=""
+
+# Append brownfield SUMMARY warning if any non-complete files were found
+if [ "$_bf_bad_summary_count" -gt 0 ]; then
+  UPDATE_MSG="${UPDATE_MSG} BROWNFIELD: ${_bf_bad_summary_count} SUMMARY.md file(s) lack valid completion status (missing 'status: complete' in YAML frontmatter). These plans will not be counted as complete. Fix by adding frontmatter or re-execute with /vbw:vibe."
+fi
 
 # --- First-run welcome (DXP-03) ---
 VBW_MARKER="$CLAUDE_DIR/.vbw-welcomed"
