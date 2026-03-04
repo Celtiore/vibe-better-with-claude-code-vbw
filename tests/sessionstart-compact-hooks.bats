@@ -91,7 +91,7 @@ teardown() {
   mkdir -p .vbw-planning/milestones/01-foundation/phases/08-cost-basis
   echo "# SHIPPED" > .vbw-planning/milestones/01-foundation/SHIPPED.md
   touch .vbw-planning/milestones/01-foundation/phases/08-cost-basis/08-01-PLAN.md
-  touch .vbw-planning/milestones/01-foundation/phases/08-cost-basis/08-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/milestones/01-foundation/phases/08-cost-basis/08-01-SUMMARY.md
   cat > .vbw-planning/milestones/01-foundation/phases/08-cost-basis/08-UAT.md <<'EOF'
 ---
 phase: 08

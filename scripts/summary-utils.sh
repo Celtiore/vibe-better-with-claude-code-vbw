@@ -11,7 +11,7 @@ is_summary_complete() {
   local f="$1"
   [ -f "$f" ] || return 1
   local status
-  status=$(sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$f" 2>/dev/null | head -1 | tr -d '[:space:]')
+  status=$(tr -d '\r' < "$f" 2>/dev/null | sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' | head -1 | tr -d '[:space:]')
   case "$status" in
     complete|completed) return 0 ;;
     *) return 1 ;;
@@ -24,7 +24,7 @@ is_summary_terminal() {
   local f="$1"
   [ -f "$f" ] || return 1
   local status
-  status=$(sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$f" 2>/dev/null | head -1 | tr -d '[:space:]')
+  status=$(tr -d '\r' < "$f" 2>/dev/null | sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' | head -1 | tr -d '[:space:]')
   case "$status" in
     complete|completed|partial|failed) return 0 ;;
     *) return 1 ;;
