@@ -99,6 +99,7 @@ EOF
     '.watchdog.log'
     '.claude-md-migrated'
     '.tmux-mode-patched'
+    '.delegated-workflow.json'
     '.baselines/'
     'codebase/'
   )

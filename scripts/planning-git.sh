@@ -76,6 +76,7 @@ ensure_transient_ignore() {
 .watchdog.log
 .claude-md-migrated
 .tmux-mode-patched
+.delegated-workflow.json
 
 # Baselines
 .baselines/

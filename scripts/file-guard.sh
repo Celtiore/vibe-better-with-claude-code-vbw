@@ -199,6 +199,79 @@ if true; then
   fi
 fi
 
+# --- Orchestrator delegation guard (delegated workflows) ---
+# When a VBW delegated workflow is active (execute, fix, debug) and the caller is
+# the orchestrator (no VBW_AGENT_ROLE), block product-file writes. The orchestrator
+# must delegate to Dev/Debugger subagents via Task tool. Subagents (with a role set)
+# are unaffected. Turbo/direct effort modes where the orchestrator is expected to
+# implement are exempt.
+#
+# Fail-open: missing/malformed/stale state files skip the guard.
+if [ -z "${VBW_AGENT_ROLE:-}" ]; then
+  _DG_BLOCK=false
+  _DG_EFFORT=""
+
+  # Source 1: .execution-state.json (execute/remediation paths)
+  _EXEC_STATE_FILE="$PROJECT_ROOT/.vbw-planning/.execution-state.json"
+  if [ -f "$_EXEC_STATE_FILE" ]; then
+    _EXEC_STATUS=$(jq -r '.status // ""' "$_EXEC_STATE_FILE" 2>/dev/null) || _EXEC_STATUS=""
+    if [ "$_EXEC_STATUS" = "running" ]; then
+      # Staleness check: skip if file older than 4 hours (14400s)
+      _DG_NOW=$(date +%s 2>/dev/null || echo 0)
+      if [ "$(uname)" = "Darwin" ]; then
+        _DG_MTIME=$(stat -f %m "$_EXEC_STATE_FILE" 2>/dev/null || echo 0)
+      else
+        _DG_MTIME=$(stat -c %Y "$_EXEC_STATE_FILE" 2>/dev/null || echo 0)
+      fi
+      _DG_AGE=$((_DG_NOW - _DG_MTIME))
+      if [ "$_DG_AGE" -ge 0 ] && [ "$_DG_AGE" -lt 14400 ]; then
+        _DG_BLOCK=true
+        _DG_EFFORT=$(jq -r '.effort // ""' "$_EXEC_STATE_FILE" 2>/dev/null) || _DG_EFFORT=""
+      fi
+    fi
+  fi
+
+  # Source 2: .delegated-workflow.json (fix/debug ad-hoc paths)
+  if [ "$_DG_BLOCK" = false ]; then
+    _DELEG_FILE="$PROJECT_ROOT/.vbw-planning/.delegated-workflow.json"
+    if [ -f "$_DELEG_FILE" ]; then
+      _DELEG_ACTIVE=$(jq -r '.active // false' "$_DELEG_FILE" 2>/dev/null) || _DELEG_ACTIVE="false"
+      if [ "$_DELEG_ACTIVE" = "true" ]; then
+        # Staleness check: skip if file older than 4 hours
+        _DG_NOW=$(date +%s 2>/dev/null || echo 0)
+        if [ "$(uname)" = "Darwin" ]; then
+          _DG_MTIME=$(stat -f %m "$_DELEG_FILE" 2>/dev/null || echo 0)
+        else
+          _DG_MTIME=$(stat -c %Y "$_DELEG_FILE" 2>/dev/null || echo 0)
+        fi
+        _DG_AGE=$((_DG_NOW - _DG_MTIME))
+        if [ "$_DG_AGE" -ge 0 ] && [ "$_DG_AGE" -lt 14400 ]; then
+          _DG_BLOCK=true
+          _DG_EFFORT=$(jq -r '.effort // ""' "$_DELEG_FILE" 2>/dev/null) || _DG_EFFORT=""
+        fi
+      fi
+    fi
+  fi
+
+  # If delegated workflow active, check if effort allows direct orchestrator writes
+  if [ "$_DG_BLOCK" = true ]; then
+    # Turbo/direct: orchestrator implements directly — no block
+    # Resolve effective effort: state file > config fallback
+    if [ -z "$_DG_EFFORT" ] || [ "$_DG_EFFORT" = "null" ]; then
+      _DG_EFFORT=$(jq -r '.effort // "balanced"' "$PROJECT_ROOT/.vbw-planning/config.json" 2>/dev/null) || _DG_EFFORT="balanced"
+    fi
+    case "$_DG_EFFORT" in
+      turbo|direct)
+        : # Turbo/direct — orchestrator is expected to write, allow
+        ;;
+      *)
+        echo "Blocked: orchestrator cannot write product files during delegated workflow (effort=$_DG_EFFORT). Delegate via Task tool to Dev/Debugger subagent." >&2
+        exit 2
+        ;;
+    esac
+  fi
+fi
+
 # --- V2 role isolation: check agent role against path rules ---
 # v2_role_isolation is now always enabled (graduated)
 AGENT_ROLE="${VBW_AGENT_ROLE:-}"

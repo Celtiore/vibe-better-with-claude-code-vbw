@@ -40,9 +40,14 @@ Recent commits:
   git log. Overrides: `--competing`/`--parallel` = always ambiguous;
   `--serial` = never.
 
-3. **Routing decision:** Read prefer_teams config:
+3. **Routing decision + delegation marker:** Read prefer_teams config:
     ```bash
     PREFER_TEAMS=$(jq -r '.prefer_teams // "always"' .vbw-planning/config.json 2>/dev/null)
+    ```
+
+    Before spawning any agent, activate the delegation guard:
+    ```bash
+    bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/delegated-workflow.sh set debug "$EFFORT_PROFILE"
     ```
 
     Decision tree:
@@ -90,7 +95,11 @@ Recent commits:
         If investigation reveals pre-existing failures unrelated to this bug, list them in your response under a "Pre-existing Issues" heading with test name, file, and failure message.
         ```
 
-5. **Present:** Per @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md:
+5. **Clear delegation marker + Present:** Clear the marker first:
+    ```bash
+    bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/delegated-workflow.sh clear
+    ```
+    Per @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md:
     ```text
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Bug Investigation Complete

@@ -41,6 +41,10 @@ echo "Running skill activation pipeline checks..."
 bash "$ROOT/testing/verify-skill-activation.sh"
 
 echo ""
+echo "Running delegation guard checks..."
+bash "$ROOT/testing/verify-delegation-guard.sh"
+
+echo ""
 if command -v bats &>/dev/null && ls "$ROOT/tests/"*.bats &>/dev/null; then
   echo "Running bats test suites..."
   bats_pass=0
