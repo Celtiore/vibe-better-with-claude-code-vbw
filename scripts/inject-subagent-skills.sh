@@ -79,6 +79,21 @@ EVAL_INSTRUCTION="SKILL ACTIVATION: Evaluate which of the skills below are relev
 CONTEXT="${EVAL_INSTRUCTION}
 ${SKILL_XML}"
 
+# --- Debug logging: deterministic proof of injection ---
+if [ "${VBW_DEBUG:-0}" = "1" ] && [ -d "$PLANNING_DIR" ]; then
+  DEBUG_LOG="$PLANNING_DIR/.hook-debug.log"
+  TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%s")
+  ROLE=$(normalize_agent_role "$AGENT_TYPE" 2>/dev/null || echo "unknown")
+  SKILL_COUNT=$(echo "$SKILL_XML" | grep -c '<skill>' 2>/dev/null || echo "0")
+  SKILL_HASH=$(echo -n "$SKILL_XML" | shasum -a 256 2>/dev/null | cut -d' ' -f1 || echo "no-hash")
+  echo "${TIMESTAMP} SubagentStart agent_type=${AGENT_TYPE} role=${ROLE} skills_count=${SKILL_COUNT} skills_hash=${SKILL_HASH}" >> "$DEBUG_LOG" 2>/dev/null || true
+  # Trim to last 100 entries
+  if [ -f "$DEBUG_LOG" ]; then
+    LC=$(wc -l < "$DEBUG_LOG" 2>/dev/null | tr -d ' ')
+    [ "${LC:-0}" -gt 100 ] && { tail -50 "$DEBUG_LOG" > "${DEBUG_LOG}.tmp" && mv "${DEBUG_LOG}.tmp" "$DEBUG_LOG"; } 2>/dev/null
+  fi
+fi
+
 # --- Output via hookSpecificOutput ---
 jq -n --arg ctx "$CONTEXT" '{
   "hookSpecificOutput": {
