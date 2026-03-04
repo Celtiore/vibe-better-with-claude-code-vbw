@@ -62,11 +62,24 @@ create_skill() {
   grep -q "skills_count=2" "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log"
 }
 
-@test "inject-subagent-skills: debug log contains skills_hash" {
+@test "inject-subagent-skills: debug log contains skill names" {
   create_skill "$TEST_TEMP_DIR/.claude/skills" "test-skill" "test-skill" "A test skill"
   cd "$TEST_TEMP_DIR"
   echo '{"agent_type":"vbw-qa"}' | VBW_DEBUG=1 bash "$SCRIPTS_DIR/inject-subagent-skills.sh"
-  grep -qE "skills_hash=[a-f0-9]{64}" "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log"
+  grep -q "skills=test-skill" "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log"
+}
+
+@test "inject-subagent-skills: debug log contains decodable base64 payload" {
+  create_skill "$TEST_TEMP_DIR/.claude/skills" "test-skill" "test-skill" "A test skill"
+  cd "$TEST_TEMP_DIR"
+  echo '{"agent_type":"vbw-qa"}' | VBW_DEBUG=1 bash "$SCRIPTS_DIR/inject-subagent-skills.sh"
+  # Extract base64 payload and decode it
+  B64=$(grep 'payload_base64=' "$TEST_TEMP_DIR/.vbw-planning/.hook-debug.log" | sed 's/.*payload_base64=//')
+  [ -n "$B64" ]
+  DECODED=$(echo "$B64" | base64 -d 2>/dev/null)
+  echo "$DECODED" | grep -q "SKILL ACTIVATION"
+  echo "$DECODED" | grep -q "<available_skills>"
+  echo "$DECODED" | grep -q "test-skill"
 }
 
 @test "inject-subagent-skills: no debug log when VBW_DEBUG unset" {

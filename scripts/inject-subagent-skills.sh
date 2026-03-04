@@ -93,8 +93,10 @@ if [ "$HOOK_DEBUG" = "1" ] && [ -d "$PLANNING_DIR" ]; then
   TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%s")
   ROLE=$(normalize_agent_role "$AGENT_TYPE" 2>/dev/null || echo "unknown")
   SKILL_COUNT=$(echo "$SKILL_XML" | grep -c '<skill>' 2>/dev/null || echo "0")
-  SKILL_HASH=$(echo -n "$SKILL_XML" | shasum -a 256 2>/dev/null | cut -d' ' -f1 || echo "no-hash")
-  echo "${TIMESTAMP} SubagentStart agent_type=${AGENT_TYPE} role=${ROLE} skills_count=${SKILL_COUNT} skills_hash=${SKILL_HASH}" >> "$DEBUG_LOG" 2>/dev/null || true
+  SKILL_NAMES=$(echo "$SKILL_XML" | grep '<name>' | sed 's/.*<name>\(.*\)<\/name>.*/\1/' | paste -sd ',' - 2>/dev/null || echo "")
+  PAYLOAD_B64=$(echo -n "$CONTEXT" | base64 2>/dev/null | tr -d '\n' || echo "encode-failed")
+  echo "${TIMESTAMP} SubagentStart agent_type=${AGENT_TYPE} role=${ROLE} skills_count=${SKILL_COUNT} skills=${SKILL_NAMES}" >> "$DEBUG_LOG" 2>/dev/null || true
+  echo "${TIMESTAMP} payload_base64=${PAYLOAD_B64}" >> "$DEBUG_LOG" 2>/dev/null || true
   # Trim to last 100 entries
   if [ -f "$DEBUG_LOG" ]; then
     LC=$(wc -l < "$DEBUG_LOG" 2>/dev/null | tr -d ' ')
