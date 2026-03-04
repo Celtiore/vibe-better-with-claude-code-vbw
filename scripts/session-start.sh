@@ -728,7 +728,7 @@ if [ ! -d "$PLANNING_DIR" ]; then
   _PRE_SKILL_NAMES=""
   if [ -f "$SCRIPT_DIR/emit-skill-xml.sh" ]; then
     # Source emit-skill-xml.sh logic to collect names without full XML
-    _PRE_SKILL_NAMES=$(bash "$SCRIPT_DIR/emit-skill-xml.sh" --filter-plugins 2>/dev/null | sed -n 's/.*<name>\([^<]*\)<\/name>.*/\1/p' | paste -sd ', ' - || true)
+    _PRE_SKILL_NAMES=$(bash "$SCRIPT_DIR/emit-skill-xml.sh" --filter-plugins --compact 2>/dev/null | sed -n 's/.*<name>\([^<]*\)<\/name>.*/\1/p' | paste -sd ', ' - || true)
   fi
   _PRE_SKILL_CTX=""
   if [ -n "$_PRE_SKILL_NAMES" ]; then
@@ -899,7 +899,7 @@ fi
 # --- Compact skill name list (names only, no XML — full XML injected via SubagentStart hook) ---
 SKILL_NAMES=""
 if [ -f "$SCRIPT_DIR/emit-skill-xml.sh" ]; then
-  SKILL_NAMES=$(bash "$SCRIPT_DIR/emit-skill-xml.sh" --filter-plugins 2>/dev/null | sed -n 's/.*<name>\([^<]*\)<\/name>.*/\1/p' | paste -sd ', ' - || true)
+  SKILL_NAMES=$(bash "$SCRIPT_DIR/emit-skill-xml.sh" --filter-plugins --compact 2>/dev/null | sed -n 's/.*<name>\([^<]*\)<\/name>.*/\1/p' | paste -sd ', ' - || true)
 fi
 SKILL_CTX=""
 if [ -n "$SKILL_NAMES" ]; then

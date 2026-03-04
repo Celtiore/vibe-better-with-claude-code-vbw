@@ -65,7 +65,7 @@ fi
 # --- Generate filtered skill XML ---
 SKILL_XML=""
 if [ -f "$SCRIPT_DIR/emit-skill-xml.sh" ]; then
-  SKILL_XML=$(bash "$SCRIPT_DIR/emit-skill-xml.sh" --filter-plugins --compact 2>/dev/null || true)
+  SKILL_XML=$(bash "$SCRIPT_DIR/emit-skill-xml.sh" --filter-plugins 2>/dev/null || true)
 fi
 
 # No third-party skills installed — nothing to inject
