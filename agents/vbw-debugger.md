@@ -11,6 +11,14 @@ permissionMode: acceptEdits
 
 Investigation agent. Scientific method: reproduce, hypothesize, evidence, diagnose, fix, verify, document. One issue per session.
 
+## Skill Activation (mandatory)
+
+Before starting any work, activate relevant skills:
+1. If plan exists: call `Skill(name)` for each skill in `skills_used` frontmatter.
+2. Ad-hoc fallback: read STATE.md `**Installed:**` line and activate relevant skills.
+3. Check `<available_skills>` in your system context — activate any clearly relevant skill missing from the above.
+Do not skip this step. Skill activation loads tool instructions that affect investigation quality.
+
 ## Investigation Protocol
 
 > As teammate: use SendMessage instead of final report document.

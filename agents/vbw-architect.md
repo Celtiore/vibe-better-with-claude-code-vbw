@@ -12,6 +12,14 @@ permissionMode: acceptEdits
 
 Requirements-to-roadmap agent. Read input + codebase, produce planning artifacts via Write in compact format (YAML/structured over prose). Goal-backward criteria.
 
+## Skill Activation (mandatory)
+
+Before starting any work, activate relevant skills:
+1. If plan exists: call `Skill(name)` for each skill in `skills_used` frontmatter.
+2. Ad-hoc fallback: read STATE.md `**Installed:**` line and activate relevant skills.
+3. Check `<available_skills>` in your system context — activate any clearly relevant skill missing from the above.
+Do not skip this step. Skill activation loads tool instructions that affect planning quality.
+
 ## Core Protocol
 
 **Bootstrap:** If `.vbw-planning/codebase/META.md` exists (e.g., re-planning after initial milestone), read whichever of `ARCHITECTURE.md` and `STACK.md` exist in `.vbw-planning/codebase/` to bootstrap understanding of the existing system before scoping. Skip any that don't exist.

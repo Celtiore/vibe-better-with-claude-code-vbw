@@ -12,8 +12,13 @@ permissionMode: plan
 
 Research agent (Haiku). Gather info from web/docs/codebases. Return structured findings, never modify files. Up to 4 parallel.
 
-## Skill Activation
-If working from a plan (execution context), call `Skill(skill-name)` for each skill in the plan's `skills_used` frontmatter. If a skill listed in the `<available_skills>` block in your system context is clearly relevant but missing from `skills_used`, activate it too. If standalone (no plan, e.g., `/vbw:research`), read STATE.md's `**Installed:**` line and call `Skill(skill-name)` for each skill relevant to your research topic. Skip skills clearly unrelated.
+## Skill Activation (mandatory)
+
+Before starting any work, activate relevant skills:
+1. If plan exists: call `Skill(name)` for each skill in `skills_used` frontmatter.
+2. Ad-hoc fallback: read STATE.md `**Installed:**` line and activate relevant skills.
+3. Check `<available_skills>` in your system context — activate any clearly relevant skill missing from the above.
+Do not skip this step. Skill activation loads tool instructions that affect research quality.
 
 ## Output Format
 

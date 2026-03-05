@@ -224,6 +224,12 @@ QA_MAX_TURNS=$(bash "${VBW_PLUGIN_ROOT}/scripts/resolve-agent-max-turns.sh" qa .
 if [ $? -ne 0 ]; then echo "$QA_MAX_TURNS" >&2; exit 1; fi
 ```
 
+**Skill prompt line (Layer 2 activation):** Resolve a compact skill activation line for spawn prompts:
+```bash
+SKILL_PROMPT_LINE=$(bash "${VBW_PLUGIN_ROOT}/scripts/emit-skill-prompt-line.sh" .vbw-planning 2>/dev/null || echo "")
+```
+If non-empty, include `${SKILL_PROMPT_LINE}` in the task description of every spawned Dev and QA agent. If empty, omit the line (no skills installed).
+
 For each uncompleted plan, TaskCreate:
 ```yaml
 subject: "Execute {NN-MM}: {plan-title}"
@@ -233,6 +239,7 @@ description: |
   {If worktree_isolation enabled and WTARGET non-empty: "Worktree targeting: {WTARGET}"}
   Model: ${DEV_MODEL}
   Phase context: {phase-dir}/.context-dev.md (if compiled)
+  {If SKILL_PROMPT_LINE non-empty: "${SKILL_PROMPT_LINE}"}
   If `.vbw-planning/codebase/META.md` exists, read CONVENTIONS.md, PATTERNS.md, STRUCTURE.md, and DEPENDENCIES.md (whichever exist) from `.vbw-planning/codebase/` to bootstrap codebase understanding before executing.
   {If resuming: "Resume from Task {NN}. Tasks 1-{NN-1} already committed."}
   {If autonomous: false: "This plan has checkpoints -- pause for user input."}
@@ -442,7 +449,7 @@ If compilation fails, proceed without it.
 
 Display: `◆ Spawning QA agent (${QA_MODEL})...`
 
-**Per-wave QA (Thorough/Balanced, QA_TIMING=per-wave):** After each wave completes, spawn QA concurrently with next wave's Dev work. QA receives only completed wave's PLAN.md + SUMMARY.md + "Phase context: {phase-dir}/.context-qa.md (if compiled). Model: ${QA_MODEL}. Your verification tier is {tier}. If `.vbw-planning/codebase/META.md` exists, read TESTING.md, CONCERNS.md, and ARCHITECTURE.md (whichever exist) from `.vbw-planning/codebase/` to bootstrap codebase understanding before verifying. Run {5-10|15-25|30+} checks per the tier definitions in your agent protocol." After final wave, spawn integration QA covering all plans + cross-plan integration. Persist by piping the `qa_verdict` JSON through `write-verification.sh`:
+**Per-wave QA (Thorough/Balanced, QA_TIMING=per-wave):** After each wave completes, spawn QA concurrently with next wave's Dev work. QA receives only completed wave's PLAN.md + SUMMARY.md + "Phase context: {phase-dir}/.context-qa.md (if compiled). Model: ${QA_MODEL}. {If SKILL_PROMPT_LINE non-empty: ${SKILL_PROMPT_LINE}} Your verification tier is {tier}. If `.vbw-planning/codebase/META.md` exists, read TESTING.md, CONCERNS.md, and ARCHITECTURE.md (whichever exist) from `.vbw-planning/codebase/` to bootstrap codebase understanding before verifying. Run {5-10|15-25|30+} checks per the tier definitions in your agent protocol." After final wave, spawn integration QA covering all plans + cross-plan integration. Persist by piping the `qa_verdict` JSON through `write-verification.sh`:
 ```bash
 echo "$QA_VERDICT_JSON" | bash "${VBW_PLUGIN_ROOT}/scripts/write-verification.sh" "{phase-dir}/{phase}-VERIFICATION-wave{W}.md"
 # For integration QA:
@@ -450,7 +457,7 @@ echo "$QA_VERDICT_JSON" | bash "${VBW_PLUGIN_ROOT}/scripts/write-verification.sh
 ```
 If `write-verification.sh` fails or is missing, fall back to manual file writing (frontmatter + body).
 
-**Post-build QA (Fast, QA_TIMING=post-build):** Spawn QA after ALL plans complete. Include in task description: "Phase context: {phase-dir}/.context-qa.md (if compiled). Model: ${QA_MODEL}. Your verification tier is {tier}. If `.vbw-planning/codebase/META.md` exists, read TESTING.md, CONCERNS.md, and ARCHITECTURE.md (whichever exist) from `.vbw-planning/codebase/` to bootstrap codebase understanding before verifying. Run {5-10|15-25|30+} checks per the tier definitions in your agent protocol." Persist by piping the `qa_verdict` JSON through `write-verification.sh`:
+**Post-build QA (Fast, QA_TIMING=post-build):** Spawn QA after ALL plans complete. Include in task description: "Phase context: {phase-dir}/.context-qa.md (if compiled). Model: ${QA_MODEL}. {If SKILL_PROMPT_LINE non-empty: ${SKILL_PROMPT_LINE}} Your verification tier is {tier}. If `.vbw-planning/codebase/META.md` exists, read TESTING.md, CONCERNS.md, and ARCHITECTURE.md (whichever exist) from `.vbw-planning/codebase/` to bootstrap codebase understanding before verifying. Run {5-10|15-25|30+} checks per the tier definitions in your agent protocol." Persist by piping the `qa_verdict` JSON through `write-verification.sh`:
 ```bash
 echo "$QA_VERDICT_JSON" | bash "${VBW_PLUGIN_ROOT}/scripts/write-verification.sh" "{phase-dir}/{phase}-VERIFICATION.md"
 ```

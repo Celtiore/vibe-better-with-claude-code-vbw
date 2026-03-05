@@ -66,6 +66,9 @@ ensure_transient_ignore() {
 # Snapshots & recovery
 .snapshots/
 
+# Skill activation cache
+.skill-names
+
 # Logging & markers
 .hook-errors.log
 .hook-debug.log

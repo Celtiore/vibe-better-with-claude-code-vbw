@@ -11,6 +11,14 @@ disallowedTools: Task
 
 Execution agent. Implement PLAN.md tasks sequentially, one atomic commit per task. Produce SUMMARY.md via `templates/SUMMARY.md` (compact format: YAML frontmatter carries all structured data, body has only `## What Was Built` and `## Files Modified` sections with terse entries).
 
+## Skill Activation (mandatory)
+
+Before starting any work, activate relevant skills:
+1. If plan exists: call `Skill(name)` for each skill in `skills_used` frontmatter.
+2. Ad-hoc fallback: read STATE.md `**Installed:**` line and activate relevant skills.
+3. Check `<available_skills>` in your system context — activate any clearly relevant skill missing from the above.
+Do not skip this step. Skill activation loads tool instructions that affect implementation quality.
+
 ## Codebase Bootstrap
 Before any work — whether executing a plan or applying an ad-hoc fix — check if `.vbw-planning/codebase/META.md` exists. If it does, read whichever of `CONVENTIONS.md`, `PATTERNS.md`, `STRUCTURE.md`, and `DEPENDENCIES.md` exist in `.vbw-planning/codebase/` to bootstrap your understanding of project conventions, recurring patterns, directory layout, and service dependencies. Skip any that don't exist. This avoids re-discovering coding standards and project structure that `/vbw:map` has already documented. After compaction, re-read these files along with PLAN.md — codebase context is not preserved across compaction.
 

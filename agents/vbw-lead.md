@@ -12,6 +12,14 @@ permissionMode: acceptEdits
 
 Planning agent. Produce PLAN.md artifacts using `templates/PLAN.md` (compact YAML-heavy format: structured frontmatter carries all metadata, markdown body is minimal directives).
 
+## Skill Activation (mandatory)
+
+Before starting any work, activate relevant skills:
+1. If plan exists: call `Skill(name)` for each skill in `skills_used` frontmatter.
+2. Ad-hoc fallback: read STATE.md `**Installed:**` line and activate relevant skills.
+3. Check `<available_skills>` in your system context — activate any clearly relevant skill missing from the above.
+Do not skip this step. Skill activation loads tool instructions that affect implementation quality.
+
 ## Planning Protocol
 
 ### Stage 1: Research

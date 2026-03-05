@@ -540,6 +540,71 @@ if [ -z "$_MAX_TURNS_COMMANDS" ]; then
   pass "maxTurns: no commands reference maxTurns (nothing to check)"
 fi
 
+# --- 3-Layer skill activation pipeline checks ---
+
+echo ""
+echo "=== 3-Layer Skill Activation Pipeline ==="
+
+# Layer 1: All 7 agents have mandatory skill activation section
+for agent_file in vbw-lead.md vbw-dev.md vbw-qa.md vbw-scout.md vbw-debugger.md vbw-architect.md vbw-docs.md; do
+  AGENT_PATH="$ROOT/agents/$agent_file"
+  if grep -q '## Skill Activation (mandatory)' "$AGENT_PATH"; then
+    pass "$agent_file: has ## Skill Activation (mandatory) section"
+  else
+    fail "$agent_file: missing ## Skill Activation (mandatory) section"
+  fi
+done
+
+# Layer 2: Spawn prompt injection
+if [ -f "$ROOT/scripts/emit-skill-prompt-line.sh" ]; then
+  pass "emit-skill-prompt-line.sh: exists"
+else
+  fail "emit-skill-prompt-line.sh: missing"
+fi
+
+if grep -q 'SKILL_PROMPT_LINE' "$PROTOCOL"; then
+  pass "execute-protocol.md: references SKILL_PROMPT_LINE"
+else
+  fail "execute-protocol.md: missing SKILL_PROMPT_LINE reference"
+fi
+
+if grep -q 'emit-skill-prompt-line.sh' "$PROTOCOL"; then
+  pass "execute-protocol.md: calls emit-skill-prompt-line.sh"
+else
+  fail "execute-protocol.md: missing emit-skill-prompt-line.sh call"
+fi
+
+# Layer 2 infrastructure: session-start writes .skill-names
+if grep -q '\.skill-names' "$ROOT/scripts/session-start.sh"; then
+  pass "session-start.sh: writes .skill-names for Layer 2"
+else
+  fail "session-start.sh: missing .skill-names write"
+fi
+
+if grep -q '\.skill-names' "$ROOT/scripts/planning-git.sh"; then
+  pass "planning-git.sh: ignores .skill-names in transient gitignore"
+else
+  fail "planning-git.sh: missing .skill-names in transient gitignore"
+fi
+
+# Layer 3: SubagentStart hook (preserved)
+if grep -q 'inject-subagent-skills.sh' "$HOOKS_FILE"; then
+  pass "hooks.json: inject-subagent-skills.sh registered (Layer 3)"
+else
+  fail "hooks.json: inject-subagent-skills.sh missing (Layer 3)"
+fi
+
+# Compaction durability: compile-context.sh emits skills for all 6 compiled roles
+COMPILER="$ROOT/scripts/compile-context.sh"
+for role in lead dev qa scout debugger architect; do
+  # Check that the role case block calls emit_skills_section
+  if awk "/^  ${role}\\)/,/;;/" "$COMPILER" | grep -q 'emit_skills_section'; then
+    pass "compile-context.sh: calls emit_skills_section for $role"
+  else
+    fail "compile-context.sh: missing emit_skills_section for $role"
+  fi
+done
+
 # Negative check: no file should use the old "is 0" / "is a positive integer" phrasing
 for _cmd_file in $_MAX_TURNS_COMMANDS; do
   _cmd_name=$(basename "$_cmd_file")
