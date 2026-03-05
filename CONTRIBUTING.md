@@ -49,9 +49,9 @@ Then inside a Claude Code session:
 
 The script automates the steps that were previously manual:
 
-1. **Clears stale command cache** (`~/.claude/commands/vbw`) so the marketplace version doesn't shadow your local copy.
-2. **Creates the plugin cache symlink** (`~/.claude/plugins/cache/vbw-marketplace/vbw/local → your clone`). This is required because VBW commands resolve scripts at runtime via a glob of `~/.claude/plugins/cache/vbw-marketplace/vbw/*/scripts/...`. The `--plugin-dir` flag only affects command and agent loading — it does **not** set `CLAUDE_PLUGIN_ROOT` as a shell environment variable.
-3. **Removes old versioned cache entries** from a previous marketplace install so they don't conflict.
+1. **Checks prerequisites** — verifies you're in the VBW repo root and that the Claude Code CLI is available.
+2. **Clears stale command cache** (`~/.claude/commands/vbw`) so the marketplace version doesn't shadow your local copy.
+3. **Creates the plugin cache symlink** (`~/.claude/plugins/cache/vbw-marketplace/vbw/local → your clone`) after removing old versioned cache entries. This is required because VBW commands resolve scripts at runtime via a glob of `~/.claude/plugins/cache/vbw-marketplace/vbw/*/scripts/...`. The `--plugin-dir` flag only affects command and agent loading — it does **not** set `CLAUDE_PLUGIN_ROOT` as a shell environment variable.
 4. **Verifies the glob resolves** to your local clone.
 5. **Installs the git pre-push hook** for version consistency checks.
 6. **Optionally installs a `claude-vbw` launcher** (`~/.local/bin/claude-vbw`) that resolves the plugin path automatically so you can run `claude-vbw` from any directory.
