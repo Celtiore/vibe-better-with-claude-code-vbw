@@ -160,10 +160,6 @@ atomic_write_string() {
   return 1
 }
 
-# Clear VBW context marker from previous session so statusline starts dim.
-# Marker is recreated by prompt-preflight.sh when a /vbw:* command is used.
-rm -f "$PLANNING_DIR/.vbw-context" 2>/dev/null || true
-
 # If this is a compact-triggered SessionStart, skip — post-compact.sh handles it.
 # The compaction marker is set by compaction-instructions.sh (PreCompact) and cleared
 # by post-compact.sh. Only skip if the marker is fresh (< 60s) to avoid stale markers
@@ -183,6 +179,11 @@ if [ -f "$PLANNING_DIR/.compaction-marker" ]; then
   # Stale, future-dated, or corrupted marker — clean up and continue
   rm -f "$PLANNING_DIR/.compaction-marker" 2>/dev/null
 fi
+
+# Clear VBW context marker from previous session so statusline starts dim.
+# Placed after compaction guard: during compaction, post-compact.sh handles cleanup.
+# Only clear on genuine new session starts.
+rm -f "$PLANNING_DIR/.vbw-context" 2>/dev/null || true
 
 # Auto-migrate config if .vbw-planning exists.
 # Version marker retained here for backwards test compatibility.
