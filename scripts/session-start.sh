@@ -290,7 +290,7 @@ if [ -d "$PLANNING_DIR" ] && [ ! -f "$PLANNING_DIR/.skills-section-stripped" ]; 
       if awk '
         /^### Skills/ { skip=1; next }
         skip && /^###?#? / { skip=0 }
-        !skip { print }
+        skip==0 { print }
       ' "$_sf" > "${_sf}.tmp" 2>/dev/null && mv "${_sf}.tmp" "$_sf" 2>/dev/null; then
         : # success
       else
