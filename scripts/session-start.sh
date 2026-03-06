@@ -270,6 +270,41 @@ if [ -d "$PLANNING_DIR" ] && [ ! -f "$PLANNING_DIR/STATE.md" ]; then
   bash "$SCRIPT_DIR/migrate-orphaned-state.sh" "$PLANNING_DIR" 2>/dev/null || true
 fi
 
+# --- Strip stale ### Skills subsection from STATE.md (one-time) ---
+# Skills are now surfaced through the runtime activation pipeline.
+# The old ### Skills subsection under ## Decisions is no longer written
+# or read. Strip it from all STATE.md files so it doesn't linger.
+if [ -d "$PLANNING_DIR" ] && [ ! -f "$PLANNING_DIR/.skills-section-stripped" ]; then
+  _skills_state_files=""
+  [ -f "$PLANNING_DIR/STATE.md" ] && _skills_state_files="$PLANNING_DIR/STATE.md"
+  if [ -d "$PLANNING_DIR/milestones" ]; then
+    for _ms_dir in "$PLANNING_DIR"/milestones/*/; do
+      [ -f "${_ms_dir}STATE.md" ] && _skills_state_files="$_skills_state_files ${_ms_dir}STATE.md"
+    done
+  fi
+
+  _skills_strip_ok=true
+  for _sf in $_skills_state_files; do
+    if grep -q '^### Skills' "$_sf" 2>/dev/null; then
+      # Remove ### Skills and its content (up to next ### or ## heading)
+      if awk '
+        /^### Skills/ { skip=1; next }
+        skip && /^###?#? / { skip=0 }
+        !skip { print }
+      ' "$_sf" > "${_sf}.tmp" 2>/dev/null && mv "${_sf}.tmp" "$_sf" 2>/dev/null; then
+        : # success
+      else
+        rm -f "${_sf}.tmp" 2>/dev/null || true
+        _skills_strip_ok=false
+      fi
+    fi
+  done
+
+  if [ "$_skills_strip_ok" = true ]; then
+    echo "1" > "$PLANNING_DIR/.skills-section-stripped" 2>/dev/null || true
+  fi
+fi
+
 # --- Brownfield: detect SUMMARY.md files without valid completion status ---
 # Projects bootstrapped before status-aware detection may have SUMMARY files
 # that were created empty (touch) or with non-terminal statuses. Warn so users

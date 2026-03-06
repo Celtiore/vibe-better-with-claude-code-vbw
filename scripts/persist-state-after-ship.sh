@@ -60,13 +60,16 @@ extract_section() {
 
 # Decisions section may use "## Decisions" (template) or "## Key Decisions"
 # (bootstrap-state.sh). Case-insensitive. Merges all matching occurrences.
+# Strips any ### Skills subsection (no longer written or read).
 extract_decisions() {
   local file="$1"
   awk '
     { low = tolower($0) }
     low ~ /^##[[:space:]]+(key )?decisions[[:space:]]*$/ { found=1; if (!hdr) { print $0; hdr=1 }; next }
     found && /^## / { found=0 }
-    found { print }
+    found && /^### Skills/ { skip_skills=1; next }
+    skip_skills && /^###?#? / { skip_skills=0 }
+    found && !skip_skills { print }
   ' "$file"
 }
 
