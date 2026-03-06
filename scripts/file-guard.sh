@@ -93,7 +93,8 @@ PHASES_DIR="$PROJECT_ROOT/.vbw-planning/phases"
 [ ! -d "$PHASES_DIR" ] && exit 0
 
 # Source shared summary-status helpers (fail-open: inline fallback if lib unavailable)
-_FG_STATUS_LIB="${CLAUDE_PLUGIN_ROOT:-}/scripts/summary-utils.sh"
+_FG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_FG_STATUS_LIB="${_FG_SCRIPT_DIR}/summary-utils.sh"
 if [ -f "$_FG_STATUS_LIB" ]; then
   # shellcheck source=summary-utils.sh
   source "$_FG_STATUS_LIB"

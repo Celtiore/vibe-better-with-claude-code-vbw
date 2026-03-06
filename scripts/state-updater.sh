@@ -207,7 +207,7 @@ advance_phase() {
   next_has_uat=false
   all_done=true
 
-  for dir in $(ls -d "$phases_dir"/*/ 2>/dev/null | (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-)); do
+  while IFS= read -r dir; do
     local dirname p s
     dirname=$(basename "$dir")
     p=$(find "$dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
@@ -233,7 +233,7 @@ advance_phase() {
       all_done=false
       break
     fi
-  done
+  done < <(ls -d "$phases_dir"/*/ 2>/dev/null | (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-))
 
   [ "$total" -eq 0 ] && return 0
 
