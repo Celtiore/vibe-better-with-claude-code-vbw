@@ -240,6 +240,13 @@ fi
 # Subagent detection uses .active-agent-count (written by agent-start.sh, decremented
 # by agent-stop.sh). If count > 0, at least one VBW subagent is running and this
 # hook invocation is from that subagent context — skip the orchestrator block.
+#
+# Agent Teams bypass: SubagentStart hooks do NOT fire for agent team teammates
+# (teammates are separate Claude Code sessions, not subagents spawned via the
+# Agent tool). PreToolUse hooks can't distinguish orchestrator from teammate —
+# no agent_id/agent_type fields are present for teammates. When prefer_teams is
+# configured (not "never"), skip the guard entirely. The teams coordination
+# mechanism replaces the subagent delegation model this guard was designed for.
 if [ -z "${VBW_AGENT_ROLE:-}" ]; then
   # Check .active-agent-count: if VBW subagents are active, this write is from
   # a subagent (PreToolUse hooks don't carry agent identity). Skip the guard.
@@ -250,6 +257,18 @@ if [ -z "${VBW_AGENT_ROLE:-}" ]; then
       # VBW subagent is active — allow the write
       exit 0
     fi
+  fi
+
+  # Check prefer_teams: if agent teams are configured, this write may be from a
+  # teammate session. SubagentStart never fires for teammates, so .active-agent-count
+  # won't reflect them. Fail-open to avoid blocking legitimate teammate writes.
+  _DG_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
+  if [ -f "$_DG_CONFIG" ]; then
+    _DG_PREFER_TEAMS=$(jq -r '.prefer_teams // "auto"' "$_DG_CONFIG" 2>/dev/null) || _DG_PREFER_TEAMS="auto"
+    case "$_DG_PREFER_TEAMS" in
+      never) ;; # Teams disabled — keep the guard active for subagent model
+      *) exit 0 ;; # Teams may be active — can't distinguish orchestrator from teammate
+    esac
   fi
 
   _DG_BLOCK=false

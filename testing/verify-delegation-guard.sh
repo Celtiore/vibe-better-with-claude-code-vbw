@@ -31,8 +31,9 @@ setup_project() {
   TMPDIR_BASE=$(mktemp -d)
   PROJECT="$TMPDIR_BASE/project"
   mkdir -p "$PROJECT/.vbw-planning/phases/01-test"
-  # Minimal config
-  echo '{"effort":"balanced"}' > "$PROJECT/.vbw-planning/config.json"
+  # Minimal config — use prefer_teams=never so delegation guard stays active
+  # (tests for the subagent model; teams bypass tested separately below)
+  echo '{"effort":"balanced","prefer_teams":"never"}' > "$PROJECT/.vbw-planning/config.json"
   # Minimal PLAN so file-guard doesn't exit at the "no active plan" check
   cat > "$PROJECT/.vbw-planning/phases/01-test/01-01-PLAN.md" <<'EOF'
 ---
@@ -165,7 +166,7 @@ test_planning_artifacts_allowed
 # --- Test 6: Active delegated state with turbo effort → allowed ---
 test_turbo_allowed() {
   setup_project
-  echo '{"effort":"turbo"}' > "$PROJECT/.vbw-planning/config.json"
+  echo '{"effort":"turbo","prefer_teams":"never"}' > "$PROJECT/.vbw-planning/config.json"
   jq -n '{status:"running", phase:1, effort:"turbo", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
     > "$PROJECT/.vbw-planning/.execution-state.json"
 
@@ -385,6 +386,78 @@ test_no_count_file_still_blocks() {
   cleanup
 }
 test_no_count_file_still_blocks
+
+# --- Test 17: Agent teams bypass — prefer_teams=always, active execution → allowed ---
+# Teammates are separate Claude Code sessions, not subagents. SubagentStart never
+# fires for them, so .active-agent-count is 0. The prefer_teams check bypasses the
+# guard when teams are configured (can't distinguish orchestrator from teammate).
+test_teams_always_bypasses_guard() {
+  setup_project
+  echo '{"effort":"balanced","prefer_teams":"always"}' > "$PROJECT/.vbw-planning/config.json"
+  jq -n '{status:"running", phase:1, effort:"balanced", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
+    > "$PROJECT/.vbw-planning/.execution-state.json"
+
+  # No .active-agent-count (SubagentStart doesn't fire for teammates)
+  rm -f "$PROJECT/.vbw-planning/.active-agent-count" 2>/dev/null
+
+  if run_guard "$PROJECT" "src/app.js" "" >/dev/null 2>&1; then
+    pass "prefer_teams=always, active execution, no agent count: allowed (teams bypass)"
+  else
+    fail "prefer_teams=always: unexpected block (exit $?)"
+  fi
+  cleanup
+}
+test_teams_always_bypasses_guard
+
+# --- Test 18: Agent teams bypass — prefer_teams=auto, active execution → allowed ---
+test_teams_auto_bypasses_guard() {
+  setup_project
+  echo '{"effort":"balanced","prefer_teams":"auto"}' > "$PROJECT/.vbw-planning/config.json"
+  jq -n '{status:"running", phase:1, effort:"balanced", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
+    > "$PROJECT/.vbw-planning/.execution-state.json"
+
+  if run_guard "$PROJECT" "src/app.js" "" >/dev/null 2>&1; then
+    pass "prefer_teams=auto, active execution: allowed (teams bypass)"
+  else
+    fail "prefer_teams=auto: unexpected block (exit $?)"
+  fi
+  cleanup
+}
+test_teams_auto_bypasses_guard
+
+# --- Test 19: Agent teams bypass — prefer_teams=when_parallel, active execution → allowed ---
+test_teams_when_parallel_bypasses_guard() {
+  setup_project
+  echo '{"effort":"balanced","prefer_teams":"when_parallel"}' > "$PROJECT/.vbw-planning/config.json"
+  jq -n '{status:"running", phase:1, effort:"balanced", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
+    > "$PROJECT/.vbw-planning/.execution-state.json"
+
+  if run_guard "$PROJECT" "src/app.js" "" >/dev/null 2>&1; then
+    pass "prefer_teams=when_parallel, active execution: allowed (teams bypass)"
+  else
+    fail "prefer_teams=when_parallel: unexpected block (exit $?)"
+  fi
+  cleanup
+}
+test_teams_when_parallel_bypasses_guard
+
+# --- Test 20: Agent teams bypass NOT active — prefer_teams=never, active execution → blocked ---
+test_teams_never_does_not_bypass() {
+  setup_project
+  echo '{"effort":"balanced","prefer_teams":"never"}' > "$PROJECT/.vbw-planning/config.json"
+  jq -n '{status:"running", phase:1, effort:"balanced", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
+    > "$PROJECT/.vbw-planning/.execution-state.json"
+
+  local output
+  output=$(run_guard "$PROJECT" "src/app.js" "" 2>&1) && local rc=$? || local rc=$?
+  if [ "$rc" -eq 2 ]; then
+    pass "prefer_teams=never, active execution: blocked (no teams bypass)"
+  else
+    fail "prefer_teams=never: expected exit 2, got $rc"
+  fi
+  cleanup
+}
+test_teams_never_does_not_bypass
 
 echo ""
 echo "==============================="
