@@ -61,8 +61,6 @@ create_test_config() {
   "event_recovery": false,
   "monorepo_routing": true,
   "rolling_summary": false,
-  "require_phase_discussion": false,
-  "auto_uat": false,
   "statusline_hide_limits": false,
   "statusline_hide_limits_for_api_key": false,
   "statusline_hide_agent_in_tmux": false,
