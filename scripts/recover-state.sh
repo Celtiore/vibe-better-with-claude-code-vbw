@@ -93,7 +93,7 @@ for plan_file in "$PHASE_DIR"/*-PLAN.md; do
     PLAN_STATUS=$(extract_summary_status "$SUMMARY_FILE")
     # Normalize to execution-state compatible values
     case "$PLAN_STATUS" in
-      complete|partial) PLAN_STATUS="complete" ;;
+      complete|completed|partial) PLAN_STATUS="complete" ;;
       failed) PLAN_STATUS="failed" ;;
       *) PLAN_STATUS="pending" ;;
     esac

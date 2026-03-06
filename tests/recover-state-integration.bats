@@ -136,10 +136,12 @@ SUMMARY
   cd "$TEST_TEMP_DIR"
   # event_recovery is false by default in test config
   # Create a stale execution state that would be recovered if enabled
+  # Use 2 plans so reconcile block doesn't heal state (only 1 SUMMARY exists)
   cat > .vbw-planning/.execution-state.json <<'STATE'
-{"phase":1,"status":"running","plans":[{"id":"01-01","status":"pending"}]}
+{"phase":1,"status":"running","plans":[{"id":"01-01","status":"pending"},{"id":"01-02","status":"pending"}]}
 STATE
 
+  echo "title: Second" > .vbw-planning/phases/01-setup/01-02-PLAN.md
   mkdir -p .vbw-planning/.events
   sleep 1
   echo '{"event":"plan_end","phase":1,"plan":1,"data":{"status":"complete"}}' > .vbw-planning/.events/event-log.jsonl
@@ -153,7 +155,7 @@ SUMMARY
   run bash "$SCRIPTS_DIR/session-start.sh"
   [ "$status" -eq 0 ]
 
-  # State should NOT have been recovered (still running)
+  # State should NOT have been recovered (still running — 1 of 2 plans complete)
   recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
   [ "$recovered_status" = "running" ]
 }
@@ -213,16 +215,19 @@ status: complete
 # Summary
 SUMMARY
 
+  # Add a second plan without SUMMARY so reconcile doesn't heal to complete
+  echo "title: Second" > .vbw-planning/phases/01-setup/01-02-PLAN.md
+
   # Create execution state AFTER event log (newer)
   sleep 1
   cat > .vbw-planning/.execution-state.json <<'STATE'
-{"phase":1,"status":"running","plans":[{"id":"01-01","status":"pending"}]}
+{"phase":1,"status":"running","plans":[{"id":"01-01","status":"pending"},{"id":"01-02","status":"pending"}]}
 STATE
 
   run bash "$SCRIPTS_DIR/session-start.sh"
   [ "$status" -eq 0 ]
 
-  # State should NOT have been overwritten
+  # State should NOT have been overwritten (still running — 1 of 2 plans complete)
   recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
   [ "$recovered_status" = "running" ]
 }
@@ -531,6 +536,79 @@ SUMMARY
 
   # Auto-recovery should have set status to "complete" and reconcile should
   # not have touched it further (reconcile only runs on status=running)
+  recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
+  [ "$recovered_status" = "complete" ]
+}
+
+@test "recover-state: treats SUMMARY status 'completed' as complete" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '.event_recovery = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+
+  echo "title: Build UI" > .vbw-planning/phases/01-setup/01-01-PLAN.md
+  cat > .vbw-planning/phases/01-setup/01-01-SUMMARY.md <<'SUMMARY'
+---
+status: completed
+---
+# Summary
+SUMMARY
+
+  run bash "$SCRIPTS_DIR/recover-state.sh" 1 ".vbw-planning/phases"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.plans[0].status == "complete"' >/dev/null
+  echo "$output" | jq -e '.status == "complete"' >/dev/null
+}
+
+@test "recover-state: treats quoted SUMMARY status 'completed' as complete" {
+  cd "$TEST_TEMP_DIR"
+  local tmp
+  tmp=$(mktemp)
+  jq '.event_recovery = true' .vbw-planning/config.json > "$tmp" && mv "$tmp" .vbw-planning/config.json
+
+  echo "title: Build UI" > .vbw-planning/phases/01-setup/01-01-PLAN.md
+  cat > .vbw-planning/phases/01-setup/01-01-SUMMARY.md <<'SUMMARY'
+---
+status: "completed"
+---
+# Summary
+SUMMARY
+
+  run bash "$SCRIPTS_DIR/recover-state.sh" 1 ".vbw-planning/phases"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.plans[0].status == "complete"' >/dev/null
+  echo "$output" | jq -e '.status == "complete"' >/dev/null
+}
+
+@test "session-start: reconcile resolves phase 3 to 03-* dir via find_phase_dir_by_num" {
+  cd "$TEST_TEMP_DIR"
+
+  # Phase dir is zero-padded (03-*) but execution-state has bare "3"
+  mkdir -p .vbw-planning/phases/03-core
+  echo "title: Core" > .vbw-planning/phases/03-core/03-01-PLAN.md
+  cat > .vbw-planning/phases/03-core/03-01-SUMMARY.md <<'SUMMARY'
+---
+status: complete
+---
+# Summary
+SUMMARY
+
+  # STATE.md pointing at phase 3
+  cat > .vbw-planning/STATE.md <<'STATE'
+Phase: 3 of 3 (Core)
+Status: in-progress
+Progress: 80%
+STATE
+
+  # Execution state says "running" with phase 3 (non-zero-padded)
+  cat > .vbw-planning/.execution-state.json <<'STATE'
+{"phase":3,"status":"running","plans":[{"id":"03-01","status":"pending"}]}
+STATE
+
+  run bash "$SCRIPTS_DIR/session-start.sh"
+  [ "$status" -eq 0 ]
+
+  # Reconcile should have found the 03-* dir and marked build as complete
   recovered_status=$(jq -r '.status' .vbw-planning/.execution-state.json 2>/dev/null)
   [ "$recovered_status" = "complete" ]
 }

@@ -638,7 +638,7 @@ if [ "$_auto_recovered" = false ] && [ -f "$EXEC_STATE" ]; then
     PHASE_NUM=$(jq -r '.phase // ""' "$EXEC_STATE" 2>/dev/null)
     PHASE_DIR=""
     if [ -n "$PHASE_NUM" ]; then
-      PHASE_DIR=$(ls -d "$PLANNING_DIR/phases/${PHASE_NUM}-"* 2>/dev/null | head -1)
+      PHASE_DIR=$(find_phase_dir_by_num "$PLANNING_DIR" "$PHASE_NUM")
     fi
     if [ -n "$PHASE_DIR" ] && [ -d "$PHASE_DIR" ]; then
       PLAN_COUNT=$(jq -r '.plans | length' "$EXEC_STATE" 2>/dev/null)
