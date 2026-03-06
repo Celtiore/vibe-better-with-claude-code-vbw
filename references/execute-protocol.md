@@ -151,7 +151,7 @@ You are the team LEAD. NEVER implement tasks yourself.
 - NEVER Write/Edit files in a plan's `files_modified` — only state files: STATE.md, ROADMAP.md, .execution-state.json, SUMMARY.md
 - If Dev fails: guidance via SendMessage, not takeover. If all Devs unavailable: create new Dev.
 - At Turbo (or smart-routed to turbo): no team — Dev executes directly.
-- **Runtime enforcement:** This directive is structurally enforced by the `file-guard.sh` PreToolUse hook. When `.execution-state.json` has `status: running` and effort is not turbo/direct, the hook blocks product-file Write/Edit from the orchestrator (no `VBW_AGENT_ROLE` set) with exit 2. Subagents with a role (dev, debugger, etc.) are unaffected. Planning/state artifacts (`.vbw-planning/*`, `STATE.md`, `SUMMARY.md`, etc.) remain exempt.
+- **Runtime enforcement:** This directive is structurally enforced by the `file-guard.sh` PreToolUse hook. When `.execution-state.json` has `status: running` and effort is not turbo/direct, the hook blocks product-file Write/Edit from the orchestrator. Subagent detection uses `.active-agent-count` (written by `agent-start.sh`): when count > 0, at least one VBW subagent is running and the write is allowed. When count is 0 or absent, the write is treated as an orchestrator action and blocked. Planning/state artifacts (`.vbw-planning/*`, `STATE.md`, `SUMMARY.md`, etc.) remain exempt.
 
 **Monorepo Routing (REQ-17):** If `monorepo_routing=true` in config:
 - Before context compilation, detect relevant package paths:

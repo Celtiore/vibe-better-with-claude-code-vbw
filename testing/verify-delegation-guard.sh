@@ -324,6 +324,68 @@ test_gsd_unaffected() {
 }
 test_gsd_unaffected
 
+# --- Test 14: Active delegated state, no VBW_AGENT_ROLE, but .active-agent-count > 0 → allowed ---
+# This is the real runtime scenario: PreToolUse hooks don't inherit VBW_AGENT_ROLE,
+# but agent-start.sh has incremented the count. The guard should allow the write.
+test_active_agent_count_bypass() {
+  setup_project
+  jq -n '{status:"running", phase:1, effort:"balanced", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
+    > "$PROJECT/.vbw-planning/.execution-state.json"
+
+  # Simulate agent-start.sh having run: subagent active
+  echo "1" > "$PROJECT/.vbw-planning/.active-agent-count"
+  echo "dev" > "$PROJECT/.vbw-planning/.active-agent"
+
+  # No VBW_AGENT_ROLE set (matches real PreToolUse hook behavior)
+  if run_guard "$PROJECT" "src/app.js" "" >/dev/null 2>&1; then
+    pass "Active agent count > 0, no VBW_AGENT_ROLE: allowed (subagent bypass)"
+  else
+    fail "Active agent count > 0, no VBW_AGENT_ROLE: unexpected block (exit $?)"
+  fi
+  cleanup
+}
+test_active_agent_count_bypass
+
+# --- Test 15: Active delegated state, .active-agent-count = 0 (all agents stopped), no role → blocked ---
+test_zero_agent_count_still_blocks() {
+  setup_project
+  jq -n '{status:"running", phase:1, effort:"balanced", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
+    > "$PROJECT/.vbw-planning/.execution-state.json"
+
+  # Count is 0 — all subagents have stopped, so this is an orchestrator write
+  echo "0" > "$PROJECT/.vbw-planning/.active-agent-count"
+
+  local output
+  output=$(run_guard "$PROJECT" "src/app.js" "" 2>&1) && local rc=$? || local rc=$?
+  if [ "$rc" -eq 2 ]; then
+    pass "Active agent count = 0, no VBW_AGENT_ROLE: blocked (orchestrator)"
+  else
+    fail "Active agent count = 0: expected exit 2, got $rc"
+  fi
+  cleanup
+}
+test_zero_agent_count_still_blocks
+
+# --- Test 16: Active delegated state, .active-agent-count missing (no file), no role → blocked ---
+test_no_count_file_still_blocks() {
+  setup_project
+  jq -n '{status:"running", phase:1, effort:"balanced", started_at:"2026-03-03T00:00:00Z", plans:[]}' \
+    > "$PROJECT/.vbw-planning/.execution-state.json"
+
+  # No count file at all (agent-start never ran) — should still block
+  rm -f "$PROJECT/.vbw-planning/.active-agent-count" 2>/dev/null
+
+  local output
+  output=$(run_guard "$PROJECT" "src/app.js" "" 2>&1) && local rc=$? || local rc=$?
+  if [ "$rc" -eq 2 ]; then
+    pass "No agent count file, no VBW_AGENT_ROLE: blocked (orchestrator)"
+  else
+    fail "No agent count file: expected exit 2, got $rc"
+  fi
+  cleanup
+}
+test_no_count_file_still_blocks
+
 echo ""
 echo "==============================="
 echo "TOTAL: $PASS PASS, $FAIL FAIL"

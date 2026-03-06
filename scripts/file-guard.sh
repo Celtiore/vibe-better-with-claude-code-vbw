@@ -235,7 +235,23 @@ fi
 # implement are exempt.
 #
 # Fail-open: missing/malformed/stale state files skip the guard.
+#
+# NOTE: VBW_AGENT_ROLE is NOT set by the Claude Code runtime for PreToolUse hooks.
+# Subagent detection uses .active-agent-count (written by agent-start.sh, decremented
+# by agent-stop.sh). If count > 0, at least one VBW subagent is running and this
+# hook invocation is from that subagent context — skip the orchestrator block.
 if [ -z "${VBW_AGENT_ROLE:-}" ]; then
+  # Check .active-agent-count: if VBW subagents are active, this write is from
+  # a subagent (PreToolUse hooks don't carry agent identity). Skip the guard.
+  _DG_COUNT_FILE="$PROJECT_ROOT/.vbw-planning/.active-agent-count"
+  if [ -f "$_DG_COUNT_FILE" ]; then
+    _DG_AGENT_COUNT=$(cat "$_DG_COUNT_FILE" 2>/dev/null | tr -d '[:space:]')
+    if echo "$_DG_AGENT_COUNT" | grep -Eq '^[0-9]+$' && [ "$_DG_AGENT_COUNT" -gt 0 ]; then
+      # VBW subagent is active — allow the write
+      exit 0
+    fi
+  fi
+
   _DG_BLOCK=false
   _DG_EFFORT=""
 
