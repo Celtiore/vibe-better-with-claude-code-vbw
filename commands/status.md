@@ -122,4 +122,25 @@ Per @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md:
     Cache hit rate: {percent}%
 ```
 
+**Token Economy** (RTK integration): Detect RTK status via:
+```bash
+_rtk_bin=$(command -v rtk &>/dev/null && echo true || echo false)
+_rtk_hook=$([ -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/rtk-rewrite.sh" ] || [ -f "$HOME/.claude/hooks/rtk-rewrite.sh" ] && echo true || echo false)
+_rtk_active=$([ "$_rtk_bin" = true ] && [ "$_rtk_hook" = true ] && echo true || echo false)
+```
+If RTK fully active, read gains: `rtk gain --all --format json 2>/dev/null`
+
+Display conditionally:
+- Active + data:
+```
+  Token Economy:
+    RTK compression: {N}% avg savings
+    Top commands:
+      {cmd1}: {pct}% savings
+      {cmd2}: {pct}% savings
+      {cmd3}: {pct}% savings
+```
+- Active, no data: `  Token Economy: RTK active · no data yet`
+- Not installed: `  Token Economy: (Install RTK to save 60-90% on tool outputs: bash scripts/rtk-setup.sh)`
+
 **Next Up:** Run `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/suggest-next.sh status` and display.

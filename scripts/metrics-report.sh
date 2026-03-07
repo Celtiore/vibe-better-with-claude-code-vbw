@@ -151,6 +151,41 @@ else
 fi
 echo ""
 
+# --- Metric 8: RTK Token Compression ---
+echo "## RTK Token Compression"
+_rtk_pct="N/A"
+if command -v rtk &>/dev/null; then
+  _rtk_hook="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/rtk-rewrite.sh"
+  if [ -f "$_rtk_hook" ] || [ -f "$HOME/.claude/hooks/rtk-rewrite.sh" ]; then
+    if command -v jq &>/dev/null; then
+      _rtk_gains=$(rtk gain --all --format json 2>/dev/null || echo "{}")
+      _rtk_pct=$(printf '%s' "$_rtk_gains" | jq -r '.avg_savings_pct // 0' 2>/dev/null || echo "0")
+      _rtk_saved=$(printf '%s' "$_rtk_gains" | jq -r '.total_saved // 0' 2>/dev/null || echo "0")
+      if [ "${_rtk_saved:-0}" != "0" ] && [ "${_rtk_saved:-0}" != "null" ]; then
+        echo "- Status: active"
+        echo "- Average savings: ${_rtk_pct}%"
+        echo "- Total saved: ${_rtk_saved} tokens"
+        printf '%s' "$_rtk_gains" \
+          | jq -r '(.commands // {}) | to_entries | sort_by(-.value.saved) | .[:5] | .[] | "- \(.key): \(.value.avg_savings_pct // 0)% avg savings"' \
+          2>/dev/null || true
+        _rtk_pct="${_rtk_pct}%"
+      else
+        echo "- Status: active (no data yet)"
+        _rtk_pct="active"
+      fi
+    else
+      echo "- Status: active (jq required for analytics)"
+      _rtk_pct="active"
+    fi
+  else
+    echo "- Status: binary found, hook missing (run: rtk init -g)"
+    _rtk_pct="no hook"
+  fi
+else
+  echo "- Status: not installed"
+fi
+echo ""
+
 # --- Profile Context (REQ-05) ---
 CONFIG_PATH="${PLANNING_DIR}/config.json"
 PROFILE_EFFORT="unknown"
@@ -198,6 +233,7 @@ echo "| Gate failure rate | ${FR}% (${GF}/${GT}) |"
 echo "| Lease conflicts | ${LC} |"
 echo "| Resume successes | ${RS} |"
 echo "| Completion rejections | ${RJ} |"
+echo "| RTK compression | ${_rtk_pct} |"
 echo ""
 
 # --- Profile x Autonomy Breakdown (REQ-06) ---

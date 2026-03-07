@@ -76,6 +76,12 @@ PASS if 0. WARN if any, list which markers.
 If $TMUX is set, check if .vbw-planning/.watchdog-pid exists and process is alive via kill -0.
 PASS if alive or not in tmux. WARN if dead watchdog in tmux.
 
+### 16. RTK token compression
+`rtk --version 2>/dev/null || echo "MISSING"`
+- SKIP if binary missing: "Not installed (optional). Saves 60-90% context tokens. Run: bash scripts/rtk-setup.sh"
+- WARN if binary found but `~/.claude/hooks/rtk-rewrite.sh` missing: "Binary found, hook missing. Run: bash scripts/rtk-setup.sh --hook"
+- PASS if binary + hook present. Show version. If `rtk gain --all --format json 2>/dev/null` returns data, show avg savings %.
+
 ## Output Format
 
 ```
@@ -96,8 +102,9 @@ VBW Doctor v{version}
  13. Dangling PIDs        {PASS|WARN} {count}
  14. Stale markers        {PASS|WARN} {markers}
  15. Watchdog status      {PASS|WARN}
+ 16. RTK compression      {PASS|WARN|SKIP} {detail}
 
-Result: {N}/15 passed, {W} warnings, {F} failures
+Result: {N}/16 passed, {W} warnings, {S} skipped, {F} failures
 ```
 
 Use checkmark for PASS, warning triangle for WARN, X for FAIL.

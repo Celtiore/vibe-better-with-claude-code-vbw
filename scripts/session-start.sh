@@ -297,7 +297,11 @@ WELCOME_MSG=""
 if [ ! -f "$VBW_MARKER" ]; then
   mkdir -p "$CLAUDE_DIR" 2>/dev/null
   touch "$VBW_MARKER" 2>/dev/null
-  WELCOME_MSG="FIRST RUN -- Display this welcome to the user verbatim: Welcome to VBW -- Vibe Better with Claude Code. You're not an engineer anymore. You're a prompt jockey with commit access. At least do it properly. Quick start: /vbw:vibe -- describe your project and VBW handles the rest. Type /vbw:help for the full story. --- "
+  _rtk_hint=""
+  if ! command -v rtk &>/dev/null; then
+    _rtk_hint=" PRO TIP: Install RTK (Rust Token Killer) to compress tool outputs and save 60-90%% additional context tokens. Quick setup: bash scripts/rtk-setup.sh"
+  fi
+  WELCOME_MSG="FIRST RUN -- Display this welcome to the user verbatim: Welcome to VBW -- Vibe Better with Claude Code. You're not an engineer anymore. You're a prompt jockey with commit access. At least do it properly. Quick start: /vbw:vibe -- describe your project and VBW handles the rest. Type /vbw:help for the full story.${_rtk_hint} --- "
 fi
 
 # --- Update check (once per day, fail-silent) ---
@@ -879,6 +883,40 @@ CTX="$CTX Phase: ${phase_pos}/${phase_total} (${phase_name}) -- ${phase_status}.
 CTX="$CTX Progress: ${progress_pct}%."
 CTX="$CTX Config: effort=${config_effort}, autonomy=${config_autonomy}, auto_commit=${config_auto_commit}, planning_tracking=${config_planning_tracking}, auto_push=${config_auto_push}, verification=${config_verification}, prefer_teams=${config_prefer_teams}, max_tasks=${config_max_tasks}."
 CTX="$CTX Next: ${NEXT_ACTION}."
+
+# --- RTK detection (global infra tool, fail-silent) ---
+_RTK_DETECT="${SCRIPT_DIR:-$(dirname "$0")}/rtk-detect.sh"
+if [ -f "$_RTK_DETECT" ]; then
+  # Cache RTK gains with 60s TTL (same pattern as update check)
+  _RTK_CACHE="/tmp/vbw-rtk-gains-$(id -u)"
+  _rtk_now=$(date +%s)
+  _rtk_cache_age=999
+  if [ -f "$_RTK_CACHE" ]; then
+    if [ "$(uname)" = "Darwin" ]; then
+      _rtk_mt=$(stat -f %m "$_RTK_CACHE" 2>/dev/null || echo 0)
+    else
+      _rtk_mt=$(stat -c %Y "$_RTK_CACHE" 2>/dev/null || echo 0)
+    fi
+    _rtk_cache_age=$(( _rtk_now - _rtk_mt ))
+  fi
+  if [ "$_rtk_cache_age" -gt 60 ]; then
+    . "$_RTK_DETECT" 2>/dev/null || true
+    # Persist gains to cache for next invocation
+    echo "RTK_FULLY_ACTIVE=${RTK_FULLY_ACTIVE:-false} RTK_GAIN_HAS_DATA=${RTK_GAIN_HAS_DATA:-false} RTK_GAIN_PCT=${RTK_GAIN_PCT:-0} RTK_BINARY=${RTK_BINARY:-false} RTK_HOOK=${RTK_HOOK:-false}" > "$_RTK_CACHE" 2>/dev/null || true
+  else
+    # Read from cache
+    eval "$(cat "$_RTK_CACHE" 2>/dev/null || true)" 2>/dev/null || true
+  fi
+  if [ "${RTK_FULLY_ACTIVE:-false}" = true ]; then
+    if [ "${RTK_GAIN_HAS_DATA:-false}" = true ]; then
+      CTX="$CTX RTK: active, ${RTK_GAIN_PCT}% avg savings."
+    else
+      CTX="$CTX RTK: active (no data yet)."
+    fi
+  elif [ "${RTK_BINARY:-false}" = true ] && [ "${RTK_HOOK:-false}" = false ]; then
+    CTX="$CTX RTK: installed but hook missing. Run: rtk init -g"
+  fi
+fi
 
 jq -n --arg ctx "$CTX" --arg update "$UPDATE_MSG" --arg welcome "$WELCOME_MSG" --arg flags "${FLAG_WARNINGS:-}" '{
   "hookSpecificOutput": {
