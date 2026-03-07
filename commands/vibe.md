@@ -548,13 +548,11 @@ FAIL -> STOP with remediation suggestions. WARN -> proceed with warnings.
    This reads ROADMAP.md phase names and outputs a numbered kebab-case slug (e.g., `01-setup-api-layer`). Override with `--tag` if provided. **Never use a hardcoded slug like "default" — always use the script output.**
 2. Parse args: --tag=vN.N.N (custom tag), --no-tag (skip), --force (skip non-UAT audit).
 3. Compute summary: from ROADMAP (phases), SUMMARY.md files (tasks/commits/deviations), REQUIREMENTS.md (satisfied count).
-4. **Rolling summary (conditional):** If `rolling_summary=true` in config:
-   ```bash
-   bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-rolling-summary.sh \
-     .vbw-planning/phases .vbw-planning/ROLLING-CONTEXT.md 2>/dev/null || true
-   ```
-   Compiles final rolling context before artifacts move to milestones/. Fail-open.
-   When `rolling_summary=false`: skip.
+4. **MuninnDB milestone consolidation:** Read `muninndb_vault` from `.vbw-planning/config.json`.
+   1. Call `muninn_activate(vault: {vault}, context: "{milestone name} {milestone description} decisions patterns conventions", limit: 50)` to retrieve all engrams related to this milestone.
+   2. From the results, collect IDs of engrams with score > 0.3.
+   3. Call `muninn_consolidate(vault: {vault}, engram_ids: [{collected IDs}])` to merge related engrams into consolidated memories.
+   This strengthens key learnings and reduces noise before the next milestone begins.
 5. Archive: `mkdir -p .vbw-planning/milestones/`. Move roadmap, state, phases to milestones/{SLUG}/. Write SHIPPED.md. Delete stale RESUME.md.
 5b. **Persist project-level state:** After archiving, run:
    ```bash

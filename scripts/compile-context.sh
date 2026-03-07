@@ -114,18 +114,6 @@ if [ -f "$CONFIG_PATH" ] && command -v jq &>/dev/null; then
   V3_METRICS_ENABLED=$(jq -r 'if .metrics != null then .metrics elif .v3_metrics != null then .v3_metrics else true end' "$CONFIG_PATH" 2>/dev/null || echo "true")
 fi
 
-ROLLING_SUMMARY=false
-if [ -f "$CONFIG_PATH" ] && command -v jq &>/dev/null; then
-  # Legacy fallback: honor v3_rolling_summary if unprefixed key missing (pre-migration brownfield)
-  ROLLING_SUMMARY=$(jq -r 'if .rolling_summary != null then .rolling_summary elif .v3_rolling_summary != null then .v3_rolling_summary else false end' "$CONFIG_PATH" 2>/dev/null || echo "false")
-fi
-
-ROLLING_CONTEXT_PATH="${PLANNING_DIR}/ROLLING-CONTEXT.md"
-ROLLING_CONTEXT_SECTION=""
-if [ "$ROLLING_SUMMARY" = "true" ] && [ "$PHASE_NUM" -gt 1 ] 2>/dev/null && [ -f "$ROLLING_CONTEXT_PATH" ]; then
-  ROLLING_CONTEXT_SECTION=$(cat "$ROLLING_CONTEXT_PATH" 2>/dev/null || true)
-fi
-
 # Record start time for metrics
 if [ "$V3_METRICS_ENABLED" = "true" ]; then
   START_TIME=$(date +%s 2>/dev/null || echo "0")
@@ -159,6 +147,15 @@ fi
 # Emits a "Codebase Map Available" section listing available mapping docs
 # and guidance to read priority files first. Only emits if META.md exists
 # and at least one of the scanned files exists.
+# --- MuninnDB cross-phase memory hint ---
+# Emits a hint for agents to use muninn_activate for cross-phase memory.
+emit_muninn_memory_hint() {
+  echo ""
+  echo "### Cross-Phase Memory"
+  echo "Call \`muninn_guide(vault from .vbw-planning/config.json muninndb_vault)\` on first use to get vault-aware instructions, then \`muninn_activate(vault, context: \"{phase goal}\")\` to recall prior decisions, patterns, and conventions."
+}
+
+# --- Codebase mapping hint helper ---
 emit_codebase_mapping_hint() {
   local priority_files=("$@")
   if [ ! -f "$PLANNING_DIR/codebase/META.md" ]; then
@@ -214,12 +211,7 @@ case "$ROLE" in
   lead)
     {
       echo "## Phase ${PHASE} Context (Compiled)"
-      if [ -n "$ROLLING_CONTEXT_SECTION" ]; then
-        echo ""
-        echo "### Prior Phase Context (Rolling Summary)"
-        echo "$ROLLING_CONTEXT_SECTION"
-        echo ""
-      fi
+      emit_muninn_memory_hint
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -271,12 +263,7 @@ case "$ROLE" in
   dev)
     {
       echo "## Phase ${PHASE} Context"
-      if [ -n "$ROLLING_CONTEXT_SECTION" ]; then
-        echo ""
-        echo "### Prior Phase Context (Rolling Summary)"
-        echo "$ROLLING_CONTEXT_SECTION"
-        echo ""
-      fi
+      emit_muninn_memory_hint
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -359,12 +346,7 @@ case "$ROLE" in
   qa)
     {
       echo "## Phase ${PHASE} Verification Context"
-      if [ -n "$ROLLING_CONTEXT_SECTION" ]; then
-        echo ""
-        echo "### Prior Phase Context (Rolling Summary)"
-        echo "$ROLLING_CONTEXT_SECTION"
-        echo ""
-      fi
+      emit_muninn_memory_hint
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -394,12 +376,7 @@ case "$ROLE" in
   scout)
     {
       echo "## Phase ${PHASE} Research Context"
-      if [ -n "$ROLLING_CONTEXT_SECTION" ]; then
-        echo ""
-        echo "### Prior Phase Context (Rolling Summary)"
-        echo "$ROLLING_CONTEXT_SECTION"
-        echo ""
-      fi
+      emit_muninn_memory_hint
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -445,30 +422,13 @@ case "$ROLE" in
   debugger)
     {
       echo "## Phase ${PHASE} Debug Context"
-      if [ -n "$ROLLING_CONTEXT_SECTION" ]; then
-        echo ""
-        echo "### Prior Phase Context (Rolling Summary)"
-        echo "$ROLLING_CONTEXT_SECTION"
-        echo ""
-      fi
+      emit_muninn_memory_hint
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
       echo ""
       echo "### Success Criteria"
       echo "$PHASE_SUCCESS"
-      echo ""
-      echo "### Recent Activity"
-      if [ -f "$PLANNING_DIR/STATE.md" ]; then
-        ACTIVITY=$(sed -n '/^## Activity/,/^## [A-Z]/p' "$PLANNING_DIR/STATE.md" 2>/dev/null | sed '$d' | tail -n +2) || true
-        if [ -n "$ACTIVITY" ]; then
-          echo "$ACTIVITY"
-        else
-          echo "None"
-        fi
-      else
-        echo "None"
-      fi
       if [ -f "$PLANNING_DIR/conventions.json" ] && command -v jq &>/dev/null; then
         CONVENTIONS=$(jq -r '.conventions[] | "- [\(.tag)] \(.rule)"' "$PLANNING_DIR/conventions.json" 2>/dev/null) || true
         if [ -n "$CONVENTIONS" ]; then
@@ -524,12 +484,7 @@ case "$ROLE" in
   architect)
     {
       echo "## Phase ${PHASE} Architecture Context"
-      if [ -n "$ROLLING_CONTEXT_SECTION" ]; then
-        echo ""
-        echo "### Prior Phase Context (Rolling Summary)"
-        echo "$ROLLING_CONTEXT_SECTION"
-        echo ""
-      fi
+      emit_muninn_memory_hint
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
