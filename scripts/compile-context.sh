@@ -146,6 +146,7 @@ fi
 # Emits a hint for agents to use muninn_activate for cross-phase memory.
 emit_muninn_memory_hint() {
   local phase="${1:-1}"
+  local role="${2:-}"
   # Check if vault is configured
   local vault=""
   if [ -f "$CONFIG_PATH" ] && command -v jq &>/dev/null; then
@@ -158,6 +159,27 @@ emit_muninn_memory_hint() {
     return
   fi
   echo "Call \`muninn_guide(vault from .vbw-planning/config.json muninndb_vault)\` on first use to get vault-aware instructions, then \`muninn_activate(vault, context: \"{phase goal}\")\` to recall prior decisions, patterns, and conventions."
+  # Role-specific guidance
+  case "$role" in
+    qa)
+      echo "Also call \`muninn_contradictions(vault)\` to detect conflicting prior decisions that may affect verification."
+      ;;
+    debugger)
+      echo "Use context: \"{bug description} {error symptoms}\" to find similar past issues and their resolutions."
+      ;;
+    scout)
+      echo "Use context: \"{research topic}\" to check for prior research that may already cover this domain."
+      ;;
+    lead)
+      echo "Review recalled decisions for constraints on plan structure. In Phase 2+, also call \`muninn_contradictions(vault)\` to catch conflicts pre-planning."
+      ;;
+    architect)
+      echo "Review recalled architectural decisions that may constrain this milestone's design. Also call \`muninn_contradictions(vault)\` to catch conflicts pre-scoping."
+      ;;
+    docs)
+      echo "Check for prior naming conventions and documentation patterns that should be followed."
+      ;;
+  esac
   if [ "${phase}" -gt 1 ] 2>/dev/null; then
     echo "⚠ Phase ${phase}: if recall returns 0 results, report a warning — prior phase decisions should exist."
   fi
@@ -223,7 +245,7 @@ case "$ROLE" in
   lead)
     {
       echo "## Phase ${PHASE} Context (Compiled)"
-      emit_muninn_memory_hint "$PHASE"
+      emit_muninn_memory_hint "$PHASE" "$ROLE"
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -275,7 +297,7 @@ case "$ROLE" in
   dev)
     {
       echo "## Phase ${PHASE} Context"
-      emit_muninn_memory_hint "$PHASE"
+      emit_muninn_memory_hint "$PHASE" "$ROLE"
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -358,7 +380,7 @@ case "$ROLE" in
   qa)
     {
       echo "## Phase ${PHASE} Verification Context"
-      emit_muninn_memory_hint "$PHASE"
+      emit_muninn_memory_hint "$PHASE" "$ROLE"
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -388,7 +410,7 @@ case "$ROLE" in
   scout)
     {
       echo "## Phase ${PHASE} Research Context"
-      emit_muninn_memory_hint "$PHASE"
+      emit_muninn_memory_hint "$PHASE" "$ROLE"
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -434,7 +456,7 @@ case "$ROLE" in
   debugger)
     {
       echo "## Phase ${PHASE} Debug Context"
-      emit_muninn_memory_hint "$PHASE"
+      emit_muninn_memory_hint "$PHASE" "$ROLE"
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -496,7 +518,7 @@ case "$ROLE" in
   architect)
     {
       echo "## Phase ${PHASE} Architecture Context"
-      emit_muninn_memory_hint "$PHASE"
+      emit_muninn_memory_hint "$PHASE" "$ROLE"
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"
@@ -533,7 +555,7 @@ case "$ROLE" in
   docs)
     {
       echo "## Phase ${PHASE} Documentation Context"
-      emit_muninn_memory_hint "$PHASE"
+      emit_muninn_memory_hint "$PHASE" "$ROLE"
       echo ""
       echo "### Goal"
       echo "$PHASE_GOAL"

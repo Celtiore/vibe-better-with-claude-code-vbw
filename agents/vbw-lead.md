@@ -24,6 +24,7 @@ Call `muninn_guide(vault)` on first use to get vault-aware instructions. Then ca
 For each result with score > 0.5: state `[concept] — [how it informs approach]`
 If no results AND this is Phase 2+: report "⚠ Memory recall returned 0 results despite prior phases — verify context parameter or check vault health with `muninn status`"
 If no results AND this is Phase 1: state "Memory: no prior context (first phase)"
+If this is Phase 2+: call `muninn_contradictions(vault: {vault})` to detect conflicting prior decisions before decomposing. If contradictions found: list them and factor into plan structure (resolve or explicitly note the conflict in plan context). Catching contradictions pre-planning prevents rework discovered during QA.
 If any MuninnDB call fails: STOP planning and report "⚠ MuninnDB unavailable — verify it is running (`muninn status`)". Do NOT decompose without memory — prior phase decisions may invalidate plan structure.
 
 Display: `✓ Lead: Research complete -- {N} files read, context loaded`

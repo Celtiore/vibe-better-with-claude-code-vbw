@@ -35,7 +35,8 @@ VBW uses MuninnDB for persistent cognitive memory. The vault name is in `.vbw-pl
 6. If no results AND this is Phase 2+: report "⚠ Memory recall returned 0 results despite prior phases — verify context parameter or check vault health with `muninn status`"
 7. If no results AND this is Phase 1: state "Memory: no prior context (first phase)"
 8. Review any prior architectural decisions or conventions that may constrain this milestone's design
-9. If any MuninnDB call fails: STOP scoping and report "⚠ MuninnDB unavailable — verify it is running (`muninn status`)". Do NOT scope without memory — prior architectural decisions may invalidate your design.
+9. If this is not the first milestone: call `muninn_contradictions(vault: {vault})` to detect conflicting prior decisions before scoping. If contradictions found: list them and resolve or explicitly document the conflict in PROJECT.md decisions section. Catching contradictions pre-scoping prevents downstream rework.
+10. If any MuninnDB call fails: STOP scoping and report "⚠ MuninnDB unavailable — verify it is running (`muninn status`)". Do NOT scope without memory — prior architectural decisions may invalidate your design.
 
 **After producing artifacts:**
 For each significant decision (architecture pattern chosen, technology selected, phase ordering rationale), call `muninn_decide(vault, concept, rationale, alternatives[])`.

@@ -48,7 +48,7 @@ case "$AGENT_NAME" in
     PRIORITIES="Preserve doc structure, naming conventions, style decisions. After compaction, if .vbw-planning/codebase/META.md exists, re-read CONVENTIONS.md, PATTERNS.md, and STRUCTURE.md (whichever exist) from .vbw-planning/codebase/. Read muninndb_vault from .vbw-planning/config.json then call muninn_guide(vault) for vault-aware instructions, then muninn_activate(vault, context: your documentation task context) to recover prior doc patterns and conventions"
     ;;
   *)
-    PRIORITIES="Preserve active command being executed, user's original request, current phase/plan context, file modification paths, any pending user decisions. Discard: tool output details, reference file contents (re-read from disk), previous command results"
+    PRIORITIES="Preserve active command being executed, user's original request, current phase/plan context, file modification paths, any pending user decisions. Discard: tool output details, reference file contents (re-read from disk), previous command results. Read muninndb_vault from .vbw-planning/config.json then call muninn_guide(vault) for vault-aware instructions, then muninn_activate(vault, context: your current task context) to recover cognitive memory"
     ;;
 esac
 

@@ -554,3 +554,59 @@ EOF
   grep -q "Recall limit" "$PROJECT_ROOT/references/muninn-types.md"
   grep -q "Score threshold" "$PROJECT_ROOT/references/muninn-types.md"
 }
+
+# ============================================================
+# P2-1: Contradiction checking for Lead and Architect
+# ============================================================
+
+@test "lead agent calls muninn_contradictions pre-planning" {
+  grep -q "muninn_contradictions" "$PROJECT_ROOT/agents/vbw-lead.md"
+}
+
+@test "architect agent calls muninn_contradictions pre-scoping" {
+  grep -q "muninn_contradictions" "$PROJECT_ROOT/agents/vbw-architect.md"
+}
+
+# ============================================================
+# P2-7: Role-specific compile-context hints
+# ============================================================
+
+@test "compile-context.sh emits role-specific hint for qa" {
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 qa ".vbw-planning/phases"
+  [ "$status" -eq 0 ]
+  grep -q "muninn_contradictions" ".vbw-planning/phases/01-test-phase/.context-qa.md"
+}
+
+@test "compile-context.sh emits role-specific hint for debugger" {
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 debugger ".vbw-planning/phases"
+  [ "$status" -eq 0 ]
+  grep -q "bug description" ".vbw-planning/phases/01-test-phase/.context-debugger.md"
+}
+
+@test "compile-context.sh emits role-specific hint for lead" {
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 lead ".vbw-planning/phases"
+  [ "$status" -eq 0 ]
+  grep -q "muninn_contradictions" ".vbw-planning/phases/01-test-phase/.context-lead.md"
+}
+
+# ============================================================
+# P2-8: Inline orchestrator compaction fallback
+# ============================================================
+
+@test "compaction wildcard includes muninn recovery" {
+  grep -q "muninn_guide" "$SCRIPTS_DIR/compaction-instructions.sh"
+  # Check the wildcard case specifically includes muninn
+  grep -A1 '^\s*\*)' "$SCRIPTS_DIR/compaction-instructions.sh" | grep -q "muninn"
+}
+
+# ============================================================
+# P2-9: Phase-level outcome engrams
+# ============================================================
+
+@test "execute-protocol stores phase outcome engram before consolidation" {
+  grep -q "Phase.*outcome" "$PROJECT_ROOT/references/execute-protocol.md"
+  grep -q "muninn_remember.*outcome" "$PROJECT_ROOT/references/execute-protocol.md"
+}

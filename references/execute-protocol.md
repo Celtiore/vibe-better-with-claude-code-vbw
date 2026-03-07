@@ -559,7 +559,11 @@ When `worktree_isolation="off"`: skip this block silently.
 
 **Control Plane cleanup:** Lock and token state cleanup already handled by existing Lease Lock and Token Budget cleanup blocks.
 
-**MuninnDB Consolidation (MANDATORY):** At phase end, consolidate this phase's engrams:
+**MuninnDB Phase Outcome (MANDATORY):** At phase end, store a phase-level outcome engram before consolidation:
+- Call `muninn_remember(vault: {vault}, concept: "Phase {N} outcome: {one-line summary}", content: "{key deliverables, architectural changes, patterns established}", tags: [phase:{N}, outcome], type: Decision)`
+- This ensures downstream phases can recall what was delivered, even if individual task engrams are consolidated.
+
+**MuninnDB Consolidation (MANDATORY):** After storing the outcome, consolidate this phase's engrams:
 1. Read `muninndb_vault` from `.vbw-planning/config.json`.
 2. Call `muninn_activate(vault: {vault}, context: "phase {N} {phase goal}", limit: 50)` to retrieve phase-relevant engrams.
 3. From the results, collect IDs of engrams with score > 0.3.
