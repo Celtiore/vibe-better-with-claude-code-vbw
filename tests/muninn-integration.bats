@@ -400,3 +400,35 @@ EOF
   # Should not contain memory_recalled warning
   ! echo "$output" | grep -q "memory_recalled"
 }
+
+# ============================================================
+# P1-3: QA stores verification findings
+# ============================================================
+
+@test "QA agent references muninn_remember for storing findings" {
+  grep -q "muninn_remember" "$PROJECT_ROOT/agents/vbw-qa.md"
+}
+
+# ============================================================
+# P1-4: docs role in compile-context.sh
+# ============================================================
+
+@test "compile-context.sh emits MuninnDB hint for docs role" {
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-context.sh" 01 docs ".vbw-planning/phases"
+  [ "$status" -eq 0 ]
+  grep -q "Cross-Phase Memory" ".vbw-planning/phases/01-test-phase/.context-docs.md"
+  grep -q "muninn_activate" ".vbw-planning/phases/01-test-phase/.context-docs.md"
+}
+
+# ============================================================
+# P1-7: Engram type documentation
+# ============================================================
+
+@test "muninn-types.md documents all agent engram types" {
+  [ -f "$PROJECT_ROOT/references/muninn-types.md" ]
+  grep -q "Issue" "$PROJECT_ROOT/references/muninn-types.md"
+  grep -q "Observation" "$PROJECT_ROOT/references/muninn-types.md"
+  grep -q "Decision" "$PROJECT_ROOT/references/muninn-types.md"
+  grep -q "Task" "$PROJECT_ROOT/references/muninn-types.md"
+}

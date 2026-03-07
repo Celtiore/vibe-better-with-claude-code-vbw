@@ -530,8 +530,31 @@ case "$ROLE" in
     } > "${PHASE_DIR}/.context-architect.md"
     ;;
 
+  docs)
+    {
+      echo "## Phase ${PHASE} Documentation Context"
+      emit_muninn_memory_hint "$PHASE"
+      echo ""
+      echo "### Goal"
+      echo "$PHASE_GOAL"
+      echo ""
+      echo "### Success Criteria"
+      echo "$PHASE_SUCCESS"
+      if [ -f "$PLANNING_DIR/conventions.json" ] && command -v jq &>/dev/null; then
+        CONVENTIONS=$(jq -r '.conventions[] | "- [\(.tag)] \(.rule)"' "$PLANNING_DIR/conventions.json" 2>/dev/null) || true
+        if [ -n "$CONVENTIONS" ]; then
+          echo ""
+          echo "### Conventions"
+          echo "$CONVENTIONS"
+        fi
+      fi
+      # --- Codebase mapping hint ---
+      emit_codebase_mapping_hint CONVENTIONS PATTERNS STRUCTURE
+    } > "${PHASE_DIR}/.context-docs.md"
+    ;;
+
   *)
-    echo "Unknown role: $ROLE. Valid roles: lead, dev, qa, scout, debugger, architect" >&2
+    echo "Unknown role: $ROLE. Valid roles: lead, dev, qa, scout, debugger, architect, docs" >&2
     exit 1
     ;;
 esac

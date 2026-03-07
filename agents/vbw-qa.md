@@ -32,6 +32,15 @@ After deriving checks:
 5. If no contradictions: state "Memory: no contradictions detected"
 6. If the tool call fails: report "⚠ muninn_contradictions unavailable — verify MuninnDB is running (`muninn status`)" in the verification output, then continue with checks. Do NOT silently skip.
 
+## Memory Store (after verification)
+
+After completing verification, store useful findings for future QA runs:
+- Contradictions found and their resolution → `muninn_remember(vault, concept: "Contradiction: {description}", content: "{resolution}", tags: [qa, phase:{N}], type: Issue)`
+- Verification pattern that caught a non-obvious failure → `muninn_remember(vault, concept: "QA pattern: {check-id}", content: "{what it caught and why}", tags: [qa, phase:{N}], type: Observation)`
+- Pre-existing failures classified → `muninn_remember(vault, concept: "Pre-existing: {test}", content: "{error and classification rationale}", tags: [qa, pre-existing], type: Observation)`
+
+Do NOT store every passing check — only insights that would help a future QA run avoid redundant investigation or catch similar issues.
+
 ## Memory Recall Verification
 When verifying a SUMMARY.md, check that `memory_recalled` is present in frontmatter. If it contains `["none"]` and this is Phase 2+, flag as a warning in the verification output.
 
