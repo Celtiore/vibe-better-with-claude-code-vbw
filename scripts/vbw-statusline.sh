@@ -161,10 +161,13 @@ FAST_CF="${_CACHE}-fast"
 
 if ! cache_fresh "$FAST_CF" 5; then
   PH=""; TT=""; EF="balanced"; MP="quality"; BR=""
-  PD=0; PT=0; PPD=0; QA="--"; GH_URL=""
+  PD=0; PT=0; PPD=0; PPT=0; QA="--"; GH_URL=""
   if [ -f ".vbw-planning/STATE.md" ]; then
-    PH=$(grep -m1 "^Phase:" .vbw-planning/STATE.md | grep -oE '[0-9]+' | head -1)
-    TT=$(grep -m1 "^Phase:" .vbw-planning/STATE.md | grep -oE '[0-9]+' | tail -1)
+    # Parse "Phase: N of M (slug)" — extract N and M before parenthetical
+    # to avoid picking up numbers from phase name slugs like "01-context-diet"
+    _phase_line=$(grep -m1 "^Phase:" .vbw-planning/STATE.md 2>/dev/null)
+    PH=$(echo "$_phase_line" | sed -n 's/^Phase:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+    TT=$(echo "$_phase_line" | sed -n 's/.*[[:space:]]of[[:space:]]*\([0-9][0-9]*\).*/\1/p')
   fi
   if [ -f ".vbw-planning/config.json" ]; then
     # Auto-migrate: add model_profile if missing
@@ -193,6 +196,7 @@ if ! cache_fresh "$FAST_CF" 5; then
     if [ -n "$PH" ] && [ "$PH" != "0" ]; then
       PDIR=$(find .vbw-planning/phases -maxdepth 1 -type d -name "$(printf '%02d' "$PH")-*" 2>/dev/null | head -1)
       [ -n "$PDIR" ] && PPD=$(count_complete_summaries "$PDIR")
+      [ -n "$PDIR" ] && PPT=$(find "$PDIR" -maxdepth 1 -name '*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
       [ -n "$PDIR" ] && [ -n "$(find "$PDIR" -name '*VERIFICATION.md' 2>/dev/null | head -1)" ] && QA="pass"
     fi
   fi
@@ -227,14 +231,14 @@ if ! cache_fresh "$FAST_CF" 5; then
 
   AGENT_DATA="0"
 
-  printf '%s\n' "${PH:-0}|${TT:-0}|${EF}|${MP}|${BR}|${PD}|${PT}|${PPD}|${QA}|${GH_URL}|${GIT_STAGED:-0}|${GIT_MODIFIED:-0}|${GIT_AHEAD:-0}|${EXEC_STATUS:-}|${EXEC_WAVE:-0}|${EXEC_TWAVES:-0}|${EXEC_DONE:-0}|${EXEC_TOTAL:-0}|${EXEC_CURRENT:-}|${AGENT_DATA:-0}" > "$FAST_CF" 2>/dev/null
+  printf '%s\n' "${PH:-0}|${TT:-0}|${EF}|${MP}|${BR}|${PD}|${PT}|${PPD}|${QA}|${GH_URL}|${GIT_STAGED:-0}|${GIT_MODIFIED:-0}|${GIT_AHEAD:-0}|${EXEC_STATUS:-}|${EXEC_WAVE:-0}|${EXEC_TWAVES:-0}|${EXEC_DONE:-0}|${EXEC_TOTAL:-0}|${EXEC_CURRENT:-}|${AGENT_DATA:-0}|${PPT:-0}" > "$FAST_CF" 2>/dev/null
 fi
 
 if [ -O "$FAST_CF" ]; then
   # shellcheck disable=SC2034
   IFS='|' read -r PH TT EF MP BR PD PT PPD QA GH_URL GIT_STAGED GIT_MODIFIED GIT_AHEAD \
                   EXEC_STATUS EXEC_WAVE EXEC_TWAVES EXEC_DONE EXEC_TOTAL EXEC_CURRENT \
-                  AGENT_N < "$FAST_CF"
+                  AGENT_N PPT < "$FAST_CF"
 fi
 
 AGENT_LINE=""
@@ -462,14 +466,20 @@ elif [ "$EXEC_STATUS" = "complete" ]; then
   EXEC_STATUS=""
   L1="${C}${B}[VBW]${X}"
   [ "$TT" -gt 0 ] 2>/dev/null && L1="$L1 Phase ${PH}/${TT}" || L1="$L1 Phase ${PH:-?}"
-  [ "$PT" -gt 0 ] 2>/dev/null && L1="$L1 ${D}│${X} Plans: ${PD}/${PT} (${PPD} this phase)"
+  if [ "$PT" -gt 0 ] 2>/dev/null; then
+    L1="$L1 ${D}│${X} Plans: ${PD}/${PT}"
+    [ "${TT:-0}" -gt 1 ] 2>/dev/null && [ "${PPT:-0}" -gt 0 ] 2>/dev/null && L1="$L1 (${PPD}/${PPT} this phase)"
+  fi
   L1="$L1 ${D}│${X} Effort: $EF ${D}│${X} Model: $MP"
   if [ "$QA" = "pass" ]; then L1="$L1 ${D}│${X} ${G}QA: pass${X}"
   else L1="$L1 ${D}│${X} ${D}QA: --${X}"; fi
 elif [ -d ".vbw-planning" ]; then
   L1="${C}${B}[VBW]${X}"
   [ "$TT" -gt 0 ] 2>/dev/null && L1="$L1 Phase ${PH}/${TT}" || L1="$L1 Phase ${PH:-?}"
-  [ "$PT" -gt 0 ] 2>/dev/null && L1="$L1 ${D}│${X} Plans: ${PD}/${PT} (${PPD} this phase)"
+  if [ "$PT" -gt 0 ] 2>/dev/null; then
+    L1="$L1 ${D}│${X} Plans: ${PD}/${PT}"
+    [ "${TT:-0}" -gt 1 ] 2>/dev/null && [ "${PPT:-0}" -gt 0 ] 2>/dev/null && L1="$L1 (${PPD}/${PPT} this phase)"
+  fi
   L1="$L1 ${D}│${X} Effort: $EF ${D}│${X} Model: $MP"
   if [ "$QA" = "pass" ]; then
     L1="$L1 ${D}│${X} ${G}QA: pass${X}"
