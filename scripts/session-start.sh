@@ -923,7 +923,7 @@ if [ -f "$_RTK_DETECT" ]; then
   fi
   if [ "${RTK_FULLY_ACTIVE:-false}" = true ]; then
     if [ "${RTK_GAIN_HAS_DATA:-false}" = true ]; then
-      CTX="$CTX RTK: active, ${RTK_GAIN_PCT}% avg savings."
+      CTX="$CTX RTK: active, ${RTK_GAIN_PCT:-0}% avg savings."
     else
       CTX="$CTX RTK: active (no data yet)."
     fi
