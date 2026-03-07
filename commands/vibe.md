@@ -358,7 +358,7 @@ This mode handles the case where a milestone was archived before UAT issues were
      SCOUT_MAX_TURNS=$(bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-agent-max-turns.sh scout .vbw-planning/config.json "{effort}")
      ```
    Pass `subagent_type: "vbw:vbw-scout"` and `model: "${SCOUT_MODEL}"` to the Task tool. If `SCOUT_MAX_TURNS` is non-empty, also pass `maxTurns: ${SCOUT_MAX_TURNS}`. If `SCOUT_MAX_TURNS` is empty, do NOT include maxTurns (omitting it = unlimited). Before composing the Scout task description, select skills from installed skills visible in your system context (use both skill names and descriptions). The Scout prompt MUST start with `<skill_activation>{For each selected skill: "Call Skill({skill-name})"} Do not skip any listed skill.</skill_activation>`. Use direct imperative language only.
-   - **If exists (per-plan or legacy):** Include it in Lead's context for incremental refresh. Lead may update the per-plan RESEARCH.md if new information emerges.
+   - **If exists (per-plan or legacy):** Record the RESEARCH.md path (per-plan `{phase}-{MM}-RESEARCH.md` or legacy `{phase}-RESEARCH.md`) for inclusion in the Lead prompt. The Lead prompt MUST include the directive: `Read {research-path} for full research findings before planning.` Do NOT inline a summary of the research as a substitute — the Lead must read the file itself to get the complete, unabridged findings. Lead may update the per-plan RESEARCH.md if new information emerges.
    - **On failure:** Log warning, continue planning without research. Do not block.
    - If effort=turbo: skip entirely.
 4. **Context compilation:** If `config_context_compiler=true`, run `bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} lead {phases_dir}`. Include `.context-lead.md` in Lead agent context if produced.
@@ -399,6 +399,7 @@ This mode handles the case where a milestone was archived before UAT issues were
    - Before composing the Lead task description, select skills from installed skills visible in your system context (use both skill names and descriptions). The Lead prompt MUST start with `<skill_activation>{For each selected skill: "Call Skill({skill-name})"} Do not skip any listed skill.</skill_activation>`. Use direct imperative language only.
    - Spawn vbw-lead as subagent via Task tool with compiled context (or full file list as fallback).
    - **CRITICAL:** Set `subagent_type: "vbw:vbw-lead"` and `model: "${LEAD_MODEL}"` in the Task tool invocation. If `LEAD_MAX_TURNS` is non-empty, also pass `maxTurns: ${LEAD_MAX_TURNS}`. If `LEAD_MAX_TURNS` is empty, do NOT include maxTurns (omitting it = unlimited).
+   - **CRITICAL:** If a RESEARCH.md was found or created in step 3, include in the Lead prompt: `Read {research-path} for full research findings before planning.` where `{research-path}` is the per-plan or legacy path from step 3. The Lead must read the file itself — do NOT substitute an inlined summary.
    - **CRITICAL:** Include in the Lead prompt: "Plans will be executed by a team of parallel Dev agents — one agent per plan. Maximize wave 1 plans (no deps) so agents start simultaneously. Ensure same-wave plans modify disjoint file sets to avoid merge conflicts."
    - Display `◆ Spawning Lead agent...` -> `✓ Lead agent complete`.
 7. **Normalize plan filenames:**
