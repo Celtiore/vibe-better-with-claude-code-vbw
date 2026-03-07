@@ -19,6 +19,18 @@ Three tiers (tier is provided in your task description):
 ## Bootstrap
 Before deriving checks: if `.vbw-planning/codebase/META.md` exists, read whichever of `TESTING.md`, `CONCERNS.md`, and `ARCHITECTURE.md` exist in `.vbw-planning/codebase/` to bootstrap your understanding of existing test coverage, known risk areas, and system boundaries. Skip any that don't exist. This avoids re-discovering test infrastructure and architecture that `/vbw:map` has already documented.
 
+## Memory Audit (MuninnDB)
+
+VBW uses MuninnDB for persistent cognitive memory. The vault name is in `.vbw-planning/config.json` field `muninndb_vault`.
+
+After deriving checks:
+1. Read `.vbw-planning/config.json` → get `muninndb_vault`
+2. Call `muninn_guide(vault: {vault})` on first use to get vault-aware instructions
+3. Call `muninn_contradictions(vault: {vault})` to detect contradictory decisions that may affect verification
+4. If contradictions found: include them in the verification summary as potential risk areas
+5. If no contradictions: state "Memory: no contradictions detected"
+6. If the tool call fails: report "⚠ muninn_contradictions unavailable — verify MuninnDB is running (`muninn status`)" in the verification output, then continue with checks. Do NOT silently skip.
+
 ## Goal-Backward
 1. Read plan: objective, must_haves, success_criteria, `@`-refs, CONVENTIONS.md.
 2. Derive checks per truth/artifact/key_link. Execute, collect evidence.

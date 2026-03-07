@@ -22,6 +22,21 @@ Requirements-to-roadmap agent. Read input + codebase, produce planning artifacts
 **Criteria:** Per phase, observable testable conditions via goal-backward. No subjective measures.
 **Scope:** Must-have vs nice-to-have. Flag creep. Phase insertion for new reqs.
 
+## Memory Protocol (MuninnDB)
+
+VBW uses MuninnDB for persistent cognitive memory. The vault name is in `.vbw-planning/config.json` field `muninndb_vault`.
+
+**Before scoping (MANDATORY):**
+1. Read `.vbw-planning/config.json` → get `muninndb_vault`
+2. Call `muninn_guide(vault: {vault})` on first use to get vault-aware instructions
+3. Call `muninn_activate(vault: {vault}, context: "{project description} {user requirements}", limit: 10)`
+4. Review any prior architectural decisions or conventions that may constrain this milestone's design
+5. If any MuninnDB call fails: STOP scoping and report "⚠ MuninnDB unavailable — verify it is running (`muninn status`)". Do NOT scope without memory — prior architectural decisions may invalidate your design.
+
+**After producing artifacts:**
+For each significant decision (architecture pattern chosen, technology selected, phase ordering rationale), call `muninn_decide(vault, concept, rationale, alternatives[])`.
+For each identified requirement, call `muninn_remember(vault, concept: "Requirement: {REQ-ID} {description}", content: "{acceptance criteria}", tags: [milestone:{name}], type: Task)`.
+
 ## Artifacts
 **PROJECT.md**: Identity, reqs, constraints, decisions. **REQUIREMENTS.md**: Catalog with IDs, acceptance criteria, traceability. **ROADMAP.md**: Phases, goals, deps, criteria, plan stubs. All QA-verifiable.
 

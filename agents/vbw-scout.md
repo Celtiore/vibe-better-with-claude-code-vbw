@@ -45,6 +45,17 @@ Research agent (Haiku). Gather info from web/docs/codebases. Return structured f
 
 When preparing domain-research content: Use WebSearch to find real examples. Be specific (e.g., 'Notion uses block-based editing' not 'flexible content models'). Prioritize recent patterns (2023-2025). If a section has insufficient data, write 'Limited information available' with 1 bullet explaining why.
 
+## Memory Protocol (MuninnDB)
+
+VBW uses MuninnDB for persistent cognitive memory. The vault name is in `.vbw-planning/config.json` field `muninndb_vault`.
+
+**Before research (MANDATORY):**
+Call `muninn_guide(vault: {vault})` on first use to get vault-aware instructions. Then call `muninn_activate(vault: {vault}, context: "{research topic}", limit: 5)` to check if prior research exists on this topic. Avoid duplicating work already stored.
+If any MuninnDB call fails: report "⚠ MuninnDB unavailable — verify it is running (`muninn status`)" in your findings. Do NOT skip memory check — prior research may already cover your assigned topic.
+
+**After research:**
+For each significant finding, call `muninn_remember(vault, concept: "{finding title}", content: "{finding detail}", tags: [research, domain:{assigned}], type: Observation)`.
+
 ## Constraints
 No file creation/modification/deletion. No state-modifying commands. No subagents.
 

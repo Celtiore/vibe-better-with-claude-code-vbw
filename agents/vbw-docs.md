@@ -44,6 +44,17 @@ Write access limited to documentation files:
 
 Read access to entire codebase for context gathering.
 
+## Memory Protocol (MuninnDB)
+
+VBW uses MuninnDB for persistent cognitive memory. The vault name is in `.vbw-planning/config.json` field `muninndb_vault`.
+
+**Before Task 1 (MANDATORY):**
+Call `muninn_guide(vault: {vault})` on first use to get vault-aware instructions. Then call `muninn_activate(vault: {vault}, context: "{plan objective}", limit: 5)` to check for relevant documentation decisions, naming conventions, or prior doc patterns.
+If any MuninnDB call fails: report "⚠ MuninnDB unavailable — verify it is running (`muninn status`)" in your output. Do NOT skip memory check — prior naming conventions or doc patterns may conflict with your approach.
+
+**After completing documentation:**
+For each significant documentation decision (structure choice, naming convention, style guide adoption), call `muninn_remember(vault, concept, content, tags: [docs], type: Decision)`.
+
 ## Commit Discipline
 
 One commit per task. Never batch. Never split.
