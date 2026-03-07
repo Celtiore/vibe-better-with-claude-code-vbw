@@ -208,6 +208,21 @@ if ! cache_fresh "$FAST_CF" 5; then
         (.plans | length),
         ([.plans[] | select(.status == "running")][0].title // "")
       ] | join("|")' .vbw-planning/.execution-state.json 2>/dev/null)"
+    # Reconcile EXEC_DONE against actual SUMMARY.md files on disk.
+    # After a reset/undo, .execution-state.json retains stale "complete"
+    # statuses but SUMMARY.md files may no longer exist.
+    if [ "$EXEC_STATUS" = "running" ] && [ "${EXEC_DONE:-0}" -gt 0 ] 2>/dev/null; then
+      _exec_phase=$(jq -r '.phase // ""' .vbw-planning/.execution-state.json 2>/dev/null)
+      if [ -n "$_exec_phase" ]; then
+        _exec_pdir=$(find .vbw-planning/phases -maxdepth 1 -type d -name "$(printf '%02d' "$_exec_phase")-*" 2>/dev/null | head -1)
+        if [ -n "$_exec_pdir" ] && [ -d "$_exec_pdir" ]; then
+          _actual_done=$(count_complete_summaries "$_exec_pdir")
+          if [ "${_actual_done:-0}" -lt "${EXEC_DONE:-0}" ] 2>/dev/null; then
+            EXEC_DONE="$_actual_done"
+          fi
+        fi
+      fi
+    fi
   fi
 
   AGENT_DATA="0"

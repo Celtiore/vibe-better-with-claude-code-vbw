@@ -652,6 +652,36 @@ if [ "$_auto_recovered" = false ] && [ -f "$EXEC_STATE" ]; then
           complete|completed) SUMMARY_COUNT=$((SUMMARY_COUNT + 1)) ;;
         esac
       done
+
+      # Reconcile individual plan statuses against actual SUMMARY.md files.
+      # After a reset/undo, .execution-state.json may have stale "complete"
+      # entries for plans whose SUMMARY.md no longer exists on disk.
+      _json_done=$(jq -r '[.plans[]? | select(.status == "complete")] | length' "$EXEC_STATE" 2>/dev/null || echo 0)
+      if [ "${_json_done:-0}" -gt "${SUMMARY_COUNT:-0}" ] 2>/dev/null; then
+        # Build JSON array of plan IDs that actually have completed SUMMARY.md
+        _completed_json="[]"
+        for _sf in "$PHASE_DIR"/*-SUMMARY.md; do
+          [ -f "$_sf" ] || continue
+          _sf_st=$(sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$_sf" 2>/dev/null | head -1 | tr -d '[:space:]')
+          case "$_sf_st" in
+            complete|completed)
+              _sf_id=$(basename "$_sf" | sed 's/-SUMMARY\.md$//')
+              _completed_json=$(echo "$_completed_json" | jq --arg id "$_sf_id" '. + [$id]')
+              ;;
+          esac
+        done
+        # Reset plans to "pending" if their SUMMARY.md is missing on disk
+        _reconcile_tmp="${EXEC_STATE}.reconcile.$$"
+        jq --argjson completed "$_completed_json" '
+          .plans |= map(
+            if .status == "complete" and (.id as $pid | $completed | any(. == $pid) | not) then
+              .status = "pending"
+            else .
+            end
+          )
+        ' "$EXEC_STATE" > "$_reconcile_tmp" 2>/dev/null && mv "$_reconcile_tmp" "$EXEC_STATE" 2>/dev/null || rm -f "$_reconcile_tmp" 2>/dev/null
+      fi
+
       if [ "${SUMMARY_COUNT:-0}" -ge "${PLAN_COUNT:-1}" ] && [ "${PLAN_COUNT:-0}" -gt 0 ]; then
         # All plans have SUMMARY.md — build finished after crash
         _exec_tmp="${EXEC_STATE}.tmp.$$"

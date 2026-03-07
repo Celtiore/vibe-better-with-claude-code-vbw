@@ -53,6 +53,10 @@ echo "Running summary-utils contract checks..."
 bash "$ROOT/testing/verify-summary-utils-contract.sh"
 
 echo ""
+echo "Running execution-state reconciliation checks..."
+bash "$ROOT/testing/verify-exec-state-reconciliation.sh"
+
+echo ""
 if command -v bats &>/dev/null && ls "$ROOT/tests/"*.bats &>/dev/null; then
   echo "Running bats test suites..."
   bats_pass=0
