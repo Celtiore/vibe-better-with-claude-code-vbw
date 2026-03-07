@@ -375,10 +375,11 @@ else
   fail "session-start JQ counts partial plans as done"
 fi
 
-if grep -q 'select(.status == "complete" or .status == "partial")' "$ROOT/scripts/recover-state.sh"; then
-  pass "recover-state JQ counts partial plans as done"
+# recover-state COMPLETE count must use strict-complete only (partial is progress, not done)
+if grep 'COMPLETE=.*jq.*select.*status.*complete' "$ROOT/scripts/recover-state.sh" | head -1 | grep -q 'partial'; then
+  fail "recover-state COMPLETE JQ excludes partial (strict complete)"
 else
-  fail "recover-state JQ counts partial plans as done"
+  pass "recover-state COMPLETE JQ excludes partial (strict complete)"
 fi
 
 # --- Structural: count_done_summaries exists in summary-utils.sh ---
@@ -388,11 +389,11 @@ else
   fail "summary-utils.sh exports count_done_summaries function"
 fi
 
-# --- Structural: session-start accepts partial in reconciliation ---
-if grep -q 'complete|completed|partial.*SUMMARY_COUNT' "$ROOT/scripts/session-start.sh"; then
-  pass "session-start reconciliation accepts partial status"
+# --- Structural: session-start accepts partial in SUMMARY_COUNT (for reconciliation comparison) ---
+if grep -q 'partial) SUMMARY_COUNT' "$ROOT/scripts/session-start.sh"; then
+  pass "session-start SUMMARY_COUNT includes partial for reconciliation"
 else
-  fail "session-start reconciliation accepts partial status"
+  fail "session-start SUMMARY_COUNT includes partial for reconciliation"
 fi
 
 # --- Functional: literal "partial" in execution-state counted as done ---
@@ -513,6 +514,96 @@ if [ "$_single_ph" = "1" ] && [ -z "$_single_tt" ]; then
   pass "phase parsing: single phase (no 'of') → ph=1, tt=empty"
 else
   fail "phase parsing: single phase (no 'of') → ph=1, tt=empty (got ph='$_single_ph' tt='$_single_tt')"
+fi
+
+# --- Partial-recovery: build must NOT mark complete when plans are partial ---
+echo ""
+echo "--- Partial-recovery gate tests ---"
+
+# Test: session-start uses STRICT_COMPLETE (not SUMMARY_COUNT) for build completion gate
+if grep -q 'STRICT_COMPLETE.*-ge.*PLAN_COUNT' "$ROOT/scripts/session-start.sh"; then
+  pass "session-start build gate uses STRICT_COMPLETE (excludes partial)"
+else
+  fail "session-start build gate uses STRICT_COMPLETE (excludes partial)"
+fi
+
+# Test: session-start counts STRICT_COMPLETE separately from SUMMARY_COUNT
+if grep -q 'STRICT_COMPLETE=0' "$ROOT/scripts/session-start.sh" && \
+   grep -q 'SUMMARY_COUNT=0' "$ROOT/scripts/session-start.sh"; then
+  pass "session-start tracks both SUMMARY_COUNT and STRICT_COMPLETE"
+else
+  fail "session-start tracks both SUMMARY_COUNT and STRICT_COMPLETE"
+fi
+
+# Test: session-start increments STRICT_COMPLETE only for complete|completed, not partial
+if grep -E 'complete\|completed\).*STRICT_COMPLETE' "$ROOT/scripts/session-start.sh" | grep -qv 'partial'; then
+  pass "session-start STRICT_COMPLETE excludes partial status"
+else
+  fail "session-start STRICT_COMPLETE excludes partial status"
+fi
+
+# Test: recover-state preserves partial as partial (no flattening to complete)
+if grep -q 'partial) PLAN_STATUS="partial"' "$ROOT/scripts/recover-state.sh"; then
+  pass "recover-state preserves partial as partial (no flattening)"
+else
+  fail "recover-state preserves partial as partial (no flattening)"
+fi
+
+# Test: recover-state COMPLETE count uses strict-complete JQ (excludes partial)
+_rstate_complete_jq=$(grep 'COMPLETE=.*jq.*select.*status.*complete' "$ROOT/scripts/recover-state.sh" | head -1)
+if echo "$_rstate_complete_jq" | grep -q 'partial'; then
+  fail "recover-state COMPLETE count should exclude partial from JQ query"
+else
+  pass "recover-state COMPLETE count excludes partial from JQ query"
+fi
+
+# Functional test: recover-state with partial SUMMARY → partial preserved in JSON
+TMPDIR_BASE="${TMPDIR_BASE:-$(mktemp -d)}"
+_prt="$TMPDIR_BASE/partial-recovery-test"
+mkdir -p "$_prt/phases/01-test"
+cat > "$_prt/phases/01-test/plan-a-PLAN.md" <<'PLAN'
+---
+title: "Test Plan A"
+wave: 1
+---
+PLAN
+cat > "$_prt/phases/01-test/plan-a-SUMMARY.md" <<'SUM'
+---
+status: partial
+---
+Partially done.
+SUM
+_prt_json=$(
+  cd "$ROOT"
+  PHASE_DIR="$_prt/phases/01-test" EVENTS_FILE="/dev/null" PHASE=1 \
+    bash -c '
+      source scripts/summary-utils.sh
+      PLANS_JSON="[]"
+      for plan_file in "'"$_prt"'/phases/01-test/"*-PLAN.md; do
+        [ ! -f "$plan_file" ] && continue
+        PLAN_ID=$(basename "$plan_file" | sed "s/-PLAN\.md$//")
+        SUMMARY_FILE="'"$_prt"'/phases/01-test/${PLAN_ID}-SUMMARY.md"
+        if [ -f "$SUMMARY_FILE" ]; then
+          PLAN_STATUS=$(sed -n "/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/[\"'"'"']//g; p; }; }" "$SUMMARY_FILE" 2>/dev/null | head -1 | tr -d "[:space:]")
+          case "$PLAN_STATUS" in
+            complete|completed) PLAN_STATUS="complete" ;;
+            partial) PLAN_STATUS="partial" ;;
+            failed) PLAN_STATUS="failed" ;;
+            *) PLAN_STATUS="pending" ;;
+          esac
+        else
+          PLAN_STATUS="pending"
+        fi
+        PLANS_JSON=$(echo "$PLANS_JSON" | jq --arg id "$PLAN_ID" --arg s "$PLAN_STATUS" ". + [{\"id\":\$id,\"status\":\$s}]" 2>/dev/null)
+      done
+      echo "$PLANS_JSON"
+    '
+)
+_prt_status=$(echo "$_prt_json" | jq -r '.[0].status' 2>/dev/null)
+if [ "$_prt_status" = "partial" ]; then
+  pass "functional: partial SUMMARY → plan status preserved as 'partial'"
+else
+  fail "functional: partial SUMMARY → plan status preserved as 'partial' (got '$_prt_status')"
 fi
 
 echo ""

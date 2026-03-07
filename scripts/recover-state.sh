@@ -93,7 +93,8 @@ for plan_file in "$PHASE_DIR"/*-PLAN.md; do
     PLAN_STATUS=$(extract_summary_status "$SUMMARY_FILE")
     # Normalize to execution-state compatible values
     case "$PLAN_STATUS" in
-      complete|completed|partial) PLAN_STATUS="complete" ;;
+      complete|completed) PLAN_STATUS="complete" ;;
+      partial) PLAN_STATUS="partial" ;;
       failed) PLAN_STATUS="failed" ;;
       *) PLAN_STATUS="pending" ;;
     esac
@@ -127,7 +128,7 @@ done
 
 # Determine overall status
 TOTAL=$(echo "$PLANS_JSON" | jq 'length' 2>/dev/null) || TOTAL=0
-COMPLETE=$(echo "$PLANS_JSON" | jq '[.[] | select(.status == "complete" or .status == "partial")] | length' 2>/dev/null) || COMPLETE=0
+COMPLETE=$(echo "$PLANS_JSON" | jq '[.[] | select(.status == "complete")] | length' 2>/dev/null) || COMPLETE=0
 FAILED=$(echo "$PLANS_JSON" | jq '[.[] | select(.status == "failed")] | length' 2>/dev/null) || FAILED=0
 
 if [ "$COMPLETE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then

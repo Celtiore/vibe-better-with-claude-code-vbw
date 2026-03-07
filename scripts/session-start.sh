@@ -646,11 +646,13 @@ if [ "$_auto_recovered" = false ] && [ -f "$EXEC_STATE" ]; then
       # zsh compat: use ls dir | grep to avoid bare glob expansion errors
       # shellcheck disable=SC2010
       SUMMARY_COUNT=0
+      STRICT_COMPLETE=0
       for _ss_sf in "$PHASE_DIR"/*-SUMMARY.md; do
         [ -f "$_ss_sf" ] || continue
         _ss_st=$(sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$_ss_sf" 2>/dev/null | head -1 | tr -d '[:space:]')
         case "$_ss_st" in
-          complete|completed|partial) SUMMARY_COUNT=$((SUMMARY_COUNT + 1)) ;;
+          complete|completed) SUMMARY_COUNT=$((SUMMARY_COUNT + 1)); STRICT_COMPLETE=$((STRICT_COMPLETE + 1)) ;;
+          partial) SUMMARY_COUNT=$((SUMMARY_COUNT + 1)) ;;
         esac
       done
 
@@ -683,8 +685,8 @@ if [ "$_auto_recovered" = false ] && [ -f "$EXEC_STATE" ]; then
         ' "$EXEC_STATE" > "$_reconcile_tmp" 2>/dev/null && mv "$_reconcile_tmp" "$EXEC_STATE" 2>/dev/null || rm -f "$_reconcile_tmp" 2>/dev/null
       fi
 
-      if [ "${SUMMARY_COUNT:-0}" -ge "${PLAN_COUNT:-1}" ] && [ "${PLAN_COUNT:-0}" -gt 0 ]; then
-        # All plans have SUMMARY.md — build finished after crash
+      if [ "${STRICT_COMPLETE:-0}" -ge "${PLAN_COUNT:-1}" ] && [ "${PLAN_COUNT:-0}" -gt 0 ]; then
+        # All plans are strictly complete — build finished after crash
         _exec_tmp="${EXEC_STATE}.tmp.$$"
         if jq '.status = "complete"' "$EXEC_STATE" > "$_exec_tmp" 2>/dev/null && mv "$_exec_tmp" "$EXEC_STATE" 2>/dev/null; then
           :
