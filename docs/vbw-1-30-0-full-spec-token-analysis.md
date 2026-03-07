@@ -423,6 +423,85 @@ Shell-only total         21,643     24,935     +3,292    ALL zero model tokens
 
 ---
 
+## Addendum: RTK (Rust Token Killer) Integration
+
+**Added in:** `feat/rtk-integration` branch (post-v1.30.0)
+
+### What RTK Does
+
+[RTK](https://github.com/rtk-ai/rtk) is a CLI proxy that intercepts tool outputs (git, grep, file reads) and compresses them before they enter the model context. It operates via a Claude Code hook (`rtk-rewrite.sh`) that rewrites commands transparently — zero token overhead, zero configuration after install.
+
+### Where VBW and RTK Optimize Different Layers
+
+This analysis measures **coordination overhead** — the tokens VBW's agents, commands, references, and protocols add to each request and phase. RTK operates on a different layer entirely: **tool output tokens**.
+
+```
+TOKEN PIPELINE
+──────────────────────────────────────────────────────────────────────
+Layer 1: Coordination (VBW optimizes this)
+  - Active commands loaded per request         → 720 lines (~10,800 tokens)
+  - Agent definitions at spawn                 → 491 lines (~7,365 tokens)
+  - References loaded during execution         → ~523 lines (~7,845 tokens)
+  - Handoff schemas                            → 315 lines (~4,725 tokens)
+  VBW reduction: 69-73% vs stock teams
+
+Layer 2: Tool outputs (RTK compresses this)
+  - git status, git diff, git log              → variable, often 1,000-50,000 tokens
+  - grep/rg results                            → variable, often 500-10,000 tokens
+  - file reads (cat, head, Read tool)          → variable, depends on file size
+  - bash command output                        → variable
+  RTK compression: 60-90% on supported commands
+
+Layer 3: User prompts + model reasoning        → not optimizable by either tool
+──────────────────────────────────────────────────────────────────────
+```
+
+### Combined Impact Estimate
+
+For a typical phase with 80 user messages, tool outputs dominate the context window. Coordination tokens (Layer 1) are a fixed cost per request; tool output tokens (Layer 2) scale with codebase size and agent activity.
+
+```
+                                Without RTK          With RTK (est. 70% avg compression)
+──────────────────────────────────────────────────────────────────────────────────────────
+Per-request coordination         10,800 tokens        10,800 tokens (unchanged)
+Per-request tool outputs         ~5,000-20,000        ~1,500-6,000 tokens
+                                ──────────            ──────────
+Per-request total                ~15,800-30,800       ~12,300-16,800
+
+Over 80 messages:
+  Coordination (VBW)             864,000              864,000
+  Tool outputs                   400,000-1,600,000    120,000-480,000
+                                ──────────            ──────────
+  Estimated total                1,264,000-2,464,000  984,000-1,344,000
+  Savings from RTK               —                    280,000-1,120,000 tokens/phase
+```
+
+**Key insight:** VBW's coordination savings are fixed and predictable (86% reduction, measured). RTK's tool output savings are variable and depend on command mix and codebase size. The two reductions are independent and multiplicative — neither invalidates the other.
+
+### VBW Integration (Zero Model Token Cost)
+
+RTK integration in VBW is entirely shell-based:
+
+| Component | Lines | Model Tokens | Purpose |
+|---|---|---|---|
+| `rtk-detect.sh` | 57 | 0 (shell) | Detection helper, exports RTK_* variables |
+| `rtk-setup.sh` | 312 | 0 (shell) | Interactive installer (binary + hook) |
+| `session-start.sh` additions | 54 | 0 (shell) | Cached RTK detection at session start |
+| `metrics-report.sh` RTK section | 33 | 0 (shell) | RTK compression as tracked metric |
+| `commands/status.md` additions | 19 | 0 (lazy) | Token Economy display in statusline |
+| `commands/doctor.md` additions | 8 | 0 (lazy) | Check 16: RTK validation |
+
+Total: +483 lines, **zero per-request model tokens**. Status and doctor additions are lazy-loaded — only when those commands are invoked.
+
+### Version Progression Update
+
+| Milestone | Version | Optimization Type | Key Metric |
+|---|---|---|---|
+| ... (prior entries unchanged) | | | |
+| **RTK Integration** | **post-v1.30.0** | **Tool output compression via CLI proxy** | **60-90% tool output reduction, zero per-request cost, complementary to VBW coordination savings** |
+
+---
+
 ## Methodology Notes
 
 Same methodology as prior analyses: ~15 tokens/line for markdown. Shell scripts, JSON config, hooks, and tests are 0 model tokens. Compiled context output: 10-12 tokens/line.

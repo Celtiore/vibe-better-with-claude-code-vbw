@@ -21,6 +21,8 @@
 
 Every new capability is shell-only — 85 scripts run as bash subprocesses at zero model token cost. The codebase grew 42% since v1.21.30 while per-request overhead grew just 12% (still 7% below v1.20.0). The Worktree Isolation milestone (41 commits, 6 phases) shipped at near-zero model cost — only +16 reference lines loaded lazily. Dead code removal actually shrank the codebase by 1,665 lines vs the CC Alignment snapshot. 845 bats tests validate the stack.
 
+**With [RTK](https://github.com/rtk-ai/rtk):** VBW optimizes *coordination* tokens (prompts, agent context, handoffs). RTK compresses *tool output* tokens (git diff, grep results, file reads). Combined, the two layers stack: VBW's 86% coordination reduction + RTK's 60-90% tool output compression = savings across the full token pipeline. RTK is optional — VBW detects it automatically and reports compression metrics in `/vbw:status`.
+
 **Analysis reports:** [v1.30.0](docs/vbw-1-30-0-full-spec-token-analysis.md) | [v1.21.30](docs/vbw-1-21-30-full-spec-token-analysis.md) | [v1.20.0](docs/vbw-1-20-0-full-spec-token-analysis.md) | [v1.10.7](docs/vbw-1-10-7-context-compiler-token-analysis.md) | [v1.10.2](docs/vbw-1-10-2-vs-stock-agent-teams-token-analysis.md) | [v1.0.99](docs/vbw-1-0-99-vs-stock-teams-token-analysis.md)
 
 | Category | Stock Agent Teams | VBW | Saving |
@@ -130,6 +132,20 @@ VBW integrates with [Skills.sh](https://skills.sh), the open-source skill regist
 - **Automatic stack detection.** `/vbw:init` scans your project during setup, identifies your tech stack (Next.js, Django, Prisma, Tailwind, etc.), and recommends relevant skills from a curated mapping.
 
 - **On-demand skill discovery.** Run `/vbw:skills` anytime to detect your stack, browse curated suggestions, search the Skills.sh registry, and install skills in one step. Use `--search <query>` for direct registry lookups.
+
+### RTK integration (optional)
+
+VBW integrates with [RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk), a CLI proxy that compresses tool outputs before they reach the model context:
+
+- **Automatic detection.** VBW detects RTK at session start and caches its status. No configuration needed — if RTK is installed and its Claude Code hook is active, VBW picks it up.
+
+- **Compression analytics.** `/vbw:status` shows a Token Economy section with RTK's average savings percentage and total tokens saved. `/vbw:doctor` validates the RTK setup (binary + hook). The metrics report includes RTK compression as a tracked metric.
+
+- **Complementary savings.** VBW and RTK operate on different token layers. VBW reduces coordination overhead (agent prompts, context compilation, handoff schemas — 86% reduction vs stock teams). RTK compresses tool output (git status, grep results, file reads — 60-90% compression). The two stack without interference.
+
+- **Zero per-request cost.** RTK integration is entirely shell-based: `rtk-detect.sh` (detection), `rtk-setup.sh` (installation helper), cached gains in `/tmp`. No model-visible tokens added.
+
+Install RTK: `bash scripts/rtk-setup.sh` or follow the [RTK installation guide](https://github.com/rtk-ai/rtk). Run `bash scripts/rtk-setup.sh --check` to verify status.
 
 ### Real-time statusline that knows more about your project than you do
 
