@@ -786,9 +786,10 @@ if [ -d "$PLANNING_DIR" ] && [ -f "$SCRIPT_DIR/clean-stale-teams.sh" ]; then
 fi
 
 # --- Stale .agent-last-words Cleanup ---
-# Remove crash recovery files older than 7 days to prevent accumulation
+# Remove crash recovery files older than 7 days to prevent accumulation.
+# BSD find -mtime +N (no units) requires age >= N+2 days, so +6 matches >= 8 days.
 if [ -d "$PLANNING_DIR/.agent-last-words" ]; then
-  find "$PLANNING_DIR/.agent-last-words" -name "*.txt" -type f -mtime +7 -delete 2>/dev/null || true
+  find "$PLANNING_DIR/.agent-last-words" -name "*.txt" -type f -mtime +6 -delete 2>/dev/null || true
 fi
 
 # --- tmux Detach Watchdog ---
