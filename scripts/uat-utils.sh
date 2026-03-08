@@ -125,3 +125,22 @@ count_uat_rounds() {
 
   printf '%d' "$max_round"
 }
+
+# extract_round_issue_ids — Extract test IDs that had "Result: issue" in a
+# UAT round file. Prints one ID per line. Works on both archived round files
+# and active UAT files.
+extract_round_issue_ids() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  awk '
+    /^### [PD][0-9]/ {
+      id = $2
+      sub(/:$/, "", id)
+      has_issue = 0
+      next
+    }
+    /^- \*\*Result:\*\*[[:space:]]*issue/ {
+      print id
+    }
+  ' "$file"
+}

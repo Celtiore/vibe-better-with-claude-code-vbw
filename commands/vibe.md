@@ -272,28 +272,40 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
 **Steps:**
 1. Resolve target phase from pre-computed state (`next_phase`, `next_phase_slug`) when `next_phase_state=needs_uat_remediation`. Set `PHASE_DIR` to the resolved phase directory path.
    **Milestone path guard (NON-NEGOTIABLE):** If `PHASE_DIR` contains `.vbw-planning/milestones/` (e.g., `.vbw-planning/milestones/*/phases/`), STOP — this is an archived milestone. UAT Remediation operates only on active phases in `.vbw-planning/phases/`. Display: "⚠ UAT issues found in archived milestone, not active phases. Routing to Milestone UAT Recovery." Then route to Milestone UAT Recovery mode instead.
-2. **Use pre-computed UAT issues** from the "UAT issues (remediation only)" section above. The `extract-uat-issues.sh` output provides compact `ID|SEVERITY|DESCRIPTION` lines — no need to read the full UAT file. If the pre-computed section shows `uat_extract_error=true`, fall back to reading `{phase}-UAT.md` directly.
-3. Treat the UAT issues as source-of-truth scope. Do NOT ask the user to restate issues already recorded in UAT.
-4. **Read or initialize remediation stage:**
+2. **Use pre-computed UAT issues** from the "UAT issues (remediation only)" section above. The `extract-uat-issues.sh` output provides compact `ID|SEVERITY|DESCRIPTION|FAILED_IN_ROUNDS` lines — no need to read the full UAT file. The header line includes `uat_round={N}` indicating the current UAT round number. If the pre-computed section shows `uat_extract_error=true`, fall back to reading `{phase}-UAT.md` directly.
+3. **Recurrence analysis and priority ranking:**
+   Parse the 4th pipe field (`FAILED_IN_ROUNDS`) from each issue line. Compute `failure_count` = number of comma-separated values in `FAILED_IN_ROUNDS`. Parse `uat_round` from the header line.
+
+   **Phase-level escalation:** When `uat_round >= 3`, force ALL issues through `research → plan → execute` regardless of severity (always pass `"major"` to `uat-remediation-state.sh init`). When `uat_round < 3` and no test has `failure_count >= 3`: existing severity-based routing is unchanged.
+
+   **Per-test priority ranking:** Rank issues by `failure_count` descending — tests that failed the most rounds get investigated and fixed FIRST. When presenting issues to Scout (research stage) and Lead (plan stage), reorder by `failure_count` descending and annotate:
+   - `⚠ RECURRING (failed N/M rounds): ID|SEVERITY|DESCRIPTION` for tests with `failure_count >= 2`
+   - `ID|SEVERITY|DESCRIPTION` (no annotation) for first-time failures
+
+   **Scout research prompt for recurring issues** MUST include: *"{ID} has failed in {N} of {M} remediation rounds (rounds: {FAILED_IN_ROUNDS}). Prior fixes have not resolved this. Investigate WHY previous fixes failed before proposing a new approach — examine the actual data flow, not just symptoms."*
+
+   **Lead planning prompt for recurring issues** MUST include: *"Prioritize recurring failures. {ID} has resisted {N} fix attempts — allocate more plans/effort to this issue than to first-time failures."*
+4. Treat the UAT issues as source-of-truth scope. Do NOT ask the user to restate issues already recorded in UAT.
+5. **Read or initialize remediation stage:**
    ```bash
    STAGE=$(bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh get "$PHASE_DIR")
    ```
    - If `STAGE=none`: initialize based on severity. **Run directly (do NOT capture with `$()`)** — the init output contains both the stage and the pre-seeded CONTEXT.md content:
      ```bash
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh init "$PHASE_DIR" "major"
-     # or "minor" when uat_issues_major_or_higher=false
+     # or "minor" when uat_issues_major_or_higher=false AND no phase-level escalation
      ```
      The first line of output is the stage (`research` or `fix`). After the `---CONTEXT---` separator, the full pre-seeded CONTEXT.md content follows — **use this directly as your remediation context. Do NOT separately read UAT.md or CONTEXT.md files.**
    - If `STAGE=done`: UAT remediation already completed for this phase. Display "Remediation already completed. Run `/vbw:verify --resume` to re-test." STOP.
    - Otherwise: resume at the persisted stage (handles compaction recovery).
-5. **Execute the current stage** based on `STAGE`:
-   **File read prohibition:** Do NOT read `{phase}-UAT.md` or `{phase}-CONTEXT.md` — all UAT data is already available from step 2 (pre-computed issue lines) and step 4 (CONTEXT.md content emitted by `init`). Reading these files wastes tool calls.
-   - `research`: Execute **Plan mode step 3 only** (research persistence) for this phase. Spawn Scout (with `subagent_type: "vbw:vbw-scout"`) with the pre-computed UAT issue lines (`ID|SEVERITY|DESCRIPTION` from step 2) so Scout investigates the relevant code areas for each issue. Pass `<output_path>{phase-dir}/{phase}-{MM}-RESEARCH.md</output_path>` in the Scout prompt so Scout writes the file directly. Before composing the Scout task description, select skills from installed skills visible in your system context (use both skill names and descriptions). The Scout prompt MUST start with `<skill_activation>{For each selected skill: "Call Skill({skill-name})"} Do not skip any listed skill.</skill_activation>`. Use direct imperative language only. After Scout completes, confirm RESEARCH.md exists (read first line), then advance:
+6. **Execute the current stage** based on `STAGE`:
+   **File read prohibition:** Do NOT read `{phase}-UAT.md` or `{phase}-CONTEXT.md` — all UAT data is already available from step 2 (pre-computed issue lines) and step 5 (CONTEXT.md content emitted by `init`). Reading these files wastes tool calls.
+   - `research`: Execute **Plan mode step 3 only** (research persistence) for this phase. Spawn Scout (with `subagent_type: "vbw:vbw-scout"`) with the pre-computed UAT issue lines (`ID|SEVERITY|DESCRIPTION|FAILED_IN_ROUNDS` from step 2), **ordered by failure_count descending** (step 3), so Scout investigates the relevant code areas for each issue. Pass `<output_path>{phase-dir}/{phase}-{MM}-RESEARCH.md</output_path>` in the Scout prompt so Scout writes the file directly. Before composing the Scout task description, select skills from installed skills visible in your system context (use both skill names and descriptions). The Scout prompt MUST start with `<skill_activation>{For each selected skill: "Call Skill({skill-name})"} Do not skip any listed skill.</skill_activation>`. Use direct imperative language only. After Scout completes, confirm RESEARCH.md exists (read first line), then advance:
      ```bash
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```
      Then continue to the next stage (`plan`).
-   - `plan`: Execute **Plan mode steps 1-11 above** for the same phase. "No separate discussion" means skip Discuss assumption-gathering (step 2) — the UAT report serves as scope. Step 3 will find the existing RESEARCH.md from the `research` stage and include it in Lead's context (no re-run of Scout needed). After planning completes, advance:
+   - `plan`: Execute **Plan mode steps 1-11 above** for the same phase. "No separate discussion" means skip Discuss assumption-gathering (step 2) — the UAT report serves as scope. Step 3 will find the existing RESEARCH.md from the `research` stage and include it in Lead's context (no re-run of Scout needed). **Pass the priority-ranked issue list (step 3) to Lead** with recurring-issue annotations. After planning completes, advance:
      ```bash
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```
@@ -307,7 +319,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```
      Suggest `/vbw:verify --resume`.
-6. Present a remediation summary with: phase, issue count, severity mix, current stage, and chosen path (`research -> plan -> execute` or quick-fix).
+7. Present a remediation summary with: phase, issue count, severity mix, current stage, chosen path (`research -> plan -> execute` or quick-fix), and per-test recurrence. For any issue with `failure_count >= 2`, include: `"⚠ RECURRING ({failure_count}/{uat_round} rounds): {ID} — {DESCRIPTION}"`. First-time failures display without the annotation.
 
 ### Mode: Milestone UAT Recovery
 

@@ -59,6 +59,9 @@ echo ""
 echo "Running statusline QA/UAT lifecycle checks..."
 bash "$ROOT/testing/verify-statusline-qa-lifecycle.sh"
 echo ""
+echo "Running UAT recurrence tracking checks..."
+bash "$ROOT/testing/verify-uat-recurrence.sh"
+echo ""
 if command -v bats &>/dev/null && ls "$ROOT/tests/"*.bats &>/dev/null; then
   echo "Running bats test suites..."
   bats_pass=0
