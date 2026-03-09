@@ -88,6 +88,22 @@ else
   fail "compile-context: codebase mapping hint not conditional on research"
 fi
 
+# --- vbw-debugger.md: LSP preference in Evidence step ---
+
+DEBUGGER="$ROOT/agents/vbw-debugger.md"
+
+if grep -q "Prefer.*LSP.*(go-to-definition, find-references" "$DEBUGGER"; then
+  pass "debugger: LSP preference instruction in Evidence step"
+else
+  fail "debugger: missing LSP preference instruction in Evidence step"
+fi
+
+if grep -q "Fall back to.*Grep/Glob" "$DEBUGGER"; then
+  pass "debugger: Grep/Glob fallback instruction present"
+else
+  fail "debugger: missing Grep/Glob fallback instruction"
+fi
+
 echo ""
 echo "==============================="
 echo "TOTAL: $PASS passed, $FAIL failed"
