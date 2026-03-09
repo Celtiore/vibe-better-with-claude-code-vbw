@@ -22,6 +22,7 @@ echo "=== Lead Agent Research-Conditional Stage 1 Verification ==="
 
 LEAD="$ROOT/agents/vbw-lead.md"
 COMPILE="$ROOT/scripts/compile-context.sh"
+CACHE="$ROOT/scripts/cache-context.sh"
 
 # --- vbw-lead.md: Research-conditional scanning ---
 
@@ -37,10 +38,10 @@ else
   fail "lead: missing no-research scanning path"
 fi
 
-if grep -q "Do NOT re-scan via Glob/Grep" "$LEAD"; then
-  pass "lead: skip-scan directive when research exists"
+if grep -q "Do NOT do broad exploratory scanning" "$LEAD"; then
+  pass "lead: broad-scan prohibition when research exists"
 else
-  fail "lead: missing skip-scan directive when research exists"
+  fail "lead: missing broad-scan prohibition when research exists"
 fi
 
 if grep -q "Trust the research" "$LEAD"; then
@@ -57,10 +58,10 @@ else
   fail "lead: missing LSP preference instruction"
 fi
 
-if grep -q "Fall back to.*Grep/Glob" "$LEAD"; then
-  pass "lead: Grep/Glob fallback instruction present"
+if grep -q "LSP is unavailable or errors.*fall back immediately" "$LEAD"; then
+  pass "lead: LSP unavailable guard present"
 else
-  fail "lead: missing Grep/Glob fallback instruction"
+  fail "lead: missing LSP unavailable guard"
 fi
 
 # --- vbw-lead.md: unconditional "Scan codebase via Glob/Grep" must be gone ---
@@ -73,7 +74,6 @@ fi
 
 # --- compile-context.sh: codebase mapping hint conditional on research ---
 
-# The hint must be inside the else branch (emitted only when no research file found)
 LEAD_SECTION=$(sed -n '/^  lead)/,/^  ;;$/p' "$COMPILE")
 if echo "$LEAD_SECTION" | grep -B5 "emit_codebase_mapping_hint ARCHITECTURE CONCERNS STRUCTURE" | grep -q "else"; then
   pass "compile-context: hint is in else branch of research check"
@@ -81,59 +81,113 @@ else
   fail "compile-context: hint not in else branch of research check"
 fi
 
-# The comment must mention research conditioning
 if echo "$LEAD_SECTION" | grep -q "no research exists"; then
   pass "compile-context: codebase mapping hint conditional on no-research"
 else
   fail "compile-context: codebase mapping hint not conditional on research"
 fi
 
-# --- vbw-debugger.md: LSP preference in Evidence step ---
+# --- cache-context.sh: research file hash for lead role ---
+
+if grep -q 'ROLE.*=.*"lead"' "$CACHE" && grep -q 'research=' "$CACHE"; then
+  pass "cache-context: lead role includes research in hash"
+else
+  fail "cache-context: lead role missing research in hash"
+fi
+
+if grep -q 'research=none' "$CACHE"; then
+  pass "cache-context: hash differentiates no-research vs research-present"
+else
+  fail "cache-context: hash does not differentiate no-research case"
+fi
+
+# --- LSP unavailable guard across agents ---
 
 DEBUGGER="$ROOT/agents/vbw-debugger.md"
-
-if grep -q "Prefer.*LSP.*(go-to-definition, find-references" "$DEBUGGER"; then
-  pass "debugger: LSP preference instruction in Evidence step"
-else
-  fail "debugger: missing LSP preference instruction in Evidence step"
-fi
-
-if grep -q "Fall back to.*Grep/Glob" "$DEBUGGER"; then
-  pass "debugger: Grep/Glob fallback instruction present"
-else
-  fail "debugger: missing Grep/Glob fallback instruction"
-fi
-
-# --- vbw-dev.md: LSP preference in Stage 2 ---
-
 DEV="$ROOT/agents/vbw-dev.md"
-
-if grep -q "Prefer.*LSP.*(go-to-definition, find-references" "$DEV"; then
-  pass "dev: LSP preference instruction in Stage 2"
-else
-  fail "dev: missing LSP preference instruction in Stage 2"
-fi
-
-if grep -q "Fall back to.*Grep/Glob" "$DEV"; then
-  pass "dev: Grep/Glob fallback instruction present"
-else
-  fail "dev: missing Grep/Glob fallback instruction"
-fi
-
-# --- vbw-qa.md: LSP preference in Goal-Backward ---
-
 QA="$ROOT/agents/vbw-qa.md"
 
-if grep -q "Prefer.*LSP.*(go-to-definition, find-references" "$QA"; then
-  pass "qa: LSP preference instruction in Goal-Backward"
+for AGENT_FILE in "$DEBUGGER" "$DEV" "$QA"; do
+  AGENT_NAME=$(basename "$AGENT_FILE" .md | sed 's/vbw-//')
+  if grep -q "Prefer.*LSP.*(go-to-definition, find-references" "$AGENT_FILE"; then
+    pass "${AGENT_NAME}: LSP preference instruction present"
+  else
+    fail "${AGENT_NAME}: missing LSP preference instruction"
+  fi
+  if grep -q "LSP is unavailable or errors.*fall back immediately" "$AGENT_FILE"; then
+    pass "${AGENT_NAME}: LSP unavailable guard present"
+  else
+    fail "${AGENT_NAME}: missing LSP unavailable guard"
+  fi
+done
+
+# --- Behavioral: compile-context.sh cache invalidation for research ---
+
+echo ""
+echo "=== Behavioral Tests (compile-context + cache) ==="
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+# Scaffold minimal VBW structure
+mkdir -p "$TMP/.vbw-planning/phases/02-build"
+mkdir -p "$TMP/.vbw-planning/.cache/context"
+cat > "$TMP/.vbw-planning/config.json" <<'CONF'
+{"project_name": "test"}
+CONF
+cat > "$TMP/.vbw-planning/ROADMAP.md" <<'ROAD'
+## Phase 2: Build
+**Goal:** Build things
+**Success Criteria:** It works
+**Requirements:** REQ-01
+ROAD
+cat > "$TMP/.vbw-planning/REQUIREMENTS.md" <<'REQ'
+- [ ] REQ-01: Build something
+REQ
+
+# Test 1: Compile without research — should include codebase mapping hint
+(cd "$TMP" && bash "$ROOT/scripts/compile-context.sh" 02 lead .vbw-planning/phases > /dev/null 2>&1) || true
+if [ -f "$TMP/.vbw-planning/phases/02-build/.context-lead.md" ]; then
+  CTX1="$TMP/.vbw-planning/phases/02-build/.context-lead.md"
+  if grep -q "Research Findings" "$CTX1"; then
+    fail "behavioral: no-research compile should not have Research Findings"
+  else
+    pass "behavioral: no-research compile has no Research Findings"
+  fi
 else
-  fail "qa: missing LSP preference instruction in Goal-Backward"
+  fail "behavioral: compile-context.sh did not produce .context-lead.md"
 fi
 
-if grep -q "Fall back to.*Grep/Glob" "$QA"; then
-  pass "qa: Grep/Glob fallback instruction present"
+# Test 2: Get cache hash without research
+HASH1=$(cd "$TMP" && bash "$ROOT/scripts/cache-context.sh" 02 lead .vbw-planning/config.json 2>/dev/null | awk '{print $2}') || HASH1="error1"
+
+# Test 3: Add research file, recompile — should include Research Findings
+cat > "$TMP/.vbw-planning/phases/02-build/02-RESEARCH.md" <<'RES'
+## Research
+Scout found things.
+RES
+
+(cd "$TMP" && bash "$ROOT/scripts/compile-context.sh" 02 lead .vbw-planning/phases > /dev/null 2>&1) || true
+CTX2="$TMP/.vbw-planning/phases/02-build/.context-lead.md"
+if [ -f "$CTX2" ] && grep -q "Research Findings" "$CTX2"; then
+  pass "behavioral: research-present compile includes Research Findings"
 else
-  fail "qa: missing Grep/Glob fallback instruction"
+  fail "behavioral: research-present compile missing Research Findings"
+fi
+
+# Test 4: Research present should suppress codebase mapping hint
+if [ -f "$CTX2" ] && grep -q "bootstrap codebase understanding" "$CTX2"; then
+  fail "behavioral: research-present compile should not have mapping hint"
+else
+  pass "behavioral: research-present compile suppresses mapping hint"
+fi
+
+# Test 5: Cache hash should differ after research added
+HASH2=$(cd "$TMP" && bash "$ROOT/scripts/cache-context.sh" 02 lead .vbw-planning/config.json 2>/dev/null | awk '{print $2}') || HASH2="error2"
+if [ "$HASH1" != "$HASH2" ] && [ "$HASH1" != "error1" ] && [ "$HASH2" != "error2" ]; then
+  pass "behavioral: cache hash changes when research appears"
+else
+  fail "behavioral: cache hash unchanged after research added (was=$HASH1, now=$HASH2)"
 fi
 
 echo ""
