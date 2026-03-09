@@ -87,8 +87,9 @@ done < <(echo "$DETECTED_STACK" | jq -r '.[]' 2>/dev/null)
 # Build plugins array
 PLUGINS="[]"
 for key in $RESOLVED_KEYS; do
-  plugin=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].plugin')
-  org=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].plugin_org')
+  plugin=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].plugin // empty')
+  org=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].plugin_org // empty')
+  tier=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].tier // 0')
   desc=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].description')
   binary_check=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].binary_check')
   install_cmd=$(echo "$SERVERS" | jq -r --arg k "$key" '.[$k].install_cmd // empty')
@@ -100,24 +101,28 @@ for key in $RESOLVED_KEYS; do
     binary_installed=true
   fi
 
-  # Check if plugin is already enabled
+  # Check if plugin is already enabled (skip for plugin-less entries)
   plugin_enabled=false
-  if echo "$ENABLED_PLUGINS" | jq -e --arg p "$plugin" 'map(select(. == $p or test($p))) | length > 0' >/dev/null 2>&1; then
-    plugin_enabled=true
+  if [[ -n "$plugin" ]]; then
+    if echo "$ENABLED_PLUGINS" | jq -e --arg p "$plugin" 'map(select(. == $p or test($p))) | length > 0' >/dev/null 2>&1; then
+      plugin_enabled=true
+    fi
   fi
 
   # Build plugin entry
   entry=$(jq -n \
     --arg plugin "$plugin" \
     --arg org "$org" \
+    --argjson tier "$tier" \
     --arg desc "$desc" \
     --argjson binary_installed "$binary_installed" \
     --arg install_cmd "$install_cmd" \
     --arg install_url "$install_url" \
     --argjson plugin_enabled "$plugin_enabled" \
     '{
-      plugin: $plugin,
-      org: $org,
+      plugin: (if $plugin == "" then null else $plugin end),
+      org: (if $org == "" then null else $org end),
+      tier: $tier,
       description: $desc,
       binary_installed: $binary_installed,
       install_cmd: (if $install_cmd == "" then null else $install_cmd end),

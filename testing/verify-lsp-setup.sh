@@ -61,7 +61,8 @@ else
 fi
 
 # Verify each server has required fields
-REQUIRED_FIELDS=("plugin" "plugin_org" "binary_check" "description")
+# plugin and plugin_org may be null for Tier 2 plugin-less entries
+REQUIRED_FIELDS=("binary_check" "description")
 MISSING=""
 for field in "${REQUIRED_FIELDS[@]}"; do
   BAD=$(jq -r --arg f "$field" '.servers | to_entries[] | select(.value[$f] == null or .value[$f] == "") | .key' "$MAPPINGS" 2>/dev/null)
@@ -70,9 +71,18 @@ for field in "${REQUIRED_FIELDS[@]}"; do
   fi
 done
 if [[ -z "$MISSING" ]]; then
-  pass "all servers have required fields (plugin, plugin_org, binary_check, description)"
+  pass "all servers have required fields (binary_check, description)"
 else
   fail "servers missing required fields:$MISSING"
+fi
+
+# Verify Tier 1 entries all have plugin and plugin_org
+T1_MISSING=""
+T1_BAD=$(jq -r '.servers | to_entries[] | select(.value.tier == 1) | select(.value.plugin == null or .value.plugin == "" or .value.plugin_org == null or .value.plugin_org == "") | .key' "$MAPPINGS" 2>/dev/null)
+if [[ -z "$T1_BAD" ]]; then
+  pass "all Tier 1 servers have plugin and plugin_org"
+else
+  fail "Tier 1 servers missing plugin/plugin_org: $T1_BAD"
 fi
 
 # --- scripts/resolve-lsp.sh ---
@@ -100,7 +110,7 @@ else
 fi
 
 # Verify deduplication: react + typescript should produce 1 typescript entry, not 2
-PLUGIN_COUNT=$(echo "$OUTPUT" | jq '[.plugins[] | select(.plugin == "typescript-langserver")] | length' 2>/dev/null || echo "0")
+PLUGIN_COUNT=$(echo "$OUTPUT" | jq '[.plugins[] | select(.plugin == "typescript-lsp")] | length' 2>/dev/null || echo "0")
 if [[ "$PLUGIN_COUNT" == "1" ]]; then
   pass "resolve-lsp.sh deduplicates aliases (react+typescript → 1 entry)"
 else
