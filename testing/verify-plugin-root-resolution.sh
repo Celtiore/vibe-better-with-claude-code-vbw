@@ -22,6 +22,8 @@ set -euo pipefail
 #   - Runtime resolver guard line in execute-protocol.md:
 #       if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh" ]
 #       VBW_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+#   - ${CLAUDE_PLUGIN_ROOT:+...}          (conditional-if-set expansion — safe, only expands when set)
+#   - (CLAUDE_PLUGIN_ROOT ...)            (literal text mention in diagnostic output, not a var ref)
 #
 # Unsafe (must not exist):
 #   - bare ${CLAUDE_PLUGIN_ROOT} in model-executed text (resolves to empty in bash)
@@ -48,7 +50,8 @@ fail() {
 
 echo "=== Plugin Root Inline Resolution Verification ==="
 
-for file in "$COMMANDS_DIR"/*.md "$REFERENCES_DIR"/*.md; do
+for file in "$COMMANDS_DIR"/*.md "$REFERENCES_DIR"/*.md "$ROOT/internal"/*.md; do
+  [ -f "$file" ] || continue
   base="$(basename "$file" .md)"
 
   # Skip files with no CLAUDE_PLUGIN_ROOT references at all
@@ -62,7 +65,8 @@ for file in "$COMMANDS_DIR"/*.md "$REFERENCES_DIR"/*.md; do
 
   # Count lines with CLAUDE_PLUGIN_ROOT that are NOT in any safe context.
   # Safe contexts: !` backtick expressions, @ file references, Plugin root: preamble,
-  # and inline `!`echo $CLAUDE_PLUGIN_ROOT` resolution patterns.
+  # inline `!`echo $CLAUDE_PLUGIN_ROOT` resolution patterns, :+ conditional expansion
+  # (only expands when var is set), and literal text mentions (no $ prefix).
   unsafe_count=$(grep 'CLAUDE_PLUGIN_ROOT' "$file" \
     | grep -v '!`[^`]*CLAUDE_PLUGIN_ROOT' \
     | grep -v '@${CLAUDE_PLUGIN_ROOT}' \
@@ -70,6 +74,8 @@ for file in "$COMMANDS_DIR"/*.md "$REFERENCES_DIR"/*.md; do
     | grep -v 'if \[ -n "${CLAUDE_PLUGIN_ROOT:-}" \] && \[ -[df] "${CLAUDE_PLUGIN_ROOT}' \
     | grep -v 'VBW_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"' \
     | grep -v 'checked CLAUDE_PLUGIN_ROOT' \
+    | grep -v 'CLAUDE_PLUGIN_ROOT:+' \
+    | grep -v '(CLAUDE_PLUGIN_ROOT ' \
     | grep -vc '`!`echo .*CLAUDE_PLUGIN_ROOT' || true)
 
   if [ "$unsafe_count" -eq 0 ]; then
@@ -84,6 +90,8 @@ for file in "$COMMANDS_DIR"/*.md "$REFERENCES_DIR"/*.md; do
       | grep -v 'if \[ -n "${CLAUDE_PLUGIN_ROOT:-}" \] && \[ -[df] "${CLAUDE_PLUGIN_ROOT}' \
       | grep -v 'VBW_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"' \
       | grep -v 'checked CLAUDE_PLUGIN_ROOT' \
+      | grep -v 'CLAUDE_PLUGIN_ROOT:+' \
+      | grep -v '(CLAUDE_PLUGIN_ROOT ' \
       | grep -v '`!`echo .*CLAUDE_PLUGIN_ROOT' \
       | while IFS= read -r line; do echo "      $line"; done
   fi
@@ -108,7 +116,8 @@ echo "(Ensures preamble !-backtick CLAUDE_PLUGIN_ROOT refs include :-fallback fo
 PASS2=0
 FAIL2=0
 
-for file in "$COMMANDS_DIR"/*.md "$REFERENCES_DIR"/*.md; do
+for file in "$COMMANDS_DIR"/*.md "$REFERENCES_DIR"/*.md "$ROOT/internal"/*.md; do
+  [ -f "$file" ] || continue
   base="$(basename "$file" .md)"
 
   # Only check preamble !` backtick expressions (those using ${CLAUDE_PLUGIN_ROOT} with braces).
@@ -227,7 +236,7 @@ for needle in \
   '[ -f "${VBW_CACHE_ROOT}/local/scripts/hook-wrapper.sh" ]' \
   "grep -E '^[0-9]+(\\.[0-9]+)*$'" \
   'sort -t. -k1,1n -k2,2n -k3,3n' \
-  'FALLBACK_DIR=$(ls -1d "${VBW_CACHE_ROOT}"/* 2>/dev/null | awk -F/ '\''{print $NF}'\'' | sort | tail -1)' \
+  'FALLBACK_DIR=$(find "${VBW_CACHE_ROOT}" -maxdepth 1 -mindepth 1 2>/dev/null | awk -F/ '\''{print $NF}'\'' | sort | tail -1)' \
   'ps axww -o args=' \
   'if [ -z "$VBW_PLUGIN_ROOT" ] || [ ! -d "$VBW_PLUGIN_ROOT" ]; then' \
   'exit 1'
@@ -239,6 +248,111 @@ do
   fi
 done
 
+# Check 8: All command preambles use pwd -P for canonical symlink resolution
+for file in "$COMMANDS_DIR"/*.md; do
+  base="$(basename "$file" .md)"
+  if grep -q 'LINK="/tmp/.vbw-plugin-root-link-' "$file"; then
+    if grep -q 'cd "$R" 2>/dev/null && pwd -P' "$file"; then
+      pass "$base: uses canonical pwd -P resolution"
+    else
+      fail "$base: missing canonical pwd -P resolution in preamble"
+    fi
+  fi
+done
+
+# Check 8b: All command preambles link REAL_R not raw R (dynamic coverage)
+for file in "$COMMANDS_DIR"/*.md; do
+  base="$(basename "$file" .md)"
+  if grep -q 'LINK="/tmp/.vbw-plugin-root-link-' "$file"; then
+    if grep -q 'ln -s "$REAL_R"' "$file"; then
+      pass "$base: links REAL_R (canonical target)"
+    else
+      fail "$base: missing ln -s \"\$REAL_R\" — may link raw \$R through cache chain"
+    fi
+  fi
+done
+
+# Check 9: execute-protocol.md uses canonical pwd -P resolution with safe fallback
+if grep -q 'cd "$VBW_PLUGIN_ROOT" 2>/dev/null && pwd -P' "$EXECUTE_PROTOCOL"; then
+  pass "execute-protocol uses canonical pwd -P resolution"
+else
+  fail "execute-protocol missing canonical pwd -P resolution"
+fi
+
+# Check 10: execute-protocol.md preserves original value on cd failure
+if grep -q 'pwd -P) || true' "$EXECUTE_PROTOCOL"; then
+  fail "execute-protocol uses || true fallback (blanks VBW_PLUGIN_ROOT on cd failure)"
+elif grep -q 'pwd -P || echo "\$VBW_PLUGIN_ROOT"' "$EXECUTE_PROTOCOL"; then
+  pass "execute-protocol preserves VBW_PLUGIN_ROOT on cd failure"
+else
+  fail "execute-protocol missing safe fallback for canonicalization failure"
+fi
+
+# Check 11: targeted command preambles use CLAUDE_SESSION_ID:-default session key
+TARGET_COMMANDS=(
+  config.md debug.md discuss.md fix.md help.md init.md list-todos.md map.md qa.md
+  research.md resume.md skills.md status.md todo.md update.md verify.md vibe.md whats-new.md
+)
+for rel in "${TARGET_COMMANDS[@]}"; do
+  file="$COMMANDS_DIR/$rel"
+  base="$(basename "$rel" .md)"
+  if grep -q 'SESSION_KEY="${CLAUDE_SESSION_ID:-default}"' "$file"; then
+    pass "$base: preamble uses CLAUDE_SESSION_ID:-default session key"
+  else
+    fail "$base: missing CLAUDE_SESSION_ID:-default session key in preamble"
+  fi
+done
+
+# Check 12: no SHA1 session key derivation in commands (reverted pattern)
+sha1_session_count=$({ grep -R -c 'SESSION_BASE.*shasum\|shasum.*SESSION' "$COMMANDS_DIR" 2>/dev/null || true; } | awk -F: '{s+=$NF} END{print s+0}')
+if [ "$sha1_session_count" -eq 0 ]; then
+  pass "no SHA1 session key derivation in commands"
+else
+  fail "$sha1_session_count SHA1 session key derivation(s) still present in commands"
+fi
+
+# Check 13: All command preambles include symlink fallback for plugin root resolution
+# The hooks.json resolution pattern includes a glob over /tmp/.vbw-plugin-root-link-*
+# as a fallback. Commands must also include this fallback to resolve the plugin root
+# when CLAUDE_PLUGIN_ROOT is unset and marketplace cache is empty.
+for rel in "${TARGET_COMMANDS[@]}"; do
+  file="$COMMANDS_DIR/$rel"
+  base="$(basename "$rel" .md)"
+  if grep -qF '/tmp/.vbw-plugin-root-link-*/scripts/hook-wrapper.sh' "$file"; then
+    pass "$base: preamble includes symlink glob fallback"
+  else
+    fail "$base: preamble MISSING symlink glob fallback (/tmp/.vbw-plugin-root-link-*)"
+  fi
+done
+
+# Check 13b: execute-protocol.md includes symlink glob fallback
+if grep -qF '/tmp/.vbw-plugin-root-link-*/scripts/hook-wrapper.sh' "$EXECUTE_PROTOCOL"; then
+  pass "execute-protocol: includes symlink glob fallback"
+else
+  fail "execute-protocol: MISSING symlink glob fallback"
+fi
+
+# Check 14: All command preambles use robust grep -oE for ps extraction (not fragile sed)
+# The old sed pattern: sed -n 's/.*--plugin-dir  *\([^ ]*\).*/\1/p'
+# is whitespace-sensitive and breaks with different spacing. The hooks.json pattern:
+# grep -oE -- "--plugin-dir [^ ]+" is more robust.
+for rel in "${TARGET_COMMANDS[@]}"; do
+  file="$COMMANDS_DIR/$rel"
+  base="$(basename "$rel" .md)"
+  if grep -q 'sed.*--plugin-dir' "$file"; then
+    fail "$base: uses fragile sed pattern for --plugin-dir extraction"
+  else
+    pass "$base: does not use fragile sed pattern"
+  fi
+done
+
+# Check 14b: execute-protocol.md uses robust grep pattern
+if grep -q 'sed.*--plugin-dir' "$EXECUTE_PROTOCOL"; then
+  fail "execute-protocol: uses fragile sed pattern for --plugin-dir extraction"
+else
+  pass "execute-protocol: does not use fragile sed pattern"
+fi
+
 echo ""
 echo "==============================="
 echo "TOTAL: $PASS PASS, $FAIL FAIL"
@@ -249,4 +363,118 @@ if [ "$FAIL" -gt 0 ]; then
 fi
 
 echo "All runtime resolver safety checks passed."
+
+# --- Phase 4: Behavioral verification of resolution mechanisms ---
+echo ""
+echo "=== Behavioral Resolution Verification ==="
+echo "(Exercises symlink glob fallback, grep -oE extraction, and no-match safety in controlled sandboxes)"
+
+PASS=0
+FAIL=0
+
+# Trap-based cleanup for Phase 4 temp artifacts — uses array to handle paths safely
+BTEST_CLEANUP_LIST=()
+btest_cleanup() { for item in "${BTEST_CLEANUP_LIST[@]}"; do rm -rf "$item" 2>/dev/null; done; }
+trap btest_cleanup EXIT
+
+# Check 15: Symlink-following resolution via [ -f ] on a valid symlink target
+# Scoped to our fixture so ambient session symlinks don't interfere.
+# Glob expansion is separately tested by Check 15c.
+BTEST_DIR=$(mktemp -d)
+BTEST_CLEANUP_LIST+=("$BTEST_DIR")
+mkdir -p "$BTEST_DIR/scripts"
+echo "#!/bin/bash" > "$BTEST_DIR/scripts/hook-wrapper.sh"
+BTEST_LINK="/tmp/.vbw-plugin-root-link-test-behavioral-$$"
+ln -s "$BTEST_DIR" "$BTEST_LINK"
+BTEST_CLEANUP_LIST+=("$BTEST_LINK")
+resolved=""
+for f in /tmp/.vbw-plugin-root-link-test-behavioral-$$/scripts/hook-wrapper.sh; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+rm -f "$BTEST_LINK"
+rm -rf "$BTEST_DIR"
+if [ "$resolved" = "$BTEST_LINK" ]; then
+  pass "symlink-following resolution via [ -f ] on valid symlink target"
+else
+  fail "symlink-following resolution: got '$resolved' instead of fixture '$BTEST_LINK'"
+fi
+
+# Check 15b: Symlink glob fallback skips stale symlinks (target does not exist)
+BTEST_STALE="/tmp/.vbw-plugin-root-link-test-stale-$$"
+ln -s "/nonexistent/path/$$" "$BTEST_STALE"
+BTEST_CLEANUP_LIST+=("$BTEST_STALE")
+resolved=""
+# Only check this specific stale symlink — not the generic * pattern
+for f in "$BTEST_STALE/scripts/hook-wrapper.sh"; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+rm -f "$BTEST_STALE"
+if [ -z "$resolved" ]; then
+  pass "symlink glob fallback correctly skips stale symlinks"
+else
+  fail "symlink glob fallback incorrectly resolved stale symlink to: $resolved"
+fi
+
+# Check 15c: Mixed stale + valid symlinks — glob resolves the valid one
+BTEST_STALE_MIX="/tmp/.vbw-plugin-root-link-test-mix-stale-$$"
+ln -s "/nonexistent/path/$$" "$BTEST_STALE_MIX"
+BTEST_CLEANUP_LIST+=("$BTEST_STALE_MIX")
+BTEST_VALID_DIR=$(mktemp -d)
+BTEST_CLEANUP_LIST+=("$BTEST_VALID_DIR")
+mkdir -p "$BTEST_VALID_DIR/scripts"
+echo "#!/bin/bash" > "$BTEST_VALID_DIR/scripts/hook-wrapper.sh"
+BTEST_VALID_MIX="/tmp/.vbw-plugin-root-link-test-mix-valid-$$"
+ln -s "$BTEST_VALID_DIR" "$BTEST_VALID_MIX"
+BTEST_CLEANUP_LIST+=("$BTEST_VALID_MIX")
+resolved=""
+for f in /tmp/.vbw-plugin-root-link-test-mix-*-$$/scripts/hook-wrapper.sh; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+rm -f "$BTEST_STALE_MIX" "$BTEST_VALID_MIX"
+rm -rf "$BTEST_VALID_DIR"
+if [ "$resolved" = "$BTEST_VALID_MIX" ]; then
+  pass "mixed stale+valid symlinks: glob resolves the valid one"
+else
+  fail "mixed stale+valid symlinks: resolved to '$resolved' instead of '$BTEST_VALID_MIX'"
+fi
+
+# Check 16: grep -oE extracts --plugin-dir value from ps-style output
+BTEST_PS_LINE="node /path/to/claude --plugin-dir /Users/test/my-plugin --other-flag"
+extracted=$(echo "$BTEST_PS_LINE" | grep -oE -- "--plugin-dir [^ ]+" | head -1)
+if [ "$extracted" = "--plugin-dir /Users/test/my-plugin" ]; then
+  pass "grep -oE correctly extracts --plugin-dir value from ps output"
+else
+  fail "grep -oE extraction failed: expected '--plugin-dir /Users/test/my-plugin', got '$extracted'"
+fi
+
+# Check 16b: Prefix stripping yields clean path after grep -oE extraction
+D="$extracted"
+D="${D#--plugin-dir }"
+if [ "$D" = "/Users/test/my-plugin" ]; then
+  pass "prefix stripping yields clean path after grep -oE"
+else
+  fail "prefix stripping failed: expected '/Users/test/my-plugin', got '$D'"
+fi
+
+# Check 17: Unmatched glob with nullglob off falls through safely (bash 3.2 default)
+resolved=""
+for f in /tmp/.vbw-plugin-root-link-nonexistent-pattern-$$/scripts/hook-wrapper.sh; do
+  [ -f "$f" ] && resolved="${f%/scripts/hook-wrapper.sh}" && break
+done
+if [ -z "$resolved" ]; then
+  pass "unmatched glob with nullglob off falls through safely"
+else
+  fail "unmatched glob incorrectly resolved to: $resolved"
+fi
+
+echo ""
+echo "==============================="
+echo "TOTAL: $PASS PASS, $FAIL FAIL"
+echo "==============================="
+
+if [ "$FAIL" -gt 0 ]; then
+  exit 1
+fi
+
+echo "All behavioral resolution checks passed."
 exit 0

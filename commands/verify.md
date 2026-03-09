@@ -1,9 +1,10 @@
 ---
 name: vbw:verify
 category: monitoring
+disable-model-invocation: true
 description: Run human acceptance testing on completed phase work. Presents CHECKPOINT prompts one at a time.
 argument-hint: "[phase-number] [--resume]"
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, LSP
 ---
 
 # VBW Verify: $ARGUMENTS
@@ -16,7 +17,7 @@ Working directory:
 ```
 Plugin root:
 ```bash
-!`VBW_CACHE_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/vbw-marketplace/vbw"; R=""; if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh" ]; then R="${CLAUDE_PLUGIN_ROOT}"; fi; if [ -z "$R" ] && [ -f "${VBW_CACHE_ROOT}/local/scripts/hook-wrapper.sh" ]; then R="${VBW_CACHE_ROOT}/local"; fi; if [ -z "$R" ]; then V=$(ls -1d "${VBW_CACHE_ROOT}"/* 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^[0-9]+(\.[0-9]+)*$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1); [ -n "$V" ] && [ -f "${VBW_CACHE_ROOT}/${V}/scripts/hook-wrapper.sh" ] && R="${VBW_CACHE_ROOT}/${V}"; fi; if [ -z "$R" ]; then L=$(ls -1d "${VBW_CACHE_ROOT}"/* 2>/dev/null | awk -F/ '{print $NF}' | sort | tail -1); [ -n "$L" ] && [ -f "${VBW_CACHE_ROOT}/${L}/scripts/hook-wrapper.sh" ] && R="${VBW_CACHE_ROOT}/${L}"; fi; if [ -z "$R" ]; then D=$(ps axww -o args= 2>/dev/null | grep -v grep | sed -n 's/.*--plugin-dir  *\([^ ]*\).*/\1/p' | head -1); [ -n "$D" ] && [ -f "$D/scripts/hook-wrapper.sh" ] && R="$D"; fi; if [ -z "$R" ] || [ ! -d "$R" ]; then echo "VBW: plugin root resolution failed" >&2; exit 1; fi; SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; LINK="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; rm -f "$LINK"; ln -s "$R" "$LINK" 2>/dev/null || { echo "VBW: plugin root link failed" >&2; exit 1; }; echo "$LINK"`
+!`VBW_CACHE_ROOT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/vbw-marketplace/vbw"; R=""; if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/hook-wrapper.sh" ]; then R="${CLAUDE_PLUGIN_ROOT}"; fi; if [ -z "$R" ] && [ -f "${VBW_CACHE_ROOT}/local/scripts/hook-wrapper.sh" ]; then R="${VBW_CACHE_ROOT}/local"; fi; if [ -z "$R" ]; then V=$(find "${VBW_CACHE_ROOT}" -maxdepth 1 -mindepth 1 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^[0-9]+(\.[0-9]+)*$' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1); [ -n "$V" ] && [ -f "${VBW_CACHE_ROOT}/${V}/scripts/hook-wrapper.sh" ] && R="${VBW_CACHE_ROOT}/${V}"; fi; if [ -z "$R" ]; then L=$(find "${VBW_CACHE_ROOT}" -maxdepth 1 -mindepth 1 2>/dev/null | awk -F/ '{print $NF}' | sort | tail -1); [ -n "$L" ] && [ -f "${VBW_CACHE_ROOT}/${L}/scripts/hook-wrapper.sh" ] && R="${VBW_CACHE_ROOT}/${L}"; fi; if [ -z "$R" ]; then for f in /tmp/.vbw-plugin-root-link-*/scripts/hook-wrapper.sh; do [ -f "$f" ] && R="${f%/scripts/hook-wrapper.sh}" && break; done; fi; if [ -z "$R" ]; then D=$(ps axww -o args= 2>/dev/null | grep -v grep | grep -oE -- "--plugin-dir [^ ]+" | head -1); D="${D#--plugin-dir }"; [ -n "$D" ] && [ -f "$D/scripts/hook-wrapper.sh" ] && R="$D"; fi; if [ -z "$R" ] || [ ! -d "$R" ]; then echo "VBW: plugin root resolution failed" >&2; exit 1; fi; SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; LINK="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; REAL_R=$(cd "$R" 2>/dev/null && pwd -P) || REAL_R="$R"; rm -f "$LINK"; ln -s "$REAL_R" "$LINK" 2>/dev/null || { echo "VBW: plugin root link failed" >&2; exit 1; }; STAMP="/tmp/.vbw-phase-detect-stamp-${SESSION_KEY}.txt"; : > "$STAMP"; bash "$LINK/scripts/phase-detect.sh" > "/tmp/.vbw-phase-detect-${SESSION_KEY}.txt" 2>/dev/null || echo "phase_detect_error=true" > "/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; echo "$LINK"`
 ```
 
 Current state:
@@ -33,16 +34,50 @@ Phase directories:
 
 Phase state:
 ```bash
-!`L="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; bash "$L/scripts/phase-detect.sh" 2>/dev/null || echo "phase_detect_error=true"`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; S="/tmp/.vbw-phase-detect-stamp-${SESSION_KEY}.txt"; PD=""; [ -f "$P" ] && PD=$(cat "$P"); if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; S_M=0; P_M=0; [ -f "$S" ] && S_M=$(stat -c %Y "$S" 2>/dev/null || stat -f %m "$S" 2>/dev/null || echo 0); [ -f "$P" ] && P_M=$(stat -c %Y "$P" 2>/dev/null || stat -f %m "$P" 2>/dev/null || echo 0); if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; fi; if [ -n "$(printf '%s' "$PD" | tr -d '[:space:]')" ] && [ "$PD" != "phase_detect_error=true" ]; then printf '%s' "$PD"; else echo "phase_detect_error=true"; fi`
 ```
 
 !`L="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}"; i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; bash "$L/scripts/suggest-compact.sh" verify 2>/dev/null || true`
 
+Pre-computed verify context (PLAN/SUMMARY aggregation):
+```
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; S="/tmp/.vbw-phase-detect-stamp-${SESSION_KEY}.txt"; PD=""; [ -f "$P" ] && PD=$(cat "$P"); if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; S_M=0; P_M=0; [ -f "$S" ] && S_M=$(stat -c %Y "$S" 2>/dev/null || stat -f %m "$S" 2>/dev/null || echo 0); [ -f "$P" ] && P_M=$(stat -c %Y "$P" 2>/dev/null || stat -f %m "$P" 2>/dev/null || echo 0); if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; fi; if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then echo "verify_context=unavailable"; else SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2); TARGET="${FU_SLUG:-$SLUG}"; PDIR=".vbw-planning/phases/$TARGET"; if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -f "$L/scripts/compile-verify-context.sh" ]; then echo "verify_target_slug=$TARGET"; bash "$L/scripts/compile-verify-context.sh" "$PDIR" 2>/dev/null || echo "verify_context_error=true"; else echo "verify_context=unavailable"; fi; fi`
+```
+
+Pre-computed UAT resume metadata:
+```
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; S="/tmp/.vbw-phase-detect-stamp-${SESSION_KEY}.txt"; PD=""; [ -f "$P" ] && PD=$(cat "$P"); if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; S_M=0; P_M=0; [ -f "$S" ] && S_M=$(stat -c %Y "$S" 2>/dev/null || stat -f %m "$S" 2>/dev/null || echo 0); [ -f "$P" ] && P_M=$(stat -c %Y "$P" 2>/dev/null || stat -f %m "$P" 2>/dev/null || echo 0); if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; fi; if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then echo "uat_resume=unavailable"; else SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2); TARGET="${FU_SLUG:-$SLUG}"; PDIR=".vbw-planning/phases/$TARGET"; if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -f "$L/scripts/extract-uat-resume.sh" ]; then echo "uat_resume_target_slug=$TARGET"; bash "$L/scripts/extract-uat-resume.sh" "$PDIR" 2>/dev/null || echo "uat_resume=error"; else echo "uat_resume=unavailable"; fi; fi`
+```
+
+QA verification summary (pre-extracted from VERIFICATION.md):
+```
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; if [ -L "$L" ] && [ -f "$L/scripts/extract-verified-items.sh" ]; then for d in .vbw-planning/phases/*/; do bash "$L/scripts/extract-verified-items.sh" "$d" 2>/dev/null; done; fi`
+```
+
 ## Guard
 
 - Not initialized (no .vbw-planning/ dir): STOP "Run /vbw:init first."
-- No SUMMARY.md in phase dir: STOP "Phase {N} has no completed plans. Run /vbw:vibe first."
-- **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context above. Use `next_phase` and `next_phase_slug` for the target phase. To find the first phase needing UAT: scan phase dirs for first with `*-SUMMARY.md` but no `*-UAT.md`. Found: announce "Auto-detected Phase {N} ({slug})". All verified: STOP "All phases have UAT results. Specify: `/vbw:verify N`"
+- **Brownfield normalization:** If Phase state (from Context above) contains `misnamed_plans=true`, normalize all phase directories before proceeding:
+  ```bash
+  NORM_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
+  if [ -f "$NORM_SCRIPT" ]; then
+    for pdir in .vbw-planning/phases/*/; do
+      [ -d "$pdir" ] && bash "$NORM_SCRIPT" "$pdir"
+    done
+  fi
+  ```
+  Display: "⚠ Renamed misnamed plan files to `{NN}-PLAN.md` convention."
+  Then re-run phase-detect.sh to refresh state (filenames changed):
+  ```bash
+  bash "/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/phase-detect.sh" > "/tmp/.vbw-phase-detect-${CLAUDE_SESSION_ID:-default}.txt"
+  ```
+  Use the refreshed phase-detect output for all subsequent guard checks and steps. Also regenerate pre-computed verify context and UAT resume metadata for the target phase after auto-detection (Step 1).
+- **Auto-detect phase** (no explicit number): Phase detection is pre-computed in Context above (or refreshed by normalization above). Use `next_phase` and `next_phase_slug` for the target phase.
+  - If `next_phase_state=needs_reverification`: use `next_phase` directly — this is the phase that just completed remediation and needs re-verification.
+  - If `first_unverified_phase` is set: use that phase directly — this is the first fully-built phase without a terminal UAT.
+  - Fallback: scan phase dirs for first with `*-SUMMARY.md` but no canonical `*-UAT.md` (exclude `*-SOURCE-UAT.md` copies).
+  - Found: announce "Auto-detected Phase {NN} ({slug})". All verified: STOP "All phases have UAT results. Specify: `/vbw:verify {NN}`"
+- No SUMMARY.md in target phase dir: STOP "Phase {NN} has no completed plans. Run /vbw:vibe first."
 
 ## Steps
 
@@ -50,24 +85,40 @@ Phase state:
 
 - Parse explicit phase number from $ARGUMENTS, or use auto-detected phase
 - Use `.vbw-planning/phases/` for phase directories
-- Read all `*-SUMMARY.md` files in the phase directory
-- Read corresponding `*-PLAN.md` files for `must_haves` and success criteria
+- **If initial Phase state contained `misnamed_plans=true`:** re-run compile-verify-context.sh and extract-uat-resume.sh for the resolved target phase dir, since pre-computed blocks used stale filenames:
+  ```bash
+  PDIR=".vbw-planning/phases/{target-slug}"
+  bash "/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context.sh" "$PDIR"
+  bash "/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-uat-resume.sh" "$PDIR"
+  ```
+  Use the refreshed output in place of the pre-computed blocks from Context.
+- Use pre-computed verify context from the "Pre-computed verify context" block above (or refreshed output if normalization ran) — it contains per-plan titles, must_haves, what was built, files modified, and status. Do NOT read individual `*-SUMMARY.md` or `*-PLAN.md` files.
+- **If user specified an explicit phase number** that differs from `verify_target_slug`, ignore the pre-computed context (it was generated for the auto-detected phase). Read PLAN/SUMMARY files from the user-specified phase directory instead.
 
-### 2. Check for existing UAT session (resume support)
+### 2. Handle re-verification state
 
-- If `{phase}-UAT.md` exists in the phase directory:
-  - Read it, find the first test without a result (Result line is empty or missing)
-  - Display: `Resuming UAT session -- {completed}/{total} tests done`
-  - Jump to the CHECKPOINT loop at the resume point
-- If all tests already have results: display the summary, STOP
+- If `next_phase_state=needs_reverification` (from Context above):
+  - Run `prepare-reverification.sh {phase-dir}` to archive the old UAT and reset remediation stage
+  - If the script outputs `skipped=already_archived`, display: `UAT already archived. Starting fresh re-verification.`
+  - If the script fails (non-zero exit), display the error message and **STOP** — do not continue to Step 3
+  - Otherwise display: `Archived previous UAT → {round_file}. Starting fresh re-verification.`
+  - Continue to Step 3 (generate new tests) — do NOT resume the old UAT
 
-### 3. Generate test scenarios from SUMMARY.md files
+### 3. Check for existing UAT session (resume support)
 
-For each completed plan's SUMMARY.md:
-- Read what was built, files modified, and the plan's `must_haves`
+- Use pre-computed UAT resume metadata from the "Pre-computed UAT resume metadata" block above:
+  - `uat_resume=none`: no existing UAT session — proceed to Step 4 (generate tests)
+  - `uat_resume=all_done uat_completed=N uat_total=N`: all tests already have results — display the summary, STOP
+  - `uat_resume=<test-id> uat_completed=N uat_total=N`: resume at `<test-id>`. Display: `Resuming UAT session -- {completed}/{total} tests done`. Read the UAT.md once to load checkpoint text, then jump to the CHECKPOINT loop at the resume point.
+- Do NOT scan-parse the UAT file to find the resume point — the pre-computed metadata already identifies it.
+
+### 4. Generate test scenarios from pre-computed verify context
+
+For each plan in the pre-computed verify context block:
+- Use the pre-computed `what_was_built`, `files_modified`, and `must_haves` data. Do NOT read SUMMARY.md or PLAN.md files.
 - Generate 1-3 test scenarios that require HUMAN judgment — things only a person can verify
 - Minimum 1 test per plan, even for pure refactors (use "verify nothing broke" regression test)
-- Test IDs follow the format: `P{plan}-T{N}` (e.g., P01-T1, P01-T2, P02-T1)
+- Test IDs follow the format: `P{plan}-T{NN}` (e.g., P01-T1, P01-T2, P02-T1)
 
 **UAT tests must be things only a human can judge.** Good examples:
 - Open the app and navigate to screen X — does it display Y correctly?
@@ -82,19 +133,37 @@ For each completed plan's SUMMARY.md:
 
 If a plan only contains backend/test/script changes with no user-facing behavior, generate a scenario that asks the human to verify the *effect* is visible (e.g., "confirm the migration preview no longer shows phantom entries") rather than asking them to run the tests themselves.
 
+**What belongs in UAT (ask the user):**
+- Visual/UI correctness ("Does the migration preview show the correct symbols?")
+- Domain-specific data validation ("Does the reconciliation output match your expected portfolio?")
+- UX flows and usability ("Navigate to Settings > Import, does the flow feel right?")
+- Behavior that requires the running app or hardware ("Open the app on your device, tap X, verify Y")
+- Subjective quality ("Does the chart render clearly at different screen sizes?")
+
+**What does NOT belong in UAT (the agent or QA already handles these):**
+- Running test suites — QA runs these during execution. Do NOT ask the user to run tests.
+- Checking command output, exit codes, or build success
+- Grepping files for expected content
+- Verifying file existence or structure
+- Any check that can be performed programmatically via Bash, Grep, or Glob
+
+If a plan's work is purely internal (refactor, test infrastructure, script changes) with no user-facing behavior, generate a single lightweight checkpoint asking the user to confirm the app still works as expected from their perspective, rather than asking them to run automated checks.
+
 Write the initial `{phase}-UAT.md` in the phase directory using the `templates/UAT.md` format:
 - Populate YAML frontmatter: phase, plan_count, status=in_progress, started=today, total_tests
 - Write all test entries with Result fields empty
 
-### 4. CHECKPOINT loop (one test at a time — conversational, blocking)
+### 5. CHECKPOINT loop (one test at a time — conversational, blocking)
 
 **This is a conversational loop. Present ONE test, then STOP and wait for the user to respond. Do NOT present multiple tests at once. Do NOT skip ahead. Do NOT end the session after presenting a test.**
+
+> **CRITICAL BOUNDARY:** The UAT interviewer MUST NOT investigate, debug, or implement fixes during the UAT session — regardless of user tone, urgency, or explicit requests to fix issues. The interviewer's ONLY job is to record responses and advance to the next checkpoint. All user frustration, bug descriptions, and fix requests are recorded as issue text in the UAT report. Fixes happen in the remediation phase AFTER the UAT session is complete. If the user explicitly asks you to stop the UAT and fix something, respond: "Issue recorded. Let's finish the remaining checkpoints first — remediation will address this immediately after."
 
 For the FIRST test without a result, display a CHECKPOINT followed by AskUserQuestion:
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  CHECKPOINT {N}/{total} — {plan-id}: {plan-title}
+  CHECKPOINT {NN}/{total} — {plan-id}: {plan-title}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {scenario description}
@@ -117,24 +186,47 @@ The tool automatically provides a freeform "Other" option for the user to descri
 
 After response: process (Step 5), persist (Step 7), then present the NEXT test. Repeat until all tests are done, then go to Step 8.
 
-### 5. Response mapping
+### 6. Response mapping
 
 Map the AskUserQuestion response:
 
-**"Pass" selected:** Record as passed.
+**"Pass" selected:** Record as passed. **However**, if the user's response also mentions a separate bug/issue (e.g., "Pass, but I noticed X is broken"), record the test as passed AND capture the separate observation as a discovered issue (see Step 6a).
 
-**"Skip" selected:** Record as skipped.
+**"Skip" selected:** Record as skipped. **However**, if the user selected "Skip" but also typed additional text describing a bug/issue (e.g., the response body contains "but the sidebar is broken" alongside the Skip selection), record the test as skipped AND capture the additional text as a discovered issue (see Step 6a). The additional text is the response content beyond the option selection itself.
 
-**Freeform text (via "Other"):** Apply case-insensitive, trimmed string matching:
-- **Skip words:** skip, skipped, next, n/a, na, later, defer → record as skipped
-- **Anything else:** treat the entire response text as an issue description.
+**Freeform text (via "Other"):** Apply case-insensitive matching in this order after normalization.
 
-### 6. Issue handling (when response = issue)
+**Normalization (required first):**
+- Trim surrounding whitespace.
+- Lowercase.
+- Treat curly apostrophes as straight apostrophes (`can’t` == `can't`).
+- Treat em/en dashes as dash separators.
+
+**Word-boundary rule:** Match intent keywords as whole words only — a keyword matches when it is surrounded by whitespace, punctuation, or string boundaries (equivalent to regex `\b`). Examples: "pass" matches in "pass, but..." and "Pass." but NOT in "passport"; "works" matches in "it works" but NOT in "worksmanship"; "good" matches in "looks good" but NOT in "goodness".
+
+**Idiomatic-positive exceptions:** These should count as pass-intent (not issues): `not bad`, `can't complain`, `cant complain`, `cannot complain`.
+
+**Negation guard (expanded scope):** Before classifying as pass-intent, detect negation in the same clause even when not immediately adjacent. If a negation term appears up to a few words before pass-intent (or in patterns like "I don't think it works"), treat as issue (Step 6), unless the text matches an idiomatic-positive exception above. Negation terms: not, don't, doesn't, didn't, isn't, wasn't, no, never, neither, nor, hardly, barely, cannot, can't, won't, wouldn't, shouldn't. Examples: "not good, still broken" → issue; "I don't think it works" → issue; "it works" → pass.
+
+**Observation extraction guard:** Only create a discovered issue when text after a separator includes a defect/issue signal (e.g., broken, bug, error, wrong, missing, not working, fails, crash, exception, regression, problem). If trailing text is neutral/positive only (e.g., "pass: looks great"), do NOT create a discovered issue.
+
+**Dual-intent tie-break (pass + skip in one response):**
+- If the response explicitly defers the **current checkpoint** (e.g., "skip this checkpoint", "skip for now", "can't test right now"), classify checkpoint outcome as **skip**.
+- Otherwise, use the first intent word left-to-right as fallback.
+
+Evaluate in this order:
+- **Skip-intent with issue observation:** If the text contains a skip-intent whole word (skip, skipped, next, n/a, na, later, defer) AND contains post-separator text with an issue signal, then: record the test as **skipped** AND capture the post-separator observation text as a discovered issue (Step 6a). Separators: but, however, also, although, though, comma, semicolon, period, dash, colon, em dash, newline. Example: "skip, but the sidebar is completely broken" → skipped + discovered issue.
+- **Skip-intent only:** If skip-intent is present but no issue observation in post-separator text → record as skipped.
+- **Pass-intent with issue observation:** If the text contains pass-intent as whole words/phrases (pass, passed, looks good, works, correct, confirmed, yes, good, fine, ok, okay, not bad, can't complain, cant complain, cannot complain), is not negated by the expanded negation guard, and has post-separator issue text, then: record the test as **passed** AND capture the post-separator observation text as a discovered issue (Step 6a). Example: "pass, but I noticed the stats section still shows for positions with no covered calls" → passed + discovered issue.
+- **Pass-intent only:** Pass-intent present, not negated, and no issue observation in post-separator text → record as passed.
+- **Anything else:** treat the entire response text as an issue description (Step 6).
+
+### 7. Issue handling (when response = issue)
 
 The user's response text IS the issue description. Infer severity from keywords (never ask the user):
 
 | Keywords | Severity |
-|----------|----------|
+| --- | --- |
 | crash, broken, error, doesn't work, fails, exception | critical |
 | wrong, incorrect, missing, not working, bug | major |
 | minor, cosmetic, nitpick, small, typo, polish | minor |
@@ -147,20 +239,51 @@ Display:
 Issue recorded (severity: {level}). Final next-step routing shown at UAT summary.
 ```
 
-### 7. After each response: persist immediately
+### 7a. Discovered issue handling (observations during passing/skipping tests)
+
+When a user passes or skips a test but also mentions a separate bug, issue, or observation unrelated to the test's expected behavior, capture it as a **discovered issue**.
+
+Assign a discovered-issue ID: `D{NN}` (D01, D02, ...) — sequential across the UAT session. **On resumed sessions:** scan existing `D{NN}` entries in the UAT.md to find the highest existing number, then continue from max+1 (e.g., if D01 and D02 exist, the next discovered issue is D03).
+
+Infer severity using the same keyword table from Step 6. Infer category from context:
+- If the user identifies a specific view/screen/component: use that as the description prefix
+- If vague: use the verbatim observation
+
+Append a new test entry to the UAT.md `## Tests` section:
+
+```markdown
+### D{NN}: {short-title}
+
+- **Plan:** (discovered during {test-id})
+- **Scenario:** User observation during UAT
+- **Expected:** (not applicable — discovered issue)
+- **Result:** issue
+- **Issue:**
+  - Description: {observation text}
+  - Severity: {inferred severity}
+```
+
+Increment `total_tests` and `issues` in frontmatter. This ensures discovered issues flow into UAT remediation alongside test failures.
+
+Display:
+```text
+Discovered issue D{NN} recorded (severity: {level}).
+```
+
+### 8. After each response: persist immediately
 
 - Update `{phase}-UAT.md` with the result for this test
 - Write the file to disk (survives /clear)
 - Display progress: `✓ {completed}/{total} tests`
 
-### 8. Session complete
+### 9. Session complete
 
 - Update `{phase}-UAT.md` frontmatter: status (complete or issues_found), completed date, final counts
 - Display summary:
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Phase {N}: {name} — UAT Complete
+  Phase {NN}: {name} — UAT Complete
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Result:   {✓ PASS | ✗ ISSUES FOUND}
@@ -171,14 +294,13 @@ Issue recorded (severity: {level}). Final next-step routing shown at UAT summary
   Report:   {path to UAT.md}
 ```
 
-**Discovered Issues:** If the user reported failures or bugs during CHECKPOINT responses that are clearly unrelated to this phase's work (e.g., "this other test was already broken"), extract structured fields on a best-effort basis: use the test name if mentioned (or infer from context), the file path if identifiable, and the error text as reported. If the user's description is too vague to extract a test name or file, use the description verbatim as the error field and mark test/file as "unknown". De-duplicate by test name and file. Cap the list at 20 entries; if more exist, show the first 20 and append `... and {N} more`. Append after the result box:
+**Discovered Issues in summary:** If any discovered issues (`D{NN}` entries) were recorded during the session, list them after the result box so the user sees them at a glance:
 ```text
   Discovered Issues:
-    ⚠ testName (path/to/file): error message
-    ⚠ testName (path/to/file): error message
-  Suggest: /vbw:todo <description> to track
+    ⚠ D01: {short-title} (severity: {level})
+    ⚠ D02: {short-title} (severity: {level})
 ```
-This is **display-only**. Do NOT edit STATE.md, do NOT add todos, do NOT invoke /vbw:todo, and do NOT enter an interactive loop. The user decides whether to track these. If no discovered issues: omit the section entirely. After displaying discovered issues, STOP. Do not take further action.
+These are already recorded in the UAT.md and will flow into remediation alongside test failures. If no discovered issues: omit the section.
 
 - If issues found:
   - Any issue severity is `critical` or `major`:
@@ -186,4 +308,17 @@ This is **display-only**. Do NOT edit STATE.md, do NOT add todos, do NOT invoke 
   - All issues are `minor`:
     - `Suggest /vbw:fix to address recorded issues.`
 
-Run `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/suggest-next.sh verify {result} {phase}` and display.
+**Planning artifact boundary commit (conditional):**
+```bash
+PG_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+if [ -f "$PG_SCRIPT" ]; then
+  bash "$PG_SCRIPT" commit-boundary "verify phase {NN}" .vbw-planning/config.json
+else
+  echo "VBW: planning-git.sh unavailable; skipping planning git boundary commit" >&2
+fi
+```
+- `planning_tracking=commit`: commits `.vbw-planning/` + `CLAUDE.md` when changed (includes UAT report)
+- `planning_tracking=manual|ignore`: no-op
+- `auto_push=always`: push happens inside the boundary commit command when upstream exists
+
+Run `bash "$(echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default})/scripts/suggest-next.sh" verify {result} {phase}` and display.

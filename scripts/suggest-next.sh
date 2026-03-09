@@ -26,6 +26,21 @@ TARGET_PHASE_ARG="${3:-}"
 PLANNING_DIR=".vbw-planning"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Source shared UAT helpers (extract_status_value → aliased as read_status_field, latest_non_source_uat)
+# shellcheck source=uat-utils.sh
+. "$SCRIPT_DIR/uat-utils.sh"
+# Alias for backward compat within this script
+read_status_field() { extract_status_value "$@"; }
+
+# Source shared summary-status helpers for status-aware SUMMARY detection
+if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
+  # shellcheck source=summary-utils.sh
+  . "$SCRIPT_DIR/summary-utils.sh"
+else
+  # Safe default: report zero completions when helpers unavailable
+  count_complete_summaries() { echo "0"; }
+fi
+
 list_child_dirs_sorted() {
   local parent="$1"
   [ -d "$parent" ] || return 0
@@ -62,49 +77,35 @@ milestone_uat_issues=false
 milestone_uat_phase="none"
 milestone_uat_slug="none"
 milestone_uat_count=0
+current_uat_issues_phase=""
+current_uat_issues_slug=""
+current_uat_issues_label=""
+current_uat_major_or_higher=false
+current_uat_round_count=0
 cfg_require_phase_discussion=false
 next_undiscussed=""
 next_preseeded=""
 cfg_auto_uat=false
+has_unverified_phases=false
+first_unverified_phase=""
+first_unverified_slug=""
+next_phase_state=""
+pd_next_phase=""
 
-read_status_field() {
+read_deviations_field() {
   local file="$1"
   awk '
-    {
-      line = $0
-      if (tolower(line) ~ /^[[:space:]]*status[[:space:]]*:/) {
-        value = line
-        sub(/^[^:]*:[[:space:]]*/, "", value)
-        gsub(/[[:space:]]+$/, "", value)
-        print tolower(value)
-        exit
-      }
+    BEGIN { in_fm = 0 }
+    NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
+    in_fm && /^---[[:space:]]*$/ { exit }
+    in_fm && tolower($0) ~ /^[[:space:]]*deviations[[:space:]]*:/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      gsub(/[[:space:]]+$/, "", value)
+      print value
+      exit
     }
   ' "$file" 2>/dev/null || true
-}
-
-latest_non_source_uat() {
-  local dir="$1"
-  local f
-  local latest=""
-
-  case "$dir" in
-    */) ;;
-    *) dir="$dir/" ;;
-  esac
-
-  for f in "${dir}"[0-9]*-UAT.md; do
-    [ -e "$f" ] || continue
-    case "$f" in
-      *SOURCE-UAT.md) continue ;;
-    esac
-    latest="$f"
-  done
-
-  if [ -n "$latest" ]; then
-    printf '%s\n' "$latest"
-  fi
-  return 0
 }
 
 if [ -d "$PLANNING_DIR" ]; then
@@ -124,6 +125,50 @@ if [ -d "$PLANNING_DIR" ]; then
 
     _pd_require_discuss=$(echo "$_pd_out" | grep -m1 '^config_require_phase_discussion=' | sed 's/^[^=]*=//' || true)
     [ -n "${_pd_require_discuss:-}" ] && cfg_require_phase_discussion="$_pd_require_discuss"
+
+    # Unverified phases (for mid-milestone auto_uat suppression)
+    _pd_has_unverified=$(echo "$_pd_out" | grep -m1 '^has_unverified_phases=' | sed 's/^[^=]*=//' || true)
+    [ "${_pd_has_unverified:-}" = "true" ] && has_unverified_phases=true
+
+    # First unverified phase details
+    _pd_first_unverified_phase=$(echo "$_pd_out" | grep -m1 '^first_unverified_phase=' | sed 's/^[^=]*=//' || true)
+    _pd_first_unverified_slug=$(echo "$_pd_out" | grep -m1 '^first_unverified_slug=' | sed 's/^[^=]*=//' || true)
+    [ -n "${_pd_first_unverified_phase:-}" ] && first_unverified_phase="$_pd_first_unverified_phase"
+    [ -n "${_pd_first_unverified_slug:-}" ] && first_unverified_slug="$_pd_first_unverified_slug"
+
+    # Next phase state (for reverification routing)
+    _pd_next_phase_state=$(echo "$_pd_out" | grep -m1 '^next_phase_state=' | sed 's/^[^=]*=//' || true)
+    [ -n "${_pd_next_phase_state:-}" ] && next_phase_state="$_pd_next_phase_state"
+
+    # Next phase number (for reverification suggestions)
+    _pd_next_phase=$(echo "$_pd_out" | grep -m1 '^next_phase=' | sed 's/^[^=]*=//' || true)
+    [ -n "${_pd_next_phase:-}" ] && pd_next_phase="$_pd_next_phase"
+
+    # Current-phase UAT issues (distinct from archived milestone UAT)
+    _pd_uat_phase=$(echo "$_pd_out" | grep -m1 '^uat_issues_phase=' | sed 's/^[^=]*=//' || true)
+    _pd_uat_slug=$(echo "$_pd_out" | grep -m1 '^uat_issues_slug=' | sed 's/^[^=]*=//' || true)
+    _pd_uat_major=$(echo "$_pd_out" | grep -m1 '^uat_issues_major_or_higher=' | sed 's/^[^=]*=//' || true)
+    _pd_uat_round_count=$(echo "$_pd_out" | grep -m1 '^uat_round_count=' | sed 's/^[^=]*=//' || true)
+    if [ -n "${_pd_uat_phase:-}" ] && [ "$_pd_uat_phase" != "none" ]; then
+      current_uat_issues_phase="$_pd_uat_phase"
+      current_uat_issues_slug="${_pd_uat_slug:-}"
+      [ "${_pd_uat_major:-}" = "true" ] && current_uat_major_or_higher=true
+      [ -n "${_pd_uat_round_count:-}" ] && current_uat_round_count="$_pd_uat_round_count"
+    fi
+
+    # Build human-readable phase label: "Phase N (slug-name)" or just "Phase N"
+    # Append "— Round Y" when archived round files exist (Y = count + 1)
+    if [ -n "$current_uat_issues_phase" ] && [ -n "$current_uat_issues_slug" ]; then
+      current_uat_issues_label="Phase $current_uat_issues_phase ($current_uat_issues_slug)"
+    elif [ -n "$current_uat_issues_phase" ]; then
+      current_uat_issues_label="Phase $current_uat_issues_phase"
+    else
+      current_uat_issues_label=""
+    fi
+    if [ -n "$current_uat_issues_label" ] && [ "$current_uat_round_count" -gt 0 ] 2>/dev/null; then
+      _display_round=$((current_uat_round_count + 1))
+      current_uat_issues_label="$current_uat_issues_label — Round $_display_round"
+    fi
   fi
 
   # Root-canonical phases directory (no ACTIVE indirection)
@@ -175,7 +220,7 @@ if [ -d "$PLANNING_DIR" ]; then
       phase_slug=$(basename "$dir" | sed 's/^[0-9]*-//')
 
       plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-      summaries=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+      summaries=$(count_complete_summaries "$dir")
 
       if [ "$plans" -eq 0 ] && [ -z "$next_unplanned" ]; then
         # Track first undiscussed phase (for require_phase_discussion suggestions)
@@ -230,8 +275,8 @@ if [ -d "$PLANNING_DIR" ]; then
       active_phase_plans="$last_phase_plans"
     fi
 
-    # All done if phases exist and nothing is unplanned/unbuilt
-    if [ "$phase_count" -gt 0 ] && [ -z "$next_unplanned" ] && [ -z "$next_unbuilt" ]; then
+    # All done if phases exist, nothing is unplanned/unbuilt, and no current-phase UAT issues
+    if [ "$phase_count" -gt 0 ] && [ -z "$next_unplanned" ] && [ -z "$next_unbuilt" ] && [ -z "$current_uat_issues_phase" ]; then
       all_done=true
     fi
 
@@ -250,7 +295,7 @@ if [ -d "$PLANNING_DIR" ]; then
       for sf in "$active_phase_dir"/*-SUMMARY.md; do
         [ -f "$sf" ] || continue
         # Extract deviations count from frontmatter
-        d=$(grep -m1 '^deviations:' "$sf" 2>/dev/null | sed 's/deviations:[[:space:]]*//' || true)
+        d=$(read_deviations_field "$sf")
         case "$d" in
           0|"[]"|"") ;;  # zero deviations
           [0-9]*) deviation_count=$((deviation_count + d)) ;;
@@ -264,11 +309,14 @@ if [ -d "$PLANNING_DIR" ]; then
         fi
       done
 
-      # Check for completed UAT in active phase
+      # Check for completed UAT in active phase (exclude SOURCE-UAT copies)
       for uf in "$active_phase_dir"/*-UAT.md; do
         [ -f "$uf" ] || continue
+        case "$uf" in
+          *SOURCE-UAT.md) continue ;;
+        esac
         us=$(read_status_field "$uf")
-        if [ "$us" = "complete" ]; then
+        if [ "$us" = "complete" ] || [ "$us" = "passed" ]; then
           has_uat=true
         fi
       done
@@ -332,7 +380,7 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
       [ -d "$dir" ] || continue
       # Guard: skip phases without execution artifacts (matching phase-detect.sh)
       _plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-      _summaries=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+      _summaries=$(count_complete_summaries "$dir")
       if [ "$_plans" -eq 0 ] || [ "$_summaries" -lt "$_plans" ]; then
         continue
       fi
@@ -429,12 +477,25 @@ case "$CMD" in
         fi
         ;;
       *)
-        # Suggest UAT for cautious/standard autonomy when no UAT exists, or always when auto_uat=true
-        if [ "$has_uat" = false ] && { [ "$cfg_auto_uat" = true ] || [ "$cfg_autonomy" = "cautious" ] || [ "$cfg_autonomy" = "standard" ]; }; then
-          suggest "/vbw:verify -- Walk through changes before continuing"
+        # Suggest UAT verification when:
+        # 1. Active phase is fully built (plans>0), has no UAT, no known issues, AND (auto_uat or cautious/standard)
+        # 2. auto_uat=true AND some completed phase is unverified (cross-phase)
+        # Skip when current phase already has UAT issues (remediation takes priority)
+        if [ -z "$current_uat_issues_phase" ] && \
+           { { [ "$has_uat" = false ] && [ "$active_phase_plans" -gt 0 ] && { [ "$cfg_auto_uat" = true ] || [ "$cfg_autonomy" = "cautious" ] || [ "$cfg_autonomy" = "standard" ]; }; } \
+             || { [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; }; }; then
+          if [ -n "$first_unverified_phase" ]; then
+            _uv_label="$first_unverified_phase"
+            [ -n "$first_unverified_slug" ] && _uv_label="$first_unverified_phase ($(fmt_phase_name "${first_unverified_slug#*-}"))"
+            suggest "/vbw:verify $first_unverified_phase -- Walk through $_uv_label changes before continuing"
+          else
+            suggest "/vbw:verify -- Walk through changes before continuing"
+          fi
         fi
-        if [ "$all_done" = true ]; then
-          if ! suggest_milestone_recovery; then
+        if [ "$all_done" = true ] || [ "$next_phase_state" = "needs_reverification" ]; then
+          if [ "$next_phase_state" = "needs_reverification" ]; then
+            suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+          elif ! suggest_milestone_recovery; then
             if [ "$deviation_count" -eq 0 ]; then
               suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
             else
@@ -446,7 +507,13 @@ case "$CMD" in
           else
             :
           fi
-        elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
+        elif [ -n "$current_uat_issues_phase" ]; then
+          if [ "$current_uat_major_or_higher" = true ]; then
+            suggest "/vbw:vibe -- Remediate UAT issues for $current_uat_issues_label"
+          else
+            suggest "/vbw:fix -- Fix minor UAT issues in $current_uat_issues_label"
+          fi
+        elif { [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; } && ! { [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; }; then
           target="${next_unbuilt:-$next_unplanned}"
           # If next phase needs discussion, suggest discuss (suppress continue)
           if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
@@ -493,12 +560,25 @@ case "$CMD" in
   qa)
     case "$effective_result" in
       pass)
-        # Suggest UAT for cautious/standard autonomy when no UAT exists, or always when auto_uat=true
-        if [ "$has_uat" = false ] && { [ "$cfg_auto_uat" = true ] || [ "$cfg_autonomy" = "cautious" ] || [ "$cfg_autonomy" = "standard" ]; }; then
-          suggest "/vbw:verify -- Walk through changes manually"
+        # Suggest UAT verification when:
+        # 1. Active phase is fully built (plans>0), has no UAT, no known issues, AND (auto_uat or cautious/standard)
+        # 2. auto_uat=true AND some completed phase is unverified (cross-phase)
+        # Skip when current phase already has UAT issues (remediation takes priority)
+        if [ -z "$current_uat_issues_phase" ] && \
+           { { [ "$has_uat" = false ] && [ "$active_phase_plans" -gt 0 ] && { [ "$cfg_auto_uat" = true ] || [ "$cfg_autonomy" = "cautious" ] || [ "$cfg_autonomy" = "standard" ]; }; } \
+             || { [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; }; }; then
+          if [ -n "$first_unverified_phase" ]; then
+            _uv_label="$first_unverified_phase"
+            [ -n "$first_unverified_slug" ] && _uv_label="$first_unverified_phase ($(fmt_phase_name "${first_unverified_slug#*-}"))"
+            suggest "/vbw:verify $first_unverified_phase -- Walk through $_uv_label changes manually"
+          else
+            suggest "/vbw:verify -- Walk through changes manually"
+          fi
         fi
-        if [ "$all_done" = true ]; then
-          if ! suggest_milestone_recovery; then
+        if [ "$all_done" = true ] || [ "$next_phase_state" = "needs_reverification" ]; then
+          if [ "$next_phase_state" = "needs_reverification" ]; then
+            suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+          elif ! suggest_milestone_recovery; then
             if [ "$deviation_count" -eq 0 ]; then
               suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
             else
@@ -507,7 +587,13 @@ case "$CMD" in
           else
             :
           fi
-        else
+        elif [ -n "$current_uat_issues_phase" ]; then
+          if [ "$current_uat_major_or_higher" = true ]; then
+            suggest "/vbw:vibe -- Remediate UAT issues for $current_uat_issues_label"
+          else
+            suggest "/vbw:fix -- Fix minor UAT issues in $current_uat_issues_label"
+          fi
+        elif { [ -n "${next_unbuilt:-}" ] || [ -n "${next_unplanned:-}" ]; } && ! { [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; }; then
           target="${next_unbuilt:-$next_unplanned}"
           if [ -n "$next_undiscussed" ] && [ -n "$target" ] && [ "$next_undiscussed" = "$target" ]; then
             suggest "/vbw:discuss $target -- Discuss phase before planning"
@@ -610,7 +696,9 @@ case "$CMD" in
     ;;
 
   status)
-    if [ "$all_done" = true ]; then
+    if [ "$next_phase_state" = "needs_reverification" ]; then
+      suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+    elif [ "$all_done" = true ]; then
       if ! suggest_milestone_recovery; then
         if [ "$deviation_count" -eq 0 ]; then
           suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
@@ -619,6 +707,20 @@ case "$CMD" in
         fi
       else
         :
+      fi
+    elif [ -n "$current_uat_issues_phase" ]; then
+      if [ "$current_uat_major_or_higher" = true ]; then
+        suggest "/vbw:vibe -- Remediate UAT issues for $current_uat_issues_label"
+      else
+        suggest "/vbw:fix -- Fix minor UAT issues in $current_uat_issues_label"
+      fi
+    elif [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; then
+      if [ -n "$first_unverified_phase" ]; then
+        _uv_label="$first_unverified_phase"
+        [ -n "$first_unverified_slug" ] && _uv_label="$first_unverified_phase ($(fmt_phase_name "${first_unverified_slug#*-}"))"
+        suggest "/vbw:verify $first_unverified_phase -- Verify $_uv_label before continuing"
+      else
+        suggest "/vbw:verify -- Verify completed phases before continuing"
       fi
     elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
       target="${next_unbuilt:-$next_unplanned}"
@@ -662,7 +764,58 @@ case "$CMD" in
     ;;
 
   resume)
-    suggest "/vbw:vibe -- Continue building"
+    if [ "$next_phase_state" = "needs_reverification" ]; then
+      suggest "/vbw:vibe -- Re-verify Phase ${pd_next_phase:-} after remediation"
+    elif [ -n "$current_uat_issues_phase" ]; then
+      if [ "$current_uat_major_or_higher" = true ]; then
+        suggest "/vbw:vibe -- Remediate UAT issues for $current_uat_issues_label"
+      else
+        suggest "/vbw:fix -- Fix minor UAT issues in $current_uat_issues_label"
+      fi
+    elif [ "$all_done" = true ]; then
+      if ! suggest_milestone_recovery; then
+        if [ "$deviation_count" -eq 0 ]; then
+          suggest "/vbw:vibe --archive -- All phases complete, zero deviations"
+        else
+          suggest "/vbw:vibe --archive -- Archive completed work ($deviation_count deviation(s) logged)"
+        fi
+      fi
+    elif [ "$cfg_auto_uat" = true ] && [ "$has_unverified_phases" = true ]; then
+      if [ -n "$first_unverified_phase" ]; then
+        _uv_label="$first_unverified_phase"
+        [ -n "$first_unverified_slug" ] && _uv_label="$first_unverified_phase ($(fmt_phase_name "${first_unverified_slug#*-}"))"
+        suggest "/vbw:verify $first_unverified_phase -- Verify $_uv_label before continuing"
+      else
+        suggest "/vbw:verify -- Verify completed phases before continuing"
+      fi
+    elif [ -n "$next_unbuilt" ] || [ -n "$next_unplanned" ]; then
+      target="${next_unbuilt:-$next_unplanned}"
+      if [ -n "$next_undiscussed" ] && [ "$next_undiscussed" = "$target" ]; then
+        suggest "/vbw:discuss $target -- Discuss phase before planning"
+      elif [ -n "$next_preseeded" ] && [ "$next_preseeded" = "$target" ]; then
+        for dir in "$PHASES_DIR"/*/; do
+          [ -d "$dir" ] || continue
+          pn=$(basename "$dir" | sed 's/[^0-9].*//')
+          if [ "$pn" = "$target" ]; then
+            tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+            suggest "/vbw:vibe -- Plan Phase $target: $(fmt_phase_name "$tname") (discussion pre-seeded from UAT)"
+            break
+          fi
+        done
+      else
+        for dir in "$PHASES_DIR"/*/; do
+          [ -d "$dir" ] || continue
+          pn=$(basename "$dir" | sed 's/[^0-9].*//')
+          if [ "$pn" = "$target" ]; then
+            tname=$(basename "$dir" | sed 's/^[0-9]*-//')
+            suggest "/vbw:vibe -- Continue Phase $target: $(fmt_phase_name "$tname")"
+            break
+          fi
+        done
+      fi
+    else
+      suggest "/vbw:vibe -- Continue building"
+    fi
     suggest "/vbw:status -- View current progress"
     ;;
 

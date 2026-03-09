@@ -41,7 +41,9 @@ extract_frontmatter() {
 
 echo "=== Command Contract Verification ==="
 
-for file in "$COMMANDS_DIR"/*.md; do
+# Scan both commands/ (consumer-facing) and internal/ (maintainer-only)
+for file in "$COMMANDS_DIR"/*.md "$ROOT/internal"/*.md; do
+  [ -f "$file" ] || continue
   base="$(basename "$file" .md)"
 
   if [ "$(head -1 "$file" 2>/dev/null || true)" != "---" ]; then
@@ -102,7 +104,8 @@ echo "=== Milestone Context Verification ==="
 # 1. The ACTIVE milestone shell interpolation in their Context section, OR
 # 2. Bash in allowed-tools (so the agent can read ACTIVE at runtime)
 # Without either, the agent has no way to discover the active milestone slug.
-for file in "$COMMANDS_DIR"/*.md; do
+for file in "$COMMANDS_DIR"/*.md "$ROOT/internal"/*.md; do
+  [ -f "$file" ] || continue
   base="$(basename "$file" .md)"
 
   # Extract body after frontmatter, excluding Context section (which contains the fix itself)
@@ -144,6 +147,28 @@ for scan_dir in "$ROOT/scripts" "$ROOT/references" "$ROOT/agents" "$ROOT/templat
 done
 
 echo ""
+echo "=== Phase-Detect Usage Verification ==="
+
+# Commands that present phase progress MUST use phase-detect.sh output for state
+# detection rather than having the LLM glob and compute state independently.
+# Without this, the LLM may read from archived milestone directories and present
+# stale data. Commands that read STATE.md/ROADMAP.md should also scope reads to
+# top-level .vbw-planning/ only (not milestones/).
+PHASE_DETECT_REQUIRED_COMMANDS="resume vibe discuss qa verify"
+for pd_cmd in $PHASE_DETECT_REQUIRED_COMMANDS; do
+  pd_file="$COMMANDS_DIR/${pd_cmd}.md"
+  if [ ! -f "$pd_file" ]; then
+    fail "$pd_cmd: command file not found"
+    continue
+  fi
+  if grep -q 'phase-detect\.sh' "$pd_file"; then
+    pass "$pd_cmd: uses phase-detect.sh for state detection"
+  else
+    fail "$pd_cmd: missing phase-detect.sh — LLM may read archived milestone data"
+  fi
+done
+
+echo ""
 echo "=== Command Reference Verification ==="
 
 while IFS= read -r ref; do
@@ -170,7 +195,7 @@ while IFS= read -r ref; do
   else
     fail "reference missing target: $ref -> $rel"
   fi
-done < <(grep -RhoE '\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9._/*{}-]+' "$COMMANDS_DIR"/*.md | sort -u)
+done < <(grep -RhoE '\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9._/*{}-]+' "$COMMANDS_DIR"/*.md "$ROOT/internal"/*.md 2>/dev/null | sort -u)
 
 echo ""
 echo "==============================="

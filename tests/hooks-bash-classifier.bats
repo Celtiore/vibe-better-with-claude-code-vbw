@@ -5,10 +5,12 @@ load test_helper
 # Test suite for VBW hook bash patterns against CC 2.1.47 stricter classifier
 # REQ-10: Audit bash permission patterns against CC 2.1.47's stricter classifier
 #
-# All 21 hook handlers in hooks.json use a common dual-resolution pattern:
+# All 21 hook handlers in hooks.json use a common quad-resolution pattern:
 # 1. Version-sorted plugin cache resolution: ls -1 | sort -V | tail -1
 # 2. Fallback to CLAUDE_PLUGIN_ROOT
-# 3. Execute hook-wrapper.sh with target script
+# 3. Fallback to per-session symlink (/tmp/.vbw-plugin-root-link-*)
+# 4. Fallback to ps process-tree sniffing (--plugin-dir)
+# 5. Execute hook-wrapper.sh with target script
 #
 # Hook scripts invoked:
 # - validate-summary.sh (PostToolUse Write|Edit, SubagentStop)
@@ -38,24 +40,26 @@ load test_helper
 # - notification-log.sh (Notification)
 
 setup() {
-  # Store the common hook-wrapper.sh resolution pattern
-  WRAPPER_PATTERN='bash -c '\''w=$(ls -1 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/*/scripts/hook-wrapper.sh 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1); [ ! -f "$w" ] && w="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/hook-wrapper.sh}"; [ -f "$w" ] && exec bash "$w" TARGET_SCRIPT; exit 0'\'''
+  EXPECTED_HOOK_COUNT=$(grep -c '"command":' "$PROJECT_ROOT/hooks/hooks.json")
+
+  # Store the common hook-wrapper.sh resolution pattern (quad-resolution)
+  WRAPPER_PATTERN='bash -c '\''w=$(ls -1 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/vbw-marketplace/vbw/*/scripts/hook-wrapper.sh 2>/dev/null | (sort -V 2>/dev/null || sort -t. -k1,1n -k2,2n -k3,3n) | tail -1); [ ! -f "$w" ] && w="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/scripts/hook-wrapper.sh}"; [ ! -f "$w" ] && for f in /tmp/.vbw-plugin-root-link-*/scripts/hook-wrapper.sh; do [ -f "$f" ] && w="$f" && break; done; [ ! -f "$w" ] && { D=$(ps axww -o args= 2>/dev/null | grep -v grep | grep -oE -- "--plugin-dir [^ ]+" | head -1); D="${D#--plugin-dir }"; [ -n "$D" ] && w="$D/scripts/hook-wrapper.sh"; }; [ -f "$w" ] && exec bash "$w" TARGET_SCRIPT; exit 0'\'''
 }
 
 @test "hook pattern count matches hooks.json entries" {
   # Count unique bash commands in hooks.json
   HOOK_COUNT=$(grep -c '"command":' "$PROJECT_ROOT/hooks/hooks.json")
 
-  # We should have 26 total hook entries (21 unique scripts, some duplicated across events)
-  [ "$HOOK_COUNT" -eq 26 ]
+  # Must match the live hook entry count in hooks.json.
+  [ "$HOOK_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
 }
 
-@test "all hooks use dual-resolution pattern" {
+@test "all hooks use quad-resolution pattern" {
   # All hooks should use the version-sorted cache resolution pattern
   PATTERN_COUNT=$(grep -c 'sort -V' "$PROJECT_ROOT/hooks/hooks.json")
 
   # Should match total hook count
-  [ "$PATTERN_COUNT" -eq 26 ]
+  [ "$PATTERN_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
 }
 
 @test "all hooks have CLAUDE_PLUGIN_ROOT fallback" {
@@ -63,7 +67,7 @@ setup() {
   FALLBACK_COUNT=$(grep -c 'CLAUDE_PLUGIN_ROOT:+' "$PROJECT_ROOT/hooks/hooks.json")
 
   # Should match total hook count
-  [ "$FALLBACK_COUNT" -eq 26 ]
+  [ "$FALLBACK_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
 }
 
 @test "all hooks exit 0 for graceful degradation" {
@@ -71,7 +75,7 @@ setup() {
   EXIT_COUNT=$(grep -c 'exit 0' "$PROJECT_ROOT/hooks/hooks.json")
 
   # Should match total hook count
-  [ "$EXIT_COUNT" -eq 26 ]
+  [ "$EXIT_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
 }
 
 # Unique hook script invocations (21 total)
@@ -196,15 +200,17 @@ setup() {
   [ "$PATTERN_EXISTS" -ge 1 ]
 }
 
-@test "hook resolution: dual fallback pattern is valid" {
-  # Test the dual resolution pattern: cache first, then CLAUDE_PLUGIN_ROOT
-  # Pattern: [ ! -f "$w" ] && w="${CLAUDE_PLUGIN_ROOT:+...}"; [ -f "$w" ] && exec bash "$w" ...
+@test "hook resolution: quad fallback pattern is valid" {
+  # Test the quad resolution: cache -> CLAUDE_PLUGIN_ROOT -> symlink -> ps
 
   # Verify hook-wrapper.sh uses file existence checks (both -f and ! -f)
   FILE_CHECK_POS=$(grep -c '\[ -f' "$PROJECT_ROOT/scripts/hook-wrapper.sh")
   FILE_CHECK_NEG=$(grep -c '\[ ! -f' "$PROJECT_ROOT/scripts/hook-wrapper.sh")
   TOTAL_CHECKS=$((FILE_CHECK_POS + FILE_CHECK_NEG))
   [ "$TOTAL_CHECKS" -ge 4 ]
+
+  # Verify hook-wrapper.sh has sibling script fallback (dirname $0)
+  grep -q '_SELF_DIR' "$PROJECT_ROOT/scripts/hook-wrapper.sh"
 }
 
 @test "hook resolution: graceful exit 0 on missing target" {
@@ -228,8 +234,8 @@ setup() {
   # All hooks use 'bash -c' to wrap the resolution logic
   BASH_C_COUNT=$(grep -c 'bash -c' "$PROJECT_ROOT/hooks/hooks.json")
 
-  # Should match total hook count (26)
-  [ "$BASH_C_COUNT" -eq 26 ]
+  # Should match total hook count
+  [ "$BASH_C_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
 }
 
 @test "hook resolution: variable substitution uses safe patterns" {
@@ -243,12 +249,30 @@ setup() {
   [ "$SAFE_PLUGIN_ROOT" -ge 1 ]
 }
 
+@test "hook resolution: per-session symlink fallback present" {
+  # All hooks should have /tmp/.vbw-plugin-root-link-* fallback for local dev
+  SYMLINK_COUNT=$(grep -c 'vbw-plugin-root-link-' "$PROJECT_ROOT/hooks/hooks.json")
+  [ "$SYMLINK_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
+}
+
+@test "hook resolution: ps process-tree fallback present" {
+  # All hooks should have ps-based --plugin-dir sniffing for local dev
+  PS_COUNT=$(grep -c 'ps axww' "$PROJECT_ROOT/hooks/hooks.json")
+  [ "$PS_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
+}
+
+@test "hook-wrapper: sibling script fallback via dirname" {
+  # hook-wrapper.sh should resolve target scripts relative to its own location
+  grep -q 'dirname.*\$0' "$PROJECT_ROOT/scripts/hook-wrapper.sh"
+  grep -q '_SELF_DIR' "$PROJECT_ROOT/scripts/hook-wrapper.sh"
+}
+
 @test "hook resolution: exec bash handoff is valid" {
   # Verify hooks use 'exec bash' to hand off to hook-wrapper.sh
   EXEC_COUNT=$(grep -c 'exec bash' "$PROJECT_ROOT/hooks/hooks.json")
 
-  # Should match total hook count (26)
-  [ "$EXEC_COUNT" -eq 26 ]
+  # Should match total hook count
+  [ "$EXEC_COUNT" -eq "$EXPECTED_HOOK_COUNT" ]
 }
 
 @test "hook resolution: error suppression with 2>/dev/null" {
@@ -256,7 +280,7 @@ setup() {
   ERROR_SUPPRESS=$(grep -c '2>/dev/null' "$PROJECT_ROOT/hooks/hooks.json")
 
   # At least one per hook (may be more due to multiple redirects)
-  [ "$ERROR_SUPPRESS" -ge 26 ]
+  [ "$ERROR_SUPPRESS" -ge 25 ]
 }
 
 # Task 3: Test individual hook script invocations

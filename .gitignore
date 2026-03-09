@@ -17,10 +17,12 @@ node_modules/
 .env.*.local
 
 # Claude Code local settings
-.claude/settings.local.json
+.claude
 
-# GitHub Copilot instructions
+# Agents prompt instructions
 .github/copilot-instructions.md
+AGENTS.md
+CLAUDE.md
 
 # OS
 .DS_Store
@@ -43,3 +45,10 @@ npm-debug.log*
 # Non-production files
 a_non_prod_files/
 .vbw-worktrees/
+
+# Local Debugging
+diag-session-key.md
+diag-emulate-marketplace.sh
+diag-parse-session.sh
+diag-parse-key.sh
+diag-session-key.sh

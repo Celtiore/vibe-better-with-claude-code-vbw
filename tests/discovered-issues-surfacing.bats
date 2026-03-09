@@ -55,7 +55,7 @@ load test_helper
 
 @test "fix command prompt mentions pre-existing failures in spawn block" {
   # The spawn prompt template must tell Dev about pre-existing reporting
-  sed -n '/^3\./,/^4\./p' "$PROJECT_ROOT/commands/fix.md" | grep -q 'pre-existing'
+  sed -n '/^4\./,/^5\./p' "$PROJECT_ROOT/commands/fix.md" | grep -q 'pre-existing'
 }
 
 @test "fix command has discovered issues output section" {
@@ -429,8 +429,8 @@ load test_helper
 # Verify command: discovered issues scoped to user-reported
 # =============================================================================
 
-@test "verify command discovered issues scoped to user-reported issues" {
-  grep -A2 'Discovered Issues' "$PROJECT_ROOT/commands/verify.md" | grep -qi 'user.*reported'
+@test "verify command discovered issues flow into remediation" {
+  grep -qi 'flow into remediation' "$PROJECT_ROOT/commands/verify.md"
 }
 
 # =============================================================================
@@ -445,12 +445,12 @@ load test_helper
   grep -q '⚠' "$PROJECT_ROOT/commands/verify.md"
 }
 
-@test "verify command discovered issues suggests /vbw:todo" {
-  grep -q '/vbw:todo' "$PROJECT_ROOT/commands/verify.md"
+@test "verify command discovered issues recorded in UAT.md" {
+  grep -qi 'recorded in the UAT.md' "$PROJECT_ROOT/commands/verify.md"
 }
 
-@test "verify command discovered issues is display-only" {
-  grep -q 'display-only' "$PROJECT_ROOT/commands/verify.md"
+@test "verify command discovered issues uses D{NN} IDs" {
+  grep -q 'D{NN}' "$PROJECT_ROOT/commands/verify.md"
 }
 
 # =============================================================================
@@ -463,7 +463,8 @@ load test_helper
 
 @test "all discovered issues sections use display-only constraint" {
   local failed=""
-  for file in commands/fix.md commands/debug.md commands/qa.md commands/verify.md references/execute-protocol.md; do
+  # verify.md is excluded — its discovered issues flow into remediation via UAT.md, not display-only
+  for file in commands/fix.md commands/debug.md commands/qa.md references/execute-protocol.md; do
     if grep -q 'Discovered Issues' "$PROJECT_ROOT/$file"; then
       if ! grep -q 'display-only' "$PROJECT_ROOT/$file"; then
         failed="${failed} ${file}"
@@ -475,7 +476,8 @@ load test_helper
 
 @test "all discovered issues sections suggest /vbw:todo" {
   local failed=""
-  for file in commands/fix.md commands/debug.md commands/qa.md commands/verify.md references/execute-protocol.md; do
+  # verify.md is excluded — its discovered issues flow into remediation via UAT.md
+  for file in commands/fix.md commands/debug.md commands/qa.md references/execute-protocol.md; do
     if grep -q 'Discovered Issues' "$PROJECT_ROOT/$file"; then
       if ! grep -q '/vbw:todo' "$PROJECT_ROOT/$file"; then
         failed="${failed} ${file}"
@@ -499,7 +501,8 @@ load test_helper
 
 @test "all discovered issues sections specify testName format" {
   local failed=""
-  for file in commands/fix.md commands/debug.md commands/qa.md commands/verify.md references/execute-protocol.md; do
+  # verify.md is excluded — uses D{NN} format for UAT remediation, not testName format
+  for file in commands/fix.md commands/debug.md commands/qa.md references/execute-protocol.md; do
     if grep -q 'Discovered Issues' "$PROJECT_ROOT/$file"; then
       if ! grep -q 'testName.*path/to/file.*error' "$PROJECT_ROOT/$file"; then
         failed="${failed} ${file}"
@@ -515,7 +518,8 @@ load test_helper
 
 @test "all discovered issues sections include STOP after display" {
   local failed=""
-  for file in commands/fix.md commands/debug.md commands/qa.md commands/verify.md; do
+  # verify.md is excluded — its discovered issues flow into remediation, no STOP needed
+  for file in commands/fix.md commands/debug.md commands/qa.md; do
     if grep -q 'Discovered Issues' "$PROJECT_ROOT/$file"; then
       if ! grep -qi 'STOP.*Do not take further action' "$PROJECT_ROOT/$file"; then
         failed="${failed} ${file}"
@@ -543,7 +547,8 @@ load test_helper
 
 @test "all discovered issues sections have de-duplication instruction" {
   local failed=""
-  for file in commands/fix.md commands/debug.md commands/qa.md commands/verify.md references/execute-protocol.md; do
+  # verify.md is excluded — uses D{NN} sequential IDs, dedup not applicable
+  for file in commands/fix.md commands/debug.md commands/qa.md references/execute-protocol.md; do
     if grep -q 'Discovered Issues' "$PROJECT_ROOT/$file"; then
       if ! grep -qi 'de-duplicate\|De-duplicate' "$PROJECT_ROOT/$file"; then
         failed="${failed} ${file}"
@@ -555,7 +560,8 @@ load test_helper
 
 @test "all discovered issues sections have cap at 20" {
   local failed=""
-  for file in commands/fix.md commands/debug.md commands/qa.md commands/verify.md references/execute-protocol.md; do
+  # verify.md is excluded — UAT test count is naturally bounded by generated tests
+  for file in commands/fix.md commands/debug.md commands/qa.md references/execute-protocol.md; do
     if grep -q 'Discovered Issues' "$PROJECT_ROOT/$file"; then
       if ! grep -qi 'cap.*20\|Cap.*20' "$PROJECT_ROOT/$file"; then
         failed="${failed} ${file}"
@@ -565,12 +571,32 @@ load test_helper
   [ -z "$failed" ] || { echo "Missing cap at 20 in:$failed"; return 1; }
 }
 
-@test "verify command has best-effort extraction guidance" {
-  grep -qi 'best-effort' "$PROJECT_ROOT/commands/verify.md"
+@test "verify command freeform handles pass-intent with observation" {
+  grep -qi 'pass-intent.*observation\|pass-intent with observation' "$PROJECT_ROOT/commands/verify.md"
 }
 
-@test "verify command handles unknown test name or file" {
-  grep -qi 'unknown' "$PROJECT_ROOT/commands/verify.md"
+@test "verify command freeform lists all pass-intent words" {
+  # Validate every pass-intent word is listed
+  for word in pass passed 'looks good' works correct confirmed yes good fine ok; do
+    grep -qi "$word" "$PROJECT_ROOT/commands/verify.md" || { echo "Missing pass-intent word: $word"; return 1; }
+  done
+}
+
+@test "verify command freeform handles skip-intent with observation" {
+  grep -qi 'skip-intent.*observation\|skip-intent with observation' "$PROJECT_ROOT/commands/verify.md"
+}
+
+@test "verify command freeform specifies whole-word matching" {
+  grep -qi 'whole word' "$PROJECT_ROOT/commands/verify.md"
+}
+
+@test "verify command skip button-selected captures observations" {
+  # Step 5 skip path should mention discovered issue / Step 6a
+  sed -n '/\*\*"Skip" selected:\*\*/,/\*\*Freeform/p' "$PROJECT_ROOT/commands/verify.md" | grep -qi 'discovered issue\|Step 6a\|observation'
+}
+
+@test "verify command D{NN} resume scans existing entries" {
+  grep -qi 'scan existing.*D{NN}\|highest existing number\|max+1' "$PROJECT_ROOT/commands/verify.md"
 }
 
 @test "dev agent DEVN-05 has priority rule for overlapping uncertainty" {
@@ -581,4 +607,80 @@ load test_helper
   sed -n '/## Communication/,/^##/p' "$PROJECT_ROOT/agents/vbw-dev.md" | grep -q 'handoff-schemas.md'
   # Should not contain "same structure as defined in execution_update" (circular)
   ! sed -n '/## Communication/,/^##/p' "$PROJECT_ROOT/agents/vbw-dev.md" | grep -q 'same.*structure as defined in.*execution_update'
+}
+
+# =============================================================================
+# QA round 3 (PR #142): behavior assertions for verify response mapping
+# =============================================================================
+
+@test "verify response mapping treats idiomatic positive 'not bad' as pass" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "not bad"
+  [ "$status" -eq 0 ]
+  [ "$output" = "pass" ]
+}
+
+@test "verify response mapping handles curly apostrophe in can't complain" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "can’t complain"
+  [ "$status" -eq 0 ]
+  [ "$output" = "pass" ]
+}
+
+@test "verify response mapping catches non-adjacent negation scope" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "I don't think it works"
+  [ "$status" -eq 0 ]
+  [ "$output" = "issue" ]
+}
+
+@test "verify response mapping prefers skip when current checkpoint is explicitly deferred" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "Pass overall, but skip this checkpoint for now"
+  [ "$status" -eq 0 ]
+  [ "$output" = "skip" ]
+}
+
+@test "verify response mapping does not create false observation from positive separator text" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "pass: looks great"
+  [ "$status" -eq 0 ]
+  [ "$output" = "pass" ]
+}
+
+@test "verify response mapping classifies pass with defect observation" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "pass, but the sidebar is broken"
+  [ "$status" -eq 0 ]
+  [ "$output" = "pass_with_observation" ]
+}
+
+@test "verify response mapping classifies skip with defect observation" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "skip, but the sidebar is broken"
+  [ "$status" -eq 0 ]
+  [ "$output" = "skip_with_observation" ]
+}
+
+@test "verify response mapping falls back to issue for unmatched freeform" {
+  run bash "$PROJECT_ROOT/scripts/map-verify-response.sh" "kinda flaky and weird"
+  [ "$status" -eq 0 ]
+  [ "$output" = "issue" ]
+}
+
+@test "verify command documents idiomatic positives and issue-signal guard" {
+  grep -qi 'Idiomatic-positive exceptions' "$PROJECT_ROOT/commands/verify.md"
+  grep -qi 'Observation extraction guard' "$PROJECT_ROOT/commands/verify.md"
+}
+
+# =============================================================================
+# QA round 4 (PR #142): newline-separated input via stdin
+# =============================================================================
+
+@test "verify response mapping handles newline between pass and issue observation via stdin" {
+  result=$(printf 'pass\nbut the sidebar is broken' | bash "$PROJECT_ROOT/scripts/map-verify-response.sh")
+  [ "$result" = "pass_with_observation" ]
+}
+
+@test "verify response mapping handles newline between skip and issue observation via stdin" {
+  result=$(printf 'skip\nbut there is a bug' | bash "$PROJECT_ROOT/scripts/map-verify-response.sh")
+  [ "$result" = "skip_with_observation" ]
+}
+
+@test "verify response mapping handles newline-only pass via stdin" {
+  result=$(printf 'looks good\nno issues' | bash "$PROJECT_ROOT/scripts/map-verify-response.sh")
+  [ "$result" = "pass" ]
 }

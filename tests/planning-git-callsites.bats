@@ -12,9 +12,9 @@ load test_helper
   [ "$status" -eq 1 ]
 }
 
-@test "planning-git callsites use deterministic echo path where expected" {
+@test "planning-git callsites use deterministic root path where expected" {
   local count
-  count=$(grep -R -c 'echo /tmp/.vbw-plugin-root-link-.*planning-git' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
+  count=$(grep -R -cE 'echo /tmp/.vbw-plugin-root-link-.*planning-git|PG_SCRIPT="/tmp/.vbw-plugin-root-link-.*planning-git' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
   [[ "$count" =~ ^[0-9]+$ ]]
   [ "$count" -ge 6 ]
 }
@@ -45,9 +45,10 @@ load test_helper
   c=$(grep -c 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/init.md")
   [ "$c" -eq 2 ]
 
-  c=$(grep -c 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/vibe.md")
-  [ "$c" -eq 3 ]
-
+  c=$(grep -c 'PG_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/vibe.md")
+  [ "$c" -eq 4 ]
+  c=$(grep -c 'PG_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"' "$PROJECT_ROOT/commands/verify.md")
+  [ "$c" -eq 1 ]
   c=$(grep -c 'PG_SCRIPT="${VBW_PLUGIN_ROOT}/scripts/planning-git.sh"' "$PROJECT_ROOT/references/execute-protocol.md")
   [ "$c" -eq 2 ]
 }
@@ -60,8 +61,8 @@ load test_helper
 
 @test "planning-git callsite count is exact" {
   local fallback_count
-  fallback_count=$(grep -R -cE 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-\$\{CLAUDE_SESSION_ID:-default\}`/scripts/planning-git.sh"|PG_SCRIPT="\$\{VBW_PLUGIN_ROOT\}/scripts/planning-git.sh"' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
-  [ "$fallback_count" -eq 8 ] || { echo "Unexpected planning-git callsite count: $fallback_count"; false; }
+  fallback_count=$(grep -R -cE 'PG_SCRIPT="`!`echo /tmp/.vbw-plugin-root-link-\$\{CLAUDE_SESSION_ID:-default\}`/scripts/planning-git.sh"|PG_SCRIPT="/tmp/.vbw-plugin-root-link-\$\{CLAUDE_SESSION_ID:-default\}/scripts/planning-git.sh"|PG_SCRIPT="\$\{VBW_PLUGIN_ROOT\}/scripts/planning-git.sh"' "$PROJECT_ROOT/commands" "$PROJECT_ROOT/references" 2>/dev/null | awk -F: '{s+=$NF} END{print s}')
+  [ "$fallback_count" -eq 10 ] || { echo "Unexpected planning-git callsite count: $fallback_count"; false; }
 }
 
 @test "planning-git callsites do not use sort -V fallback resolver" {
@@ -94,20 +95,18 @@ load test_helper
   done
 }
 
-@test "preamble and readers use same session key expansion" {
+@test "preamble and readers use supported session key expansion" {
   for file in "$PROJECT_ROOT/commands"/*.md; do
     local reader_count
     reader_count=$(grep -c 'echo /tmp/.vbw-plugin-root-link-' "$file" 2>/dev/null || true)
     [ "$reader_count" -gt 0 ] || continue
-    # Preamble must derive session key from CLAUDE_SESSION_ID:-default
-    # It may use either direct LINK="/tmp/...-${CLAUDE_SESSION_ID:-default}" or
-    # indirect SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; LINK="/tmp/...-${SESSION_KEY}"
-    grep -q 'CLAUDE_SESSION_ID:-default' "$file" || \
-      { echo "$(basename "$file"): preamble missing CLAUDE_SESSION_ID:-default fallback"; return 1; }
-    # Every reader must also use ${CLAUDE_SESSION_ID:-default}
+    # Preamble must assign SESSION_KEY with CLAUDE_SESSION_ID:-default
+    grep -q 'SESSION_KEY="${CLAUDE_SESSION_ID:-default}"' "$file" || \
+      { echo "$(basename "$file"): preamble missing SESSION_KEY=\"\${CLAUDE_SESSION_ID:-default}\" assignment"; return 1; }
+    # Reader references must use CLAUDE_SESSION_ID:-default
     local mismatched
-    mismatched=$(grep 'echo /tmp/.vbw-plugin-root-link-' "$file" | grep -v '\${CLAUDE_SESSION_ID:-default}' || true)
-    [ -z "$mismatched" ] || { echo "$(basename "$file"): reader with mismatched session key: $mismatched"; return 1; }
+    mismatched=$(grep 'echo /tmp/.vbw-plugin-root-link-' "$file" | grep -v 'CLAUDE_SESSION_ID:-default' || true)
+    [ -z "$mismatched" ] || { echo "$(basename "$file"): reader with unsupported session key fallback: $mismatched"; return 1; }
   done
 }
 
