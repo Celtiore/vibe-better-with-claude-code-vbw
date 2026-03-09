@@ -312,7 +312,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```
      Then continue to the next stage (`plan`).
-   - `plan`: If `plan_path` from step 5 is non-empty, the plan was already written in a previous session — do NOT re-plan. Read the existing plan and advance directly to `execute`. Otherwise, execute **Plan mode steps 1-11 above** for the same phase, using `next_plan` from step 5 as `{MM}`. "No separate discussion" means skip Discuss assumption-gathering (step 2) — the UAT report serves as scope. For step 3 (research persistence), use `research_path` from step 5: if non-empty, include it in Lead's context (no re-run of Scout needed); if empty, skip research. **Pass the priority-ranked issue list (step 3) to Lead** with recurring-issue annotations. After planning completes, advance:
+   - `plan`: If `plan_path` from step 5 is non-empty, the plan was already written in a previous session — do NOT re-plan. Read the existing plan and advance directly to `execute`. Otherwise, execute **Plan mode steps 1-12 above** for the same phase, using `next_plan` from step 5 as `{MM}`. "No separate discussion" means skip Discuss assumption-gathering (step 2) — the UAT report serves as scope. For step 3 (research persistence), use `research_path` from step 5: if non-empty, include it in Lead's context (no re-run of Scout needed); if empty, skip research. **Pass the priority-ranked issue list (step 3) to Lead** with recurring-issue annotations. After planning completes, advance:
      ```bash
      bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
      ```
@@ -380,9 +380,19 @@ This mode handles the case where a milestone was archived before UAT issues were
    - **If exists (per-plan or legacy):** Record the RESEARCH.md path (per-plan `{phase}-{MM}-RESEARCH.md` or legacy `{phase}-RESEARCH.md`) for inclusion in the Lead prompt. The Lead prompt MUST include the directive: `Read {research-path} for full research findings before planning.` Do NOT inline a summary of the research as a substitute — the Lead must read the file itself to get the complete, unabridged findings. Lead may update the per-plan RESEARCH.md if new information emerges.
    - **On failure:** Log warning, continue planning without research. Do not block.
    - If effort=turbo: skip entirely.
-4. **Context compilation:** If `config_context_compiler=true`, run `bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} lead {phases_dir}`. Include `.context-lead.md` in Lead agent context if produced.
-5. **Turbo shortcut:** If effort=turbo, skip Lead. Read phase reqs from ROADMAP.md, create single lightweight plan as `{NN}-PLAN.md` in the phase directory.
-6. **Other efforts:**
+4. **Research commit boundary (conditional):** If Scout was spawned in step 3 (new RESEARCH.md written):
+   ```bash
+  PG_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
+   if [ -f "$PG_SCRIPT" ]; then
+     bash "$PG_SCRIPT" commit-boundary "research phase {NN}" .vbw-planning/config.json
+   else
+     echo "VBW: planning-git.sh unavailable; skipping research git boundary commit" >&2
+   fi
+   ```
+   Behavior: `planning_tracking=commit` commits RESEARCH.md if changed. Skipped when research was pre-existing or effort=turbo.
+5. **Context compilation:** If `config_context_compiler=true`, run `bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-context.sh {phase} lead {phases_dir}`. Include `.context-lead.md` in Lead agent context if produced.
+6. **Turbo shortcut:** If effort=turbo, skip Lead. Read phase reqs from ROADMAP.md, create single lightweight plan as `{NN}-PLAN.md` in the phase directory.
+7. **Other efforts:**
    - Resolve Lead model:
      ```bash
      LEAD_MODEL=$(bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/resolve-agent-model.sh lead .vbw-planning/config.json /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/config/model-profiles.json)
@@ -410,7 +420,7 @@ This mode handles the case where a milestone was archived before UAT issues were
        2. Wait for each `shutdown_response` (approved=true). If rejected, re-request (max 3 attempts per teammate — then proceed).
        3. Call TeamDelete for team "vbw-plan-{NN}"
        4. Verify: after TeamDelete, there must be ZERO active teammates. If tmux panes still show agent labels, something went wrong — do NOT proceed.
-       5. Only THEN proceed to step 7
+       5. Only THEN proceed to step 8
        **WHY THIS EXISTS:** Without this gate, each Plan invocation spawns a new Lead that lingers in tmux. After 2-3 phases, multiple @lea panes accumulate, each burning API credits doing nothing. This is the #1 user-reported cost issue.
 
      When team should NOT be created (Lead-only with when_parallel/auto):
@@ -421,7 +431,7 @@ This mode handles the case where a milestone was archived before UAT issues were
    - **CRITICAL:** If a RESEARCH.md was found or created in step 3, include in the Lead prompt: `Read {research-path} for full research findings before planning.` where `{research-path}` is the per-plan or legacy path from step 3. The Lead must read the file itself — do NOT substitute an inlined summary.
    - **CRITICAL:** Include in the Lead prompt: "Plans will be executed by a team of parallel Dev agents — one agent per plan. Maximize wave 1 plans (no deps) so agents start simultaneously. Ensure same-wave plans modify disjoint file sets to avoid merge conflicts."
    - Display `◆ Spawning Lead agent...` -> `✓ Lead agent complete`.
-7. **Normalize plan filenames:**
+8. **Normalize plan filenames:**
     ```bash
     NORM_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
     if [ -f "$NORM_SCRIPT" ]; then
@@ -429,8 +439,8 @@ This mode handles the case where a milestone was archived before UAT issues were
     fi
     ```
     This catches any misnamed files written by Lead (e.g., turbo mode or models that bypass the PreToolUse block).
-8. **Validate output:** Verify PLAN.md has valid frontmatter (phase, plan, title, wave, depends_on, must_haves) and tasks. Check wave deps acyclic.
-9. **Present:** Update STATE.md (phase position, plan count, status=Planned). Resolve model profile:
+9. **Validate output:** Verify PLAN.md has valid frontmatter (phase, plan, title, wave, depends_on, must_haves) and tasks. Check wave deps acyclic.
+10. **Present:** Update STATE.md (phase position, plan count, status=Planned). Resolve model profile:
    ```bash
    MODEL_PROFILE=$(jq -r '.model_profile // "quality"' .vbw-planning/config.json)
    ```
@@ -442,7 +452,7 @@ This mode handles the case where a milestone was archived before UAT issues were
    Effort: {effort}
    Model Profile: {profile}
    ```
-10. **Planning commit boundary (conditional):**
+11. **Planning commit boundary (conditional):**
    ```bash
   PG_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/planning-git.sh"
    if [ -f "$PG_SCRIPT" ]; then
@@ -452,8 +462,8 @@ This mode handles the case where a milestone was archived before UAT issues were
    fi
    ```
    Behavior: `planning_tracking=commit` commits planning artifacts if changed. `auto_push=always` pushes when upstream exists.
-11. **Pre-chain verification:** Before auto-chaining or presenting results, confirm the planning team was fully shut down (step 6 HARD GATE completed). If you skipped the gate or are unsure after compaction, send `shutdown_request` to any teammates that may still be active and call TeamDelete before continuing. NEVER enter Execute mode with a prior planning team still alive.
-12. **Cautious gate (autonomy=cautious only):** STOP after planning. Ask "Plans ready. Execute Phase {NN}?" Other levels: auto-chain.
+12. **Pre-chain verification:** Before auto-chaining or presenting results, confirm the planning team was fully shut down (step 7 HARD GATE completed). If you skipped the gate or are unsure after compaction, send `shutdown_request` to any teammates that may still be active and call TeamDelete before continuing. NEVER enter Execute mode with a prior planning team still alive.
+13. **Cautious gate (autonomy=cautious only):** STOP after planning. Ask "Plans ready. Execute Phase {NN}?" Other levels: auto-chain.
 
 ### Mode: Execute
 
