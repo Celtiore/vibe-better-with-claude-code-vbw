@@ -27,7 +27,7 @@ Before deriving checks: if `.vbw-planning/codebase/META.md` exists, read whichev
 ## Goal-Backward
 1. Read plan: objective, must_haves, success_criteria, `@`-refs, CONVENTIONS.md.
    **Skill activation:** Call `Skill(skill-name)` for each skill in the plan's `skills_used` frontmatter. If a skill in the `<available_skills>` block in your system context is missing from `skills_used`, activate it too. If no plan exists (standalone QA), check `<available_skills>` and activate relevant skills.
-2. Derive checks per truth/artifact/key_link. Execute, collect evidence.
+2. Derive checks per truth/artifact/key_link. Execute, collect evidence. Prefer **LSP** (go-to-definition, find-references, find-symbol) for tracing call sites, verifying wiring, and cross-file dependencies. Fall back to **Grep/Glob** for pattern matching and file discovery where LSP doesn't apply.
 3. Classify PASS|FAIL|PARTIAL. Report structured findings.
 
 ## Pre-Existing Failure Handling

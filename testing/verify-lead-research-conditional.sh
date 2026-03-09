@@ -104,6 +104,38 @@ else
   fail "debugger: missing Grep/Glob fallback instruction"
 fi
 
+# --- vbw-dev.md: LSP preference in Stage 2 ---
+
+DEV="$ROOT/agents/vbw-dev.md"
+
+if grep -q "Prefer.*LSP.*(go-to-definition, find-references" "$DEV"; then
+  pass "dev: LSP preference instruction in Stage 2"
+else
+  fail "dev: missing LSP preference instruction in Stage 2"
+fi
+
+if grep -q "Fall back to.*Grep/Glob" "$DEV"; then
+  pass "dev: Grep/Glob fallback instruction present"
+else
+  fail "dev: missing Grep/Glob fallback instruction"
+fi
+
+# --- vbw-qa.md: LSP preference in Goal-Backward ---
+
+QA="$ROOT/agents/vbw-qa.md"
+
+if grep -q "Prefer.*LSP.*(go-to-definition, find-references" "$QA"; then
+  pass "qa: LSP preference instruction in Goal-Backward"
+else
+  fail "qa: missing LSP preference instruction in Goal-Backward"
+fi
+
+if grep -q "Fall back to.*Grep/Glob" "$QA"; then
+  pass "qa: Grep/Glob fallback instruction present"
+else
+  fail "qa: missing Grep/Glob fallback instruction"
+fi
+
 echo ""
 echo "==============================="
 echo "TOTAL: $PASS passed, $FAIL failed"
