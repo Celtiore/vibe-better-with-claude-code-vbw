@@ -301,7 +301,10 @@ EOF
   # State file was created
   [ -f "$PHASE_DIR/.uat-remediation-stage" ]
   [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "research" ]
-  # CONTEXT emitted (same as init)
+  # Plan metadata emitted
+  echo "$output" | grep -q "^next_plan=01$"
+  echo "$output" | grep -q "^research_path=$"
+  # CONTEXT emitted after metadata
   echo "$output" | grep -q "^---CONTEXT---$"
   echo "$output" | grep -q "Issue found"
 }
@@ -315,7 +318,10 @@ EOF
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  [ "$output" = "plan" ]
+  [ "$(echo "$output" | head -1)" = "plan" ]
+  # Plan metadata emitted even on resume
+  echo "$output" | grep -q "^next_plan=01$"
+  echo "$output" | grep -q "^research_path=$"
   # State file unchanged
   [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "plan" ]
   # No CONTEXT emitted on resume
@@ -327,7 +333,7 @@ EOF
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  [ "$output" = "done" ]
+  [ "$(echo "$output" | head -1)" = "done" ]
 }
 
 @test "get-or-init minor initializes fix stage" {
@@ -340,4 +346,93 @@ EOF
 @test "get-or-init without severity exits with error" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR"
   [ "$status" -eq 1 ]
+}
+
+# --- plan metadata tests ---
+
+@test "get-or-init next_plan=01 when no plans exist" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "^next_plan=01$"
+}
+
+@test "get-or-init next_plan increments from existing plans" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md" "$PHASE_DIR/01-03-PLAN.md"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "^next_plan=04$"
+}
+
+@test "get-or-init next_plan handles many plans (14 -> 15)" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+  for i in $(seq -w 1 14); do
+    touch "$PHASE_DIR/01-${i}-PLAN.md"
+  done
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "^next_plan=15$"
+}
+
+@test "get-or-init research_path empty when no research exists" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "^research_path=$"
+}
+
+@test "get-or-init research_path finds per-plan research" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md"
+  touch "$PHASE_DIR/01-03-RESEARCH.md"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  # next_plan=03, per-plan research at 01-03-RESEARCH.md
+  echo "$output" | grep -q "^next_plan=03$"
+  echo "$output" | grep -q "^research_path=.*01-03-RESEARCH.md$"
+}
+
+@test "get-or-init research_path finds legacy research" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+  touch "$PHASE_DIR/01-RESEARCH.md"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "^research_path=.*01-RESEARCH.md$"
+}
+
+@test "get-or-init per-plan research takes priority over legacy" {
+  echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
+  touch "$PHASE_DIR/01-01-PLAN.md"
+  touch "$PHASE_DIR/01-02-RESEARCH.md"
+  touch "$PHASE_DIR/01-RESEARCH.md"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "^next_plan=02$"
+  echo "$output" | grep -q "^research_path=.*01-02-RESEARCH.md$"
+}
+
+@test "get-or-init metadata emitted before CONTEXT block" {
+  cat > "$PHASE_DIR/01-UAT.md" <<'EOF'
+# UAT Report
+- Issue
+EOF
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+
+  # Find line numbers: metadata must come before ---CONTEXT---
+  local meta_line context_line
+  meta_line=$(echo "$output" | grep -n "^next_plan=" | head -1 | cut -d: -f1)
+  context_line=$(echo "$output" | grep -n "^---CONTEXT---$" | head -1 | cut -d: -f1)
+  [ -n "$meta_line" ]
+  [ -n "$context_line" ]
+  [ "$meta_line" -lt "$context_line" ]
 }

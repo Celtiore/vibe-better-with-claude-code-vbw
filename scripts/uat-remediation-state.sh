@@ -15,6 +15,11 @@
 #   - If a stage file already exists (resume case), returns the persisted stage — no init side effects.
 #   - If no stage file exists (first entry), runs full init (CONTEXT pre-seeding, etc.) and returns
 #     the stage + ---CONTEXT--- block — identical to calling init directly.
+#   - Both paths emit plan metadata after the stage line:
+#       next_plan=XX          — zero-padded next plan number (based on existing *-PLAN.md files)
+#       research_path=<path>  — path to existing per-plan or legacy RESEARCH.md (empty if none)
+#     This eliminates 2 Search/Glob tool calls the orchestrator would otherwise need to
+#     determine the plan number and check for existing research.
 #   This eliminates the two-step get→init pattern that wastes a tool call and forces
 #   the LLM to reason about the intermediate "none" value.
 #
@@ -108,7 +113,11 @@ do_init() {
   #
   # Appends UAT issues to the existing CONTEXT (preserving original
   # discussion context) and adds pre_seeded: true to frontmatter.
-  local context_file uat_file uat_content _already_seeded _emit_context=false
+  #
+  # Sets _init_context_file for emit_init_context() to use.
+  local context_file uat_file uat_content _already_seeded
+  _init_emit_context=false
+  _init_context_file=""
 
   context_file=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-CONTEXT.md' 2>/dev/null | sort | head -1)
   if type latest_non_source_uat &>/dev/null; then
@@ -140,7 +149,8 @@ do_init() {
           echo ""
           printf '%s\n' "$uat_content"
         } >> "$context_file"
-        _emit_context=true
+        _init_emit_context=true
+        _init_context_file="$context_file"
       else
         if head -1 "$context_file" | grep -q '^---[[:space:]]*$'; then
           awk '
@@ -166,7 +176,8 @@ do_init() {
           echo ""
           printf '%s\n' "$uat_content"
         } >> "$context_file"
-        _emit_context=true
+        _init_emit_context=true
+        _init_context_file="$context_file"
       fi
     else
       local phase_basename phase_num
@@ -185,14 +196,49 @@ do_init() {
         echo ""
         printf '%s\n' "$uat_content"
       } > "$context_file"
-      _emit_context=true
+      _init_emit_context=true
+      _init_context_file="$context_file"
     fi
   fi
+}
 
-  if [ "$_emit_context" = true ] && [ -n "$context_file" ] && [ -f "$context_file" ]; then
+emit_init_context() {
+  if [ "$_init_emit_context" = true ] && [ -n "$_init_context_file" ] && [ -f "$_init_context_file" ]; then
     echo "---CONTEXT---"
-    cat "$context_file"
+    cat "$_init_context_file"
   fi
+}
+
+emit_plan_metadata() {
+  # Compute next plan number from existing *-PLAN.md files in the phase dir.
+  # Also find existing research file (per-plan preferred, legacy fallback).
+  local phase_basename phase_prefix highest_mm next_mm research_path=""
+  phase_basename=$(basename "$PHASE_DIR")
+  phase_prefix=$(echo "$phase_basename" | sed 's/-[^0-9].*//')
+
+  # Find highest MM from {phase}-{MM}-PLAN.md files
+  highest_mm=$(find "$PHASE_DIR" -maxdepth 1 -name '*-PLAN.md' ! -name '.*' 2>/dev/null \
+    | sed -n "s|.*/[0-9]*-\([0-9][0-9]\)-PLAN\.md$|\1|p" \
+    | sort -n | tail -1)
+
+  if [ -n "$highest_mm" ]; then
+    # Strip leading zero for arithmetic, then re-pad
+    next_mm=$(printf '%02d' $(( 10#$highest_mm + 1 )))
+  else
+    next_mm="01"
+  fi
+
+  # Check for existing research: per-plan first, then legacy
+  local per_plan_research="${PHASE_DIR}/${phase_prefix}-${next_mm}-RESEARCH.md"
+  local legacy_research="${PHASE_DIR}/${phase_prefix}-RESEARCH.md"
+  if [ -f "$per_plan_research" ]; then
+    research_path="$per_plan_research"
+  elif [ -f "$legacy_research" ]; then
+    research_path="$legacy_research"
+  fi
+
+  echo "next_plan=${next_mm}"
+  echo "research_path=${research_path}"
 }
 
 case "$CMD" in
@@ -222,6 +268,7 @@ case "$CMD" in
       exit 1
     fi
     do_init "$SEVERITY_ARG"
+    emit_init_context
     ;;
 
   get-or-init)
@@ -232,8 +279,11 @@ case "$CMD" in
     existing=$(get_stage)
     if [ "$existing" != "none" ]; then
       echo "$existing"
+      emit_plan_metadata
     else
       do_init "$SEVERITY_ARG"
+      emit_plan_metadata
+      emit_init_context
     fi
     ;;
 
