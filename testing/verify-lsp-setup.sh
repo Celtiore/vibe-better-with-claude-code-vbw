@@ -120,11 +120,12 @@ fi
 # --- bootstrap-claude.sh: Code Intelligence section ---
 
 BOOTSTRAP="$ROOT/scripts/bootstrap/bootstrap-claude.sh"
+CLAUDE_LIB="$ROOT/scripts/lib/claude-md-vbw-sections.sh"
 
-if grep -q '"## Code Intelligence"' "$BOOTSTRAP"; then
-  pass "bootstrap-claude.sh VBW_SECTIONS contains ## Code Intelligence"
+if grep -q '"## Code Intelligence"' "$CLAUDE_LIB"; then
+  pass "CLAUDE helper library contains ## Code Intelligence"
 else
-  fail "bootstrap-claude.sh VBW_SECTIONS missing ## Code Intelligence"
+  fail "CLAUDE helper library missing ## Code Intelligence"
 fi
 
 # Verify generate_vbw_sections outputs the section

@@ -142,26 +142,33 @@ echo ""
 echo "--- Bootstrap & init LSP guidance checks ---"
 
 BOOTSTRAP="$ROOT/scripts/bootstrap/bootstrap-claude.sh"
+CLAUDE_LIB="$ROOT/scripts/lib/claude-md-vbw-sections.sh"
 INIT="$ROOT/commands/init.md"
 
-# Bootstrap should use "Search/Grep/Glob" not just "Grep"
-if grep -q "Search/Grep/Glob" "$BOOTSTRAP"; then
+# Shared CLAUDE section helper is the source of truth for generated Code Intelligence content.
+if grep -q "Search/Grep/Glob" "$CLAUDE_LIB"; then
   pass "bootstrap: Code Intelligence uses Search/Grep/Glob fallback language"
 else
   fail "bootstrap: Code Intelligence missing Search/Grep/Glob fallback language"
 fi
 
-if grep -q "Prefer LSP over Search/Grep/Glob" "$BOOTSTRAP"; then
+if grep -q "Prefer LSP over Search/Grep/Glob" "$CLAUDE_LIB"; then
   pass "bootstrap: Code Intelligence has LSP-first-over-Search language"
 else
   fail "bootstrap: Code Intelligence missing LSP-first-over-Search language"
 fi
 
-# Init should use same language
-if grep -q "Search/Grep/Glob" "$INIT"; then
-  pass "init: Code Intelligence uses Search/Grep/Glob fallback language"
+# Init should delegate generation to bootstrap and describe the non-destructive Code Intelligence rule.
+if grep -q "bootstrap-claude.sh" "$INIT"; then
+  pass "init: delegates CLAUDE generation to bootstrap-claude.sh"
 else
-  fail "init: Code Intelligence missing Search/Grep/Glob fallback language"
+  fail "init: missing bootstrap-claude.sh delegation for CLAUDE generation"
+fi
+
+if grep -q "Code Intelligence heading/guidance already exists" "$INIT"; then
+  pass "init: documents no-duplicate Code Intelligence rule"
+else
+  fail "init: missing no-duplicate Code Intelligence rule"
 fi
 
 # --- Contributor docs: LSP-first convention ---

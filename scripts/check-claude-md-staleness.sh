@@ -19,8 +19,17 @@ set -euo pipefail
 #   2 — fix failed
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB="$SCRIPT_DIR/lib/claude-md-vbw-sections.sh"
 PLANNING_DIR=".vbw-planning"
 CLAUDE_MD="CLAUDE.md"
+
+if [ ! -f "$LIB" ]; then
+  echo "ERROR: helper library not found at $LIB" >&2
+  exit 2
+fi
+
+# shellcheck source=/dev/null
+source "$LIB"
 
 # --- Parse flags ---
 FIX=false
@@ -32,12 +41,12 @@ for arg in "$@"; do
   esac
 done
 
-# --- VBW-managed section headers (must match bootstrap-claude.sh VBW_SECTIONS) ---
-VBW_SECTIONS=(
-  "## Active Context"
-  "## VBW Rules"
-  "## Code Intelligence"
-  "## Plugin Isolation"
+# --- VBW-managed section titles ---
+VBW_SECTION_TITLES=(
+  "Active Context"
+  "VBW Rules"
+  "Code Intelligence"
+  "Plugin Isolation"
 )
 
 # --- Early exits: no project or no CLAUDE.md ---
@@ -77,19 +86,18 @@ fi
 
 # --- Check for missing sections ---
 MISSING_SECTIONS=()
-for header in "${VBW_SECTIONS[@]}"; do
-  if ! grep -qF "$header" "$CLAUDE_MD" 2>/dev/null; then
-    # For Code Intelligence, also accept ### sub-heading or key directive text
-    if [ "$header" = "## Code Intelligence" ]; then
-      if grep -qF '### Code Intelligence' "$CLAUDE_MD" 2>/dev/null; then
-        continue
-      fi
-      if grep -qF 'Prefer LSP over' "$CLAUDE_MD" 2>/dev/null; then
-        continue
-      fi
+for title in "${VBW_SECTION_TITLES[@]}"; do
+  if [ "$title" = "Code Intelligence" ]; then
+    if vbw_markdown_has_code_intelligence "$CLAUDE_MD"; then
+      continue
     fi
-    MISSING_SECTIONS+=("$header")
+  else
+    if vbw_markdown_has_heading_title "$CLAUDE_MD" "$title"; then
+      continue
+    fi
   fi
+
+  MISSING_SECTIONS+=("## $title")
 done
 
 # --- Determine staleness ---
@@ -126,45 +134,25 @@ fi
 
 # --- Fix mode ---
 if [ "$FIX" = true ] && [ "$STALE" = true ]; then
-  # Extract PROJECT_NAME and CORE_VALUE from PROJECT.md
-  PROJECT_MD="$PLANNING_DIR/PROJECT.md"
-  PROJECT_NAME=""
-  CORE_VALUE=""
-
-  if [ -f "$PROJECT_MD" ]; then
-    # Line 1: # {name}
-    PROJECT_NAME=$(head -1 "$PROJECT_MD" | sed 's/^# *//')
-    # **Core value:** {text}
-    CORE_VALUE=$(grep -m1 '^\*\*Core value:\*\*' "$PROJECT_MD" | sed 's/^\*\*Core value:\*\* *//')
-  fi
-
-  # Fallback if extraction failed
-  if [ -z "$PROJECT_NAME" ]; then
-    PROJECT_NAME="Project"
-  fi
-  if [ -z "$CORE_VALUE" ]; then
-    CORE_VALUE="$PROJECT_NAME"
-  fi
-
-  BOOTSTRAP="$SCRIPT_DIR/bootstrap/bootstrap-claude.sh"
-  if [ ! -f "$BOOTSTRAP" ]; then
-    echo "ERROR: bootstrap-claude.sh not found at $BOOTSTRAP" >&2
+  REFRESHER="$SCRIPT_DIR/refresh-claude-md-vbw-sections.sh"
+  if [ ! -f "$REFRESHER" ]; then
+    echo "ERROR: refresh-claude-md-vbw-sections.sh not found at $REFRESHER" >&2
     exit 2
   fi
 
-  # Run bootstrap with existing CLAUDE.md as EXISTING_PATH (preserves user content)
-  if bash "$BOOTSTRAP" "$CLAUDE_MD" "$PROJECT_NAME" "$CORE_VALUE" "$CLAUDE_MD" 2>/dev/null; then
+  # Refresh only VBW-owned sections in-place; do not rebuild arbitrary user content.
+  if bash "$REFRESHER" "$CLAUDE_MD" 2>/dev/null; then
     # Write version marker
     echo "$INSTALLED_VER" > "$MARKER_FILE" 2>/dev/null || true
 
     if [ "$JSON" = true ]; then
       echo "{\"fixed\":true,\"installed_version\":\"${INSTALLED_VER:-unknown}\",\"previous_marker\":\"${MARKER_VER:-none}\"}"
     else
-      echo "CLAUDE.md VBW sections refreshed (${MARKER_VER:-none} -> ${INSTALLED_VER:-unknown}). User content preserved."
+      echo "CLAUDE.md VBW sections refreshed in place (${MARKER_VER:-none} -> ${INSTALLED_VER:-unknown}). Non-VBW content preserved."
     fi
     exit 0
   else
-    echo "ERROR: bootstrap-claude.sh failed" >&2
+    echo "ERROR: refresh-claude-md-vbw-sections.sh failed" >&2
     exit 2
   fi
 fi
@@ -181,7 +169,7 @@ if [ "$STALE" = true ]; then
   if [ "$VERSION_MISMATCH" = true ]; then
     echo "  Version: marker=${MARKER_VER:-none}, installed=${INSTALLED_VER:-unknown}"
   fi
-  echo "  Run with --fix to regenerate VBW sections (user content preserved)."
+  echo "  Run with --fix to refresh VBW-owned sections in place (all other CLAUDE.md content preserved)."
   exit 1
 else
   # Not stale but marker version may not exist yet — write it

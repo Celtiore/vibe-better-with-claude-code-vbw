@@ -268,63 +268,10 @@ If greenfield: write `{"conventions": []}`. Display: `○ Conventions — none y
 VBW needs its rules and state sections in a CLAUDE.md file. /vbw:vibe regenerates later with project content.
 
 **Brownfield handling:** Read root `CLAUDE.md` via the Read tool.
-- **Exists:** The user already has a CLAUDE.md. Do NOT overwrite it. Instead, append VBW sections (`## VBW Rules`, `## State`, `## Project Conventions`, `## Commands`, and optionally `## Plugin Isolation`) to the END of the existing file, separated by a `---` line. Preserve all existing content verbatim. Display `✓ CLAUDE.md (VBW sections appended to existing)`.
-- **Does not exist:** Write a new `CLAUDE.md` at project root with the full template below. Display `✓ CLAUDE.md (created)`.
+- **Exists:** The user already has a CLAUDE.md. Do NOT overwrite it and do NOT assume the first heading/core-value lines belong to VBW. Preserve all user-authored content verbatim. Only refresh exact canonical VBW-owned sections already emitted by VBW (`## Active Context`, `## VBW Rules`, `## Plugin Isolation`) and add `## Code Intelligence` only if no Code Intelligence heading/guidance already exists anywhere in the file. Display `✓ CLAUDE.md (VBW sections refreshed in place)`.
+- **Does not exist:** Create a new `CLAUDE.md` via `bootstrap-claude.sh` during Step 7f. Do NOT hand-compose the file here.
 
-Template for NEW files — write verbatim, substituting `{...}` placeholders:
-```markdown
-# VBW-Managed Project
-This project uses VBW (Vibe Better with Claude Code) for structured development.
-## VBW Rules
-- **Always use VBW commands** for project work. Do not manually edit files in `.vbw-planning/`.
-- **Commit format:** `{type}({scope}): {description}` — types: feat, fix, test, refactor, perf, docs, style, chore.
-- **One commit per task.** Each task in a plan gets exactly one atomic commit.
-- **Never commit secrets.** Do not stage .env, .pem, .key, credentials, or token files.
-- **Plan before building.** Use /vbw:vibe for all lifecycle actions. Plans are the source of truth.
-- **Do not fabricate content.** Only use what the user explicitly states in project-defining flows.
-## State
-- Planning directory: `.vbw-planning/`
-- Project not yet defined — run /vbw:vibe to set up project identity and roadmap.
-## Project Conventions
-{If conventions.json has entries: "These conventions are enforced during planning and verified during QA." + bulleted list of rules}
-{If none: "None yet. Run /vbw:teach to add project conventions."}
-## Commands
-Run /vbw:status for current progress.
-Run /vbw:help for all available commands.
-## Code Intelligence
-Prefer LSP over Search/Grep/Glob/Read for semantic code navigation — it's faster, precise, and avoids reading entire files:
-- `goToDefinition` / `goToImplementation` to jump to source
-- `findReferences` to see all usages across the codebase
-- `workspaceSymbol` to find where something is defined
-- `hover` for type info without reading the file
-- `incomingCalls` / `outgoingCalls` for call hierarchy
-Before renaming or changing a function signature, use `findReferences` to find all call sites first.
-Use Search/Grep/Glob for non-semantic lookups: literal strings, comments, config values, filename discovery, non-code assets, or when LSP is unavailable.
-{ONLY if GSD_ISOLATION_ENABLED=true — include this section:}
-## Plugin Isolation
-- GSD agents and commands MUST NOT read, write, glob, grep, or reference any files in `.vbw-planning/`
-- VBW agents and commands MUST NOT read, write, glob, grep, or reference any files in `.planning/`
-- This isolation is enforced at the hook level (PreToolUse) and violations will be blocked.
-```
-
-Sections to append when **existing** CLAUDE.md found (same content, no `# VBW-Managed Project` header):
-```markdown
-
----
-
-## VBW Rules
-{same rules as above}
-## State
-{same state as above}
-## Project Conventions
-{same}
-## Commands
-{same}
-## Code Intelligence
-{same}
-{## Plugin Isolation if applicable}
-```
-Keep total VBW addition under 40 lines. Add `✓ CLAUDE.md` to summary.
+Do not append `## Project Conventions` or `## Commands` to `CLAUDE.md`.
 
 ### Step 4: Present summary
 
@@ -494,8 +441,9 @@ If SKIP_INFERENCE=false (confirmed/corrected inference data):
 - Display: `✓ STATE.md`
 
 **7f. Generate/update CLAUDE.md:**
+- Extract `CORE_VALUE` from `.vbw-planning/PROJECT.md` (`grep -m1 '^\*\*Core value:\*\*' .vbw-planning/PROJECT.md | sed 's/^\*\*Core value:\*\* *//'`)
 - If root CLAUDE.md exists: pass it as EXISTING_PATH to preserve non-VBW content
-- Run: `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/bootstrap/bootstrap-claude.sh CLAUDE.md "$NAME" "$DESCRIPTION" "CLAUDE.md"`
+- Run: `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/bootstrap/bootstrap-claude.sh CLAUDE.md "$NAME" "$CORE_VALUE" "CLAUDE.md"`
   - If CLAUDE.md does not exist yet, omit the last argument
 - Display: `✓ CLAUDE.md`
 

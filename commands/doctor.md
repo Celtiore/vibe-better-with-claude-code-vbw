@@ -84,7 +84,7 @@ If `.vbw-planning/` exists (project initialized):
 - WARN if `stale` is true — show missing sections and/or version mismatch detail
 - SKIP if no `.vbw-planning/` directory (not bootstrapped)
 
-If user invoked with `--cleanup`: run `bash scripts/check-claude-md-staleness.sh --fix 2>&1` and report result.
+If user invoked with `--cleanup`: run `bash scripts/check-claude-md-staleness.sh --fix 2>&1` and report result. The fix must refresh only VBW-owned sections in place, preserve all other `CLAUDE.md` content verbatim, and add `## Code Intelligence` only when no Code Intelligence heading/guidance already exists.
 
 ## Output Format
 
@@ -121,6 +121,6 @@ If any WARN from checks 11-14 or 16:
 
 If user invoked with `--cleanup` (check for this in the command arguments):
 - Run `bash scripts/doctor-cleanup.sh cleanup 2>&1` for runtime findings
-- Run `bash scripts/check-claude-md-staleness.sh --fix 2>&1` for stale CLAUDE.md
+- Run `bash scripts/check-claude-md-staleness.sh --fix 2>&1` for stale CLAUDE.md (non-destructive in-place refresh of VBW-owned sections only)
 - Report what was cleaned
 - Show updated counts

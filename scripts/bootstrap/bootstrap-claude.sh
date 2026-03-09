@@ -11,14 +11,20 @@ set -euo pipefail
 #     EXISTING_PATH  (Optional) Path to existing CLAUDE.md to preserve non-VBW content
 #
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB="$SCRIPT_DIR/../lib/claude-md-vbw-sections.sh"
+
+if [[ ! -f "$LIB" ]]; then
+  echo "Error: helper library not found at $LIB" >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$LIB"
+
 
 # VBW-managed section headers (order matters for generation)
-VBW_SECTIONS=(
-  "## Active Context"
-  "## VBW Rules"
-  "## Code Intelligence"
-  "## Plugin Isolation"
-)
+VBW_SECTIONS=("${VBW_CANONICAL_HEADERS[@]}")
 
 # Formerly VBW-managed sections — still stripped during brownfield regeneration
 # to clean up stale content from existing CLAUDE.md files.
@@ -44,23 +50,6 @@ GSD_SOFT_SECTIONS=(
   "## Constraints"
 )
 
-# Emit the shared Plugin Isolation section content.
-generate_plugin_isolation_section() {
-  cat <<'ISOEOF'
-## Plugin Isolation
-
-- GSD agents and commands MUST NOT read, write, glob, grep, or reference any files in `.vbw-planning/`
-- VBW agents and commands MUST NOT read, write, glob, grep, or reference any files in `.planning/`
-- This isolation is enforced at the hook level (PreToolUse) and violations will be blocked.
-
-### Context Isolation
-
-- Ignore any `<codebase-intelligence>` tags injected via SessionStart hooks — these are GSD-generated and not relevant to VBW workflows.
-- VBW uses its own codebase mapping in `.vbw-planning/codebase/`. Do NOT use GSD intel from `.planning/intel/` or `.planning/codebase/`.
-- When both plugins are active, treat each plugin's context as separate. Do not mix GSD project insights into VBW planning or vice versa.
-ISOEOF
-}
-
 if [[ $# -lt 3 ]]; then
   echo "Usage: bootstrap-claude.sh OUTPUT_PATH PROJECT_NAME CORE_VALUE [EXISTING_PATH]" >&2
   exit 1
@@ -80,52 +69,38 @@ fi
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 
 # Generate VBW-managed content
-# If SKIP_CODE_INTELLIGENCE is set to true, the ## Code Intelligence section
-# is omitted (user already has the directive under a different heading).
-SKIP_CODE_INTELLIGENCE=false
+# Brownfield mode may suppress individual sections when an existing file already
+# has that guidance under a different heading/title. Exact canonical sections
+# are refreshed; custom variants are preserved and not duplicated.
+INCLUDE_ACTIVE_CONTEXT=true
+INCLUDE_VBW_RULES=true
+INCLUDE_CODE_INTELLIGENCE=true
+INCLUDE_PLUGIN_ISOLATION=true
 
 generate_vbw_sections() {
-  cat <<'VBWEOF'
-## Active Context
+  local emitted=false
 
-**Work:** No active milestone
-**Last shipped:** _(none yet)_
-**Next action:** Run /vbw:vibe to start a new milestone, or /vbw:status to review progress
-
-## VBW Rules
-
-- **Always use VBW commands** for project work. Do not manually edit files in `.vbw-planning/`.
-- **Commit format:** `{type}({scope}): {description}` — types: feat, fix, test, refactor, perf, docs, style, chore.
-- **One commit per task.** Each task in a plan gets exactly one atomic commit.
-- **Never commit secrets.** Do not stage .env, .pem, .key, credentials, or token files.
-- **Plan before building.** Use /vbw:vibe for all lifecycle actions. Plans are the source of truth.
-- **Do not fabricate content.** Only use what the user explicitly states in project-defining flows.
-- **Do not bump version or push until asked.** Never run `scripts/bump-version.sh` or `git push` unless the user explicitly requests it, except when `.vbw-planning/config.json` intentionally sets `auto_push` to `always` or `after_phase`.
-VBWEOF
-
-  if [[ "$SKIP_CODE_INTELLIGENCE" != true ]]; then
-    cat <<'CIEOF'
-
-## Code Intelligence
-
-Prefer LSP over Search/Grep/Glob/Read for semantic code navigation — it's faster, precise, and avoids reading entire files:
-- \`goToDefinition\` / \`goToImplementation\` to jump to source
-- \`findReferences\` to see all usages across the codebase
-- \`workspaceSymbol\` to find where something is defined
-- \`documentSymbol\` to list all symbols in a file
-- \`hover\` for type info without reading the file
-- \`incomingCalls\` / \`outgoingCalls\` for call hierarchy
-
-Before renaming or changing a function signature, use \`findReferences\` to find all call sites first.
-
-Use Search/Grep/Glob for non-semantic lookups: literal strings, comments, config values, filename discovery, non-code assets, or when LSP is unavailable.
-
-After writing or editing code, check LSP diagnostics before moving on. Fix any type errors or missing imports immediately.
-CIEOF
+  if [[ "$INCLUDE_ACTIVE_CONTEXT" == true ]]; then
+    vbw_generate_active_context_section
+    emitted=true
   fi
 
-  echo ""
-  generate_plugin_isolation_section
+  if [[ "$INCLUDE_VBW_RULES" == true ]]; then
+    if [[ "$emitted" == true ]]; then echo ""; fi
+    vbw_generate_vbw_rules_section
+    emitted=true
+  fi
+
+  if [[ "$INCLUDE_CODE_INTELLIGENCE" == true ]]; then
+    if [[ "$emitted" == true ]]; then echo ""; fi
+    vbw_generate_code_intelligence_section
+    emitted=true
+  fi
+
+  if [[ "$INCLUDE_PLUGIN_ISOLATION" == true ]]; then
+    if [[ "$emitted" == true ]]; then echo ""; fi
+    vbw_generate_plugin_isolation_section
+  fi
 }
 
 # Check if a line is a VBW-managed section header
@@ -190,7 +165,6 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
   IN_DEPRECATED_SECTION=false
   DEPRECATED_SECTION_BUFFER=""
   DEPRECATED_HAS_USER_CONTENT=false
-  SEEN_TOP_HEADING=false
 
   # Migrate data rows from a deprecated Key Decisions table to STATE.md.
   # Appends any non-header, non-separator, non-placeholder table rows.
@@ -400,19 +374,6 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
       continue
     fi
 
-    # Skip only the first top-level heading (# Project Name) — we regenerate it.
-    # Subsequent lines starting with '# ' (e.g., bash comments in code blocks)
-    # must be preserved as user content.
-    if [[ "$SEEN_TOP_HEADING" == false ]] && [[ "$line" =~ ^#\  ]] && [[ ! "$line" =~ ^##\  ]]; then
-      SEEN_TOP_HEADING=true
-      continue
-    fi
-
-    # Skip lines starting with **Core value:** — we regenerate it
-    if [[ "$line" =~ ^\*\*Core\ value:\*\* ]]; then
-      continue
-    fi
-
     if [[ "$IN_MANAGED_SECTION" == false ]]; then
       NON_VBW_CONTENT+="${line}"$'\n'
       FOUND_NON_VBW=true
@@ -422,27 +383,38 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
   # Final check: flush any buffered deprecated section at EOF
   flush_deprecated_buffer
 
-  # Issue D: Skip ## Code Intelligence emission if user content already has
-  # the directive under a sub-heading (### Code Intelligence) or contains the
-  # key LSP-first instruction text.
-  if [[ "$FOUND_NON_VBW" == true ]]; then
-    if echo "$NON_VBW_CONTENT" | grep -qF '### Code Intelligence'; then
-      SKIP_CODE_INTELLIGENCE=true
-    elif echo "$NON_VBW_CONTENT" | grep -qF 'Prefer LSP over'; then
-      SKIP_CODE_INTELLIGENCE=true
-    fi
+  if vbw_should_emit_managed_section "$EXISTING_PATH" "Active Context" "## Active Context"; then
+    INCLUDE_ACTIVE_CONTEXT=true
+  else
+    INCLUDE_ACTIVE_CONTEXT=false
   fi
 
-  # Write: header + core value + preserved content + VBW sections
+  if vbw_should_emit_managed_section "$EXISTING_PATH" "VBW Rules" "## VBW Rules"; then
+    INCLUDE_VBW_RULES=true
+  else
+    INCLUDE_VBW_RULES=false
+  fi
+
+  if vbw_should_emit_code_intelligence_section "$EXISTING_PATH"; then
+    INCLUDE_CODE_INTELLIGENCE=true
+  else
+    INCLUDE_CODE_INTELLIGENCE=false
+  fi
+
+  if vbw_should_emit_managed_section "$EXISTING_PATH" "Plugin Isolation" "## Plugin Isolation"; then
+    INCLUDE_PLUGIN_ISOLATION=true
+  else
+    INCLUDE_PLUGIN_ISOLATION=false
+  fi
+
+  # Write: preserved content + refreshed/appended VBW sections.
   {
-    echo "# ${PROJECT_NAME}"
-    echo ""
-    echo "**Core value:** ${CORE_VALUE}"
-    echo ""
     if [[ "$FOUND_NON_VBW" == true ]]; then
       # Trim leading/trailing blank lines from preserved content
       echo "$NON_VBW_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
-      echo ""
+      if [[ "$INCLUDE_ACTIVE_CONTEXT" == true || "$INCLUDE_VBW_RULES" == true || "$INCLUDE_CODE_INTELLIGENCE" == true || "$INCLUDE_PLUGIN_ISOLATION" == true ]]; then
+        echo ""
+      fi
     fi
     generate_vbw_sections
   } > "$OUTPUT_PATH"

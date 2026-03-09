@@ -114,6 +114,8 @@ EOF
 
 bash "$BOOTSTRAP" "$TMP_DIR/CLAUDE.md" "Demo Project" "Demo core value" "$TMP_DIR/existing.md"
 OUT="$TMP_DIR/CLAUDE.md"
+check "brownfield preserves custom title" grep -q '^# Legacy Project$' "$OUT"
+check "brownfield preserves custom core value" grep -q '^\*\*Core value:\*\* Legacy value$' "$OUT"
 check "brownfield preserves custom section" grep -q '^## Custom Notes$' "$OUT"
 check "brownfield preserves team section" grep -q '^## Team Notes$' "$OUT"
 check_absent "brownfield strips old managed VBW content" grep -q 'OLD MANAGED CONTENT SHOULD BE REPLACED' "$OUT"
