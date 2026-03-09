@@ -49,7 +49,7 @@ check "greenfield creates output" test -f "$OUT"
 check "greenfield has project title" grep -q '^# Demo Project$' "$OUT"
 check "greenfield has core value" grep -q '^\*\*Core value:\*\* Demo core value$' "$OUT"
 check "greenfield has Active Context" grep -q '^## Active Context$' "$OUT"
-check "greenfield has Project Conventions" grep -q '^## Project Conventions$' "$OUT"
+check "greenfield has Code Intelligence" grep -q '^## Code Intelligence$' "$OUT"
 check "greenfield has Plugin Isolation" grep -q '^## Plugin Isolation$' "$OUT"
 check_absent "greenfield omits Key Decisions (tracked in .vbw-planning/)" grep -q '^## Key Decisions$' "$OUT"
 

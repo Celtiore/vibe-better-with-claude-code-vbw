@@ -16,8 +16,6 @@ set -euo pipefail
 VBW_SECTIONS=(
   "## Active Context"
   "## VBW Rules"
-  "## Project Conventions"
-  "## Commands"
   "## Code Intelligence"
   "## Plugin Isolation"
 )
@@ -82,6 +80,10 @@ fi
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 
 # Generate VBW-managed content
+# If SKIP_CODE_INTELLIGENCE is set to true, the ## Code Intelligence section
+# is omitted (user already has the directive under a different heading).
+SKIP_CODE_INTELLIGENCE=false
+
 generate_vbw_sections() {
   cat <<'VBWEOF'
 ## Active Context
@@ -99,15 +101,10 @@ generate_vbw_sections() {
 - **Plan before building.** Use /vbw:vibe for all lifecycle actions. Plans are the source of truth.
 - **Do not fabricate content.** Only use what the user explicitly states in project-defining flows.
 - **Do not bump version or push until asked.** Never run `scripts/bump-version.sh` or `git push` unless the user explicitly requests it, except when `.vbw-planning/config.json` intentionally sets `auto_push` to `always` or `after_phase`.
+VBWEOF
 
-## Project Conventions
-
-_(To be defined during project setup)_
-
-## Commands
-
-Run /vbw:status for current progress.
-Run /vbw:help for all available commands.
+  if [[ "$SKIP_CODE_INTELLIGENCE" != true ]]; then
+    cat <<'CIEOF'
 
 ## Code Intelligence
 
@@ -124,8 +121,10 @@ Before renaming or changing a function signature, use \`findReferences\` to find
 Use Search/Grep/Glob for non-semantic lookups: literal strings, comments, config values, filename discovery, non-code assets, or when LSP is unavailable.
 
 After writing or editing code, check LSP diagnostics before moving on. Fix any type errors or missing imports immediately.
-VBWEOF
+CIEOF
+  fi
 
+  echo ""
   generate_plugin_isolation_section
 }
 
@@ -191,6 +190,7 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
   IN_DEPRECATED_SECTION=false
   DEPRECATED_SECTION_BUFFER=""
   DEPRECATED_HAS_USER_CONTENT=false
+  SEEN_TOP_HEADING=false
 
   # Migrate data rows from a deprecated Key Decisions table to STATE.md.
   # Appends any non-header, non-separator, non-placeholder table rows.
@@ -400,8 +400,11 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
       continue
     fi
 
-    # Also detect top-level heading (# Project Name) — skip it, we regenerate it
-    if [[ "$line" =~ ^#\  ]] && [[ ! "$line" =~ ^##\  ]]; then
+    # Skip only the first top-level heading (# Project Name) — we regenerate it.
+    # Subsequent lines starting with '# ' (e.g., bash comments in code blocks)
+    # must be preserved as user content.
+    if [[ "$SEEN_TOP_HEADING" == false ]] && [[ "$line" =~ ^#\  ]] && [[ ! "$line" =~ ^##\  ]]; then
+      SEEN_TOP_HEADING=true
       continue
     fi
 
@@ -418,6 +421,17 @@ if [[ -n "$EXISTING_PATH" && -f "$EXISTING_PATH" ]]; then
 
   # Final check: flush any buffered deprecated section at EOF
   flush_deprecated_buffer
+
+  # Issue D: Skip ## Code Intelligence emission if user content already has
+  # the directive under a sub-heading (### Code Intelligence) or contains the
+  # key LSP-first instruction text.
+  if [[ "$FOUND_NON_VBW" == true ]]; then
+    if echo "$NON_VBW_CONTENT" | grep -qF '### Code Intelligence'; then
+      SKIP_CODE_INTELLIGENCE=true
+    elif echo "$NON_VBW_CONTENT" | grep -qF 'Prefer LSP over'; then
+      SKIP_CODE_INTELLIGENCE=true
+    fi
+  fi
 
   # Write: header + core value + preserved content + VBW sections
   {
