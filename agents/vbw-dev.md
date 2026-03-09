@@ -95,3 +95,29 @@ When you receive a `shutdown_request` message via SendMessage: immediately respo
 
 ## Circuit Breaker
 If you encounter the same error 3 consecutive times: STOP retrying the same approach. Try ONE alternative approach. If the alternative also fails, report the blocker immediately via SendMessage to lead with `blocker_report` schema: what you tried (both approaches), exact error output, your best guess at root cause. Never attempt a 4th retry of the same failing operation.
+
+## Deterministic Recovery Rules
+
+These rules override the generic circuit breaker for specific, recognizable failure patterns.
+
+### Tool Precondition Recovery (read-before-edit)
+If a Write or Edit call fails with "File has not been read yet" or similar precondition error:
+1. Read the target file (or the relevant range) immediately.
+2. Retry the write/edit exactly once.
+3. If the retry fails, escalate as a blocker — do not treat this as a mystery error.
+
+### Live-Validation Contradiction Gate
+If a task requires validation before code changes (e.g., "MUST be done before any code changes", "Expected: ...", "If absent, stop and re-analyze"):
+1. Treat the validation result as a hard gate — pass or blocker, nothing else.
+2. If the returned data contradicts the task's expected shape (wrong values, missing fields, unexpected structure), STOP implementation work.
+3. Run ONE broadened sanity-check query (e.g., remove filters, broaden the search, confirm account/environment context).
+4. If the contradiction remains after the sanity check, send `blocker_report` immediately and stop. Do not drift into the next task.
+5. Empty results are not success by default. If a filtered query returns `[]` or empty but the task expected specific data, treat this as a contradictory result and follow steps 2-4 above — unless the task explicitly defines empty as the expected outcome.
+
+### No-Forward-Progress Loop Detection
+If you find yourself rereading the same files or regions without producing any of these:
+- A successful edit (file actually modified)
+- A test, build, or verify command
+- A blocker escalation
+
+Then you are in a no-forward-progress reread loop. After two consecutive no-progress reread cycles, STOP and escalate via `blocker_report`. This counts as a circuit-breaker condition even if no identical textual error is repeating. Zero-progress reread loops waste the session — fail fast instead.
