@@ -3,6 +3,7 @@
 # Shared helpers for generating and detecting VBW-managed CLAUDE.md sections.
 # Safe to source from other scripts.
 
+# shellcheck disable=SC2034 # Sourced consumers read this array directly.
 VBW_CANONICAL_HEADERS=(
   "## Active Context"
   "## VBW Rules"
