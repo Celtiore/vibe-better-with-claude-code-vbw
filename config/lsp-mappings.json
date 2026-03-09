@@ -1,0 +1,101 @@
+{
+  "_description": "Maps detected stack items to LSP language servers and Claude plugins. Keys match detect-stack.sh output.",
+  "aliases": {
+    "react": "typescript",
+    "next": "typescript",
+    "vue": "typescript",
+    "svelte": "typescript",
+    "angular": "typescript",
+    "express": "typescript",
+    "nestjs": "typescript",
+    "remix": "typescript",
+    "nuxt": "typescript",
+    "astro": "typescript",
+    "solidjs": "typescript",
+    "fastapi": "python",
+    "django": "python",
+    "flask": "python",
+    "rails": "ruby",
+    "laravel": "php",
+    "spring": "java",
+    "phoenix": "elixir",
+    "deno": "typescript",
+    "bun": "typescript"
+  },
+  "servers": {
+    "python": {
+      "plugin": "pyright-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "pyright --version",
+      "install_cmd": "npm i -g pyright",
+      "description": "Python (Pyright)"
+    },
+    "typescript": {
+      "plugin": "typescript-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "typescript-language-server --version",
+      "install_cmd": "npm i -g typescript-language-server typescript",
+      "description": "TypeScript/JavaScript"
+    },
+    "go": {
+      "plugin": "gopls-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "gopls version",
+      "install_cmd": "go install golang.org/x/tools/gopls@latest",
+      "description": "Go (gopls)"
+    },
+    "rust": {
+      "plugin": "rust-analyzer-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "rust-analyzer --version",
+      "install_cmd": "rustup component add rust-analyzer",
+      "description": "Rust (rust-analyzer)"
+    },
+    "java": {
+      "plugin": "jdtls-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "jdtls --version",
+      "install_cmd": null,
+      "install_url": "https://github.com/eclipse-jdtls/eclipse.jdt.ls",
+      "description": "Java (Eclipse JDT.LS)"
+    },
+    "ruby": {
+      "plugin": "solargraph-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "solargraph --version",
+      "install_cmd": "gem install solargraph",
+      "description": "Ruby (Solargraph)"
+    },
+    "php": {
+      "plugin": "intelephense-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "intelephense --version",
+      "install_cmd": "npm i -g intelephense",
+      "description": "PHP (Intelephense)"
+    },
+    "elixir": {
+      "plugin": "elixir-ls-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "elixir-ls --version",
+      "install_cmd": null,
+      "install_url": "https://github.com/elixir-lsp/elixir-ls",
+      "description": "Elixir (ElixirLS)"
+    },
+    "dotnet": {
+      "plugin": "omnisharp-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "OmniSharp --version",
+      "install_cmd": null,
+      "install_url": "https://github.com/OmniSharp/omnisharp-roslyn",
+      "description": ".NET (OmniSharp)"
+    },
+    "kotlin": {
+      "plugin": "kotlin-langserver",
+      "plugin_org": "anthropic-official",
+      "binary_check": "kotlin-language-server --version",
+      "install_cmd": null,
+      "install_url": "https://github.com/fwcd/kotlin-language-server",
+      "description": "Kotlin"
+    }
+  }
+}

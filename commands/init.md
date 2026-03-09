@@ -202,6 +202,39 @@ Set GSD_ISOLATION_ENABLED=true for Step 3.5.
 
 **2b.** Run `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/detect-stack.sh "$(pwd)"`. Save full JSON. Display: `✓ Stack: {comma-separated detected_stack items}`
 
+**2.5. LSP setup (language servers + Claude plugins):**
+
+Run `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/resolve-lsp.sh` with the `detected_stack` JSON array from Step 2b and `CLAUDE_DIR/settings.json` path. Capture the JSON output.
+
+If `env_needed=false` AND all plugins have `plugin_enabled=true`: display `✓ LSP — already configured`, skip to 2c.
+
+Otherwise, display detected languages and recommended LSP plugins, then proceed through sub-steps:
+
+**2.5a (env flag):** If `env_needed=true`:
+- AskUserQuestion: "○ LSP Tools\n\nEnable LSP tools for Claude Code? This adds ENABLE_LSP_TOOL=1 to settings.json,\ngiving Claude access to goToDefinition, findReferences, and other code navigation tools."
+  - Approved: set `env.ENABLE_LSP_TOOL` to `"1"` in `CLAUDE_DIR/settings.json` (same write pattern as Step 0c)
+  - Declined: display "○ LSP env flag skipped"
+
+**2.5b (binary check):** For each plugin where `binary_installed=false`:
+- If `install_cmd` is not null: AskUserQuestion: "Install {description} language server?\nCommand: `{install_cmd}`"
+  - Approved: run command via Bash
+  - Declined: display "○ {description} — skipped"
+- If `install_cmd` is null (install_url only): display "○ {description} — manual install: {install_url}"
+
+**2.5c (marketplace catalog):** If any plugins have `plugin_enabled=false`:
+- Check catalog: `unset CLAUDECODE && claude plugin marketplace list 2>&1 | grep -q "{org}"` (using the `org` from the first pending plugin)
+- If catalog missing: AskUserQuestion: "LSP plugins are published on the `{org}` marketplace catalog. Add it?"
+  - Approved: run `unset CLAUDECODE && claude plugin marketplace add {org} 2>&1`
+  - Declined or fails: display "○ Marketplace catalog not available — skipping plugin installs" and skip 2.5d
+
+**2.5d (plugin install):** For plugins where `plugin_enabled=false`:
+- AskUserQuestion: "Install Claude LSP plugins for: {comma-separated descriptions}?"
+  - Approved: run `unset CLAUDECODE && claude plugin marketplace update {org} 2>&1` once, then for each: `unset CLAUDECODE && claude plugin install {plugin} 2>&1`
+  - Declined: display "○ LSP plugins — skipped"
+
+Display summary: `✓ LSP — {N} language server(s) configured` or `○ LSP — skipped`
+If any settings.json changes or plugins installed: display `(restart Claude Code to activate LSP)`
+
 **2c. Codebase mapping (adaptive):**
 - Greenfield (BROWNFIELD=false): skip. Display: `○ Greenfield — skipping codebase mapping`
 - SOURCE_FILE_COUNT < 200: run map **inline** — read ``!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/commands/map.md` and follow directly
@@ -258,6 +291,15 @@ This project uses VBW (Vibe Better with Claude Code) for structured development.
 ## Commands
 Run /vbw:status for current progress.
 Run /vbw:help for all available commands.
+## Code Intelligence
+Prefer LSP over Grep/Read for code navigation — it's faster, precise, and avoids reading entire files:
+- `goToDefinition` / `goToImplementation` to jump to source
+- `findReferences` to see all usages across the codebase
+- `workspaceSymbol` to find where something is defined
+- `hover` for type info without reading the file
+- `incomingCalls` / `outgoingCalls` for call hierarchy
+Before renaming or changing a function signature, use `findReferences` to find all call sites first.
+Use Grep/Glob only for text/pattern searches (comments, strings, config values) or when LSP isn't available.
 {ONLY if GSD_ISOLATION_ENABLED=true — include this section:}
 ## Plugin Isolation
 - GSD agents and commands MUST NOT read, write, glob, grep, or reference any files in `.vbw-planning/`
@@ -277,6 +319,8 @@ Sections to append when **existing** CLAUDE.md found (same content, no `# VBW-Ma
 ## Project Conventions
 {same}
 ## Commands
+{same}
+## Code Intelligence
 {same}
 {## Plugin Isolation if applicable}
 ```

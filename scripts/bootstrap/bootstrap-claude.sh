@@ -18,6 +18,7 @@ VBW_SECTIONS=(
   "## VBW Rules"
   "## Project Conventions"
   "## Commands"
+  "## Code Intelligence"
   "## Plugin Isolation"
 )
 
@@ -107,6 +108,22 @@ _(To be defined during project setup)_
 
 Run /vbw:status for current progress.
 Run /vbw:help for all available commands.
+
+## Code Intelligence
+
+Prefer LSP over Grep/Read for code navigation — it's faster, precise, and avoids reading entire files:
+- \`goToDefinition\` / \`goToImplementation\` to jump to source
+- \`findReferences\` to see all usages across the codebase
+- \`workspaceSymbol\` to find where something is defined
+- \`documentSymbol\` to list all symbols in a file
+- \`hover\` for type info without reading the file
+- \`incomingCalls\` / \`outgoingCalls\` for call hierarchy
+
+Before renaming or changing a function signature, use \`findReferences\` to find all call sites first.
+
+Use Grep/Glob only for text/pattern searches (comments, strings, config values) or when LSP isn't available.
+
+After writing or editing code, check LSP diagnostics before moving on. Fix any type errors or missing imports immediately.
 VBWEOF
 
   generate_plugin_isolation_section

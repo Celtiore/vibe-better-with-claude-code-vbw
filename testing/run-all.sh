@@ -62,6 +62,9 @@ echo ""
 echo "Running UAT recurrence tracking checks..."
 bash "$ROOT/testing/verify-uat-recurrence.sh"
 echo ""
+echo "Running LSP setup pipeline checks..."
+bash "$ROOT/testing/verify-lsp-setup.sh"
+echo ""
 if command -v bats &>/dev/null && ls "$ROOT/tests/"*.bats &>/dev/null; then
   echo "Running bats test suites..."
   bats_pass=0
