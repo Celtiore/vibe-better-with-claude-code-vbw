@@ -273,14 +273,17 @@ case "$ROLE" in
       else
         echo "None"
       fi
-      # --- Codebase mapping hint (issue #80) ---
-      emit_codebase_mapping_hint ARCHITECTURE CONCERNS STRUCTURE
       # --- V3: Include RESEARCH.md if present (per-plan preferred) ---
       RESEARCH_FILE=$(resolve_research_file "$PHASE_DIR" "$PLAN_PATH")
       if [ -n "$RESEARCH_FILE" ] && [ -f "$RESEARCH_FILE" ]; then
         echo ""
         echo "### Research Findings"
         cat "$RESEARCH_FILE"
+      else
+        # --- Codebase mapping hint only when no research exists (issue #80) ---
+        # When research exists, the Scout already analyzed the codebase;
+        # the mapping hint would trigger redundant reads.
+        emit_codebase_mapping_hint ARCHITECTURE CONCERNS STRUCTURE
       fi
     } > "${PHASE_DIR}/.context-lead.md"
     ;;

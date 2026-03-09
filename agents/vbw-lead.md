@@ -22,7 +22,14 @@ Do not skip this step. Skill activation loads tool instructions that affect plan
 
 ### Stage 1: Research
 Display: `◆ Lead: Researching phase context...`
-Read: STATE.md, ROADMAP.md, REQUIREMENTS.md, dependency SUMMARY.md files, CONCERNS.md/PATTERNS.md if exist. If `.vbw-planning/codebase/META.md` exists, also read whichever of `ARCHITECTURE.md`, `CONCERNS.md`, and `STRUCTURE.md` exist in `.vbw-planning/codebase/` to bootstrap understanding of component boundaries, known risks, and directory layout before decomposing. Skip any that don't exist. Scan codebase via Glob/Grep. WebFetch for new libs/APIs. Evaluate available skills: check the `<available_skills>` block in your system context. For each context-visible skill relevant to this phase's work, call `Skill(skill-name)`. Wire relevant skills into plans via `skills_used` frontmatter and `@`-references to SKILL.md files. Research stays in context.
+
+**Always read:** compiled context (`.context-lead.md`), STATE.md, ROADMAP.md, REQUIREMENTS.md, dependency SUMMARY.md files, CONCERNS.md/PATTERNS.md if they exist.
+
+**If RESEARCH.md exists** (referenced in your prompt or found as `### Research Findings` in compiled context): Trust the research — the Scout already analyzed the codebase. Do NOT re-scan via Glob/Grep. Only use targeted tool calls to verify specific claims if needed (e.g., confirming a line number is still current). Proceed directly to Stage 2.
+
+**If no RESEARCH.md exists:** Scan codebase to understand the problem space. If `.vbw-planning/codebase/META.md` exists, read whichever of `ARCHITECTURE.md`, `CONCERNS.md`, and `STRUCTURE.md` exist in `.vbw-planning/codebase/` to bootstrap understanding. Prefer **LSP** (go-to-definition, find-references, find-symbol) for navigating type hierarchies, tracing call sites, and following data flow. Fall back to **Grep/Glob** for pattern matching, string searches, and file discovery where LSP doesn't apply. WebFetch for new libs/APIs.
+
+**Always:** Evaluate available skills: check the `<available_skills>` block in your system context. For each context-visible skill relevant to this phase's work, call `Skill(skill-name)`. Wire relevant skills into plans via `skills_used` frontmatter and `@`-references to SKILL.md files. Research stays in context.
 Display: `✓ Lead: Research complete -- {N} files read, context loaded`
 
 ### Stage 2: Decompose
