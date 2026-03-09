@@ -4,7 +4,7 @@ category: advanced
 disable-model-invocation: true
 description: Run standalone research by spawning Scout agent(s) for web searches and documentation lookups.
 argument-hint: <research-topic> [--parallel]
-allowed-tools: Read, Write, Bash, Glob, Grep, WebFetch
+allowed-tools: Read, Write, Bash, Glob, Grep, WebFetch, LSP
 ---
 
 # VBW Research: $ARGUMENTS
@@ -43,13 +43,12 @@ Current project:
     if [ $? -ne 0 ]; then echo "$SCOUT_MAX_TURNS" >&2; exit 1; fi
      ```
    - Display: `◆ Spawning Scout (${SCOUT_MODEL})...`
-   - Before composing the Scout task description, select skills from installed skills visible in your system context (use both skill names and descriptions). The Scout prompt MUST start with `<skill_activation>{For each selected skill: "Call Skill({skill-name})"} Do not skip any listed skill.</skill_activation>`. Use direct imperative language only.
+   - Before composing the Scout task description, evaluate installed skills visible in your system context — read each skill's description and determine if it is relevant to this specific task. If any skills are relevant, the Scout prompt MUST start with a `<skill_activation>` block. Only include skills whose description matches the task at hand. If no skills are relevant, omit the skill_activation block entirely.
   - Spawn vbw-scout as subagent(s) via Task tool. **Set `subagent_type: "vbw:vbw-scout"` and `model: "${SCOUT_MODEL}"` in the Task tool invocation. If `SCOUT_MAX_TURNS` is non-empty, also pass `maxTurns: ${SCOUT_MAX_TURNS}`. If `SCOUT_MAX_TURNS` is empty, do NOT include maxTurns (omitting it = unlimited).**
 ```
 <skill_activation>
-Call Skill('{selected-skill-1}').
-Call Skill('{selected-skill-2}').
-Do not skip any listed skill.
+Call Skill('{relevant-skill-1}').
+Call Skill('{relevant-skill-2}').
 </skill_activation>
 
 <task_context>

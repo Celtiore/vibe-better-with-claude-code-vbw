@@ -306,42 +306,12 @@ else
   fail "skill-evaluation-gate.sh: still exists"
 fi
 
-# --- emit-skill-xml.sh contract checks ---
+# --- emit-skill-xml.sh deleted (skill visibility is native to Claude Code) ---
 
-if [ -f "$ROOT/scripts/emit-skill-xml.sh" ]; then
-  pass "emit-skill-xml.sh: exists"
+if [ ! -f "$ROOT/scripts/emit-skill-xml.sh" ]; then
+  pass "emit-skill-xml.sh: deleted (native CC skill visibility)"
 else
-  fail "emit-skill-xml.sh: missing"
-fi
-
-if [ -x "$ROOT/scripts/emit-skill-xml.sh" ]; then
-  pass "emit-skill-xml.sh: is executable"
-else
-  fail "emit-skill-xml.sh: not executable"
-fi
-
-# --- emit-skill-xml.sh supports --filter-plugins flag ---
-
-if grep -q '\-\-filter-plugins' "$ROOT/scripts/emit-skill-xml.sh"; then
-  pass "emit-skill-xml.sh: supports --filter-plugins flag"
-else
-  fail "emit-skill-xml.sh: missing --filter-plugins flag support"
-fi
-
-# --- emit-skill-xml.sh supports --compact flag ---
-
-if grep -q '\-\-compact' "$ROOT/scripts/emit-skill-xml.sh"; then
-  pass "emit-skill-xml.sh: supports --compact flag"
-else
-  fail "emit-skill-xml.sh: missing --compact flag support"
-fi
-
-# --- emit-skill-xml.sh filters VBW/GSD skills ---
-
-if grep -q 'vbw-\*|gsd-\*' "$ROOT/scripts/emit-skill-xml.sh" || grep -q '_is_plugin_skill' "$ROOT/scripts/emit-skill-xml.sh"; then
-  pass "emit-skill-xml.sh: has VBW/GSD skill filtering"
-else
-  fail "emit-skill-xml.sh: missing VBW/GSD skill filtering"
+  fail "emit-skill-xml.sh: still exists (should be deleted)"
 fi
 
 # --- inject-subagent-skills.sh removed (skill visibility is native to Claude Code) ---
@@ -417,18 +387,18 @@ for agent_file in vbw-dev.md vbw-qa.md vbw-docs.md vbw-lead.md vbw-scout.md vbw-
   fi
 done
 
-# --- execute-protocol.md documents emit-skill-xml.sh ---
+# --- execute-protocol.md no longer documents emit-skill-xml.sh ---
 
-if grep -q 'emit-skill-xml.sh' "$PROTOCOL"; then
-  pass "execute-protocol.md: documents emit-skill-xml.sh"
+if ! grep -q 'emit-skill-xml.sh' "$PROTOCOL"; then
+  pass "execute-protocol.md: emit-skill-xml.sh references removed"
 else
-  fail "execute-protocol.md: missing emit-skill-xml.sh documentation"
+  fail "execute-protocol.md: still references emit-skill-xml.sh (should be removed)"
 fi
 
 if grep -q 'available_skills' "$PROTOCOL"; then
-  pass "execute-protocol.md: references <available_skills> XML"
+  pass "execute-protocol.md: references skills awareness"
 else
-  fail "execute-protocol.md: missing <available_skills> reference"
+  fail "execute-protocol.md: missing skills awareness reference"
 fi
 
 # --- Functional test: inject-subagent-skills.sh removed ---
@@ -485,59 +455,37 @@ for agent_file in vbw-lead.md vbw-dev.md vbw-qa.md vbw-scout.md vbw-debugger.md 
   fi
 done
 
-# Layer 2: Script-driven skill activation (generate-skill-activation.sh)
-if [ -f "$ROOT/scripts/generate-skill-activation.sh" ]; then
-  pass "generate-skill-activation.sh: exists"
+# Layer 2: Script-driven skill activation removed (replaced by orchestrator-composed intelligent selection)
+if [ ! -f "$ROOT/scripts/generate-skill-activation.sh" ]; then
+  pass "generate-skill-activation.sh: deleted (replaced by intelligent orchestrator selection)"
 else
-  fail "generate-skill-activation.sh: missing"
+  fail "generate-skill-activation.sh: still exists (should be deleted)"
 fi
 
-if [ -x "$ROOT/scripts/generate-skill-activation.sh" ]; then
-  pass "generate-skill-activation.sh: is executable"
+# compile-context.sh should NOT call generate-skill-activation.sh or emit_skills_section
+if ! grep -q 'generate-skill-activation.sh' "$COMPILER"; then
+  pass "compile-context.sh: no longer calls generate-skill-activation.sh"
 else
-  fail "generate-skill-activation.sh: not executable"
+  fail "compile-context.sh: still calls generate-skill-activation.sh (should be removed)"
 fi
 
-# generate-skill-activation.sh calls emit-skill-xml.sh for available skills
-if grep -q 'emit-skill-xml.sh' "$ROOT/scripts/generate-skill-activation.sh"; then
-  pass "generate-skill-activation.sh: calls emit-skill-xml.sh for available skills"
+if ! grep -q 'emit_skills_section' "$COMPILER"; then
+  pass "compile-context.sh: emit_skills_section removed"
 else
-  fail "generate-skill-activation.sh: missing emit-skill-xml.sh call"
+  fail "compile-context.sh: still has emit_skills_section (should be removed)"
 fi
 
-# generate-skill-activation.sh supports --phase-dir for sidecar file
-if grep -q '\-\-phase-dir' "$ROOT/scripts/generate-skill-activation.sh"; then
-  pass "generate-skill-activation.sh: supports --phase-dir flag"
+if ! grep -q 'Mandatory Skill Activation' "$COMPILER"; then
+  pass "compile-context.sh: Mandatory Skill Activation section removed"
 else
-  fail "generate-skill-activation.sh: missing --phase-dir support"
+  fail "compile-context.sh: still has Mandatory Skill Activation (should be removed)"
 fi
 
-# generate-skill-activation.sh reads skills_used from plan frontmatter
-if grep -q 'skills_used' "$ROOT/scripts/generate-skill-activation.sh"; then
-  pass "generate-skill-activation.sh: reads skills_used from plan frontmatter"
+# execute-protocol.md should NOT reference .skill-activation-block.txt or SKILL_BLOCK
+if ! grep -q 'skill-activation-block.txt' "$PROTOCOL"; then
+  pass "execute-protocol.md: .skill-activation-block.txt references removed"
 else
-  fail "generate-skill-activation.sh: missing skills_used reading"
-fi
-
-# compile-context.sh calls generate-skill-activation.sh
-if grep -q 'generate-skill-activation.sh' "$COMPILER"; then
-  pass "compile-context.sh: calls generate-skill-activation.sh"
-else
-  fail "compile-context.sh: missing generate-skill-activation.sh call"
-fi
-
-# compile-context.sh emits Mandatory Skill Activation section
-if grep -q 'Mandatory Skill Activation' "$COMPILER"; then
-  pass "compile-context.sh: emits Mandatory Skill Activation section"
-else
-  fail "compile-context.sh: missing Mandatory Skill Activation section"
-fi
-
-# execute-protocol.md references .skill-activation-block.txt sidecar
-if grep -q 'skill-activation-block.txt' "$PROTOCOL"; then
-  pass "execute-protocol.md: references .skill-activation-block.txt sidecar"
-else
-  fail "execute-protocol.md: missing .skill-activation-block.txt reference"
+  fail "execute-protocol.md: still references .skill-activation-block.txt"
 fi
 
 if [ ! -f "$ROOT/scripts/emit-skill-prompt-line.sh" ]; then
@@ -567,26 +515,32 @@ else
   fail "research.md: still references SKILL_PROMPT_LINE"
 fi
 
-# Positive: script-driven skill activation block in execute-protocol (team swarm spawns)
-if grep -q 'generate-skill-activation.sh' "$PROTOCOL"; then
-  pass "execute-protocol.md: references generate-skill-activation.sh"
+# Positive: orchestrator-composed intelligent skill selection in execute-protocol
+if grep -q 'evaluate installed skills' "$PROTOCOL"; then
+  pass "execute-protocol.md: intelligent skill selection documented"
 else
-  fail "execute-protocol.md: missing generate-skill-activation.sh reference"
+  fail "execute-protocol.md: missing intelligent skill selection documentation"
 fi
 
 # Negative: old LLM-composed skill selection removed from execute-protocol
-# (vibe.md and research.md correctly use orchestrator-composed skill_activation for Scout/Lead)
 if ! grep -q 'select skills from installed skills visible in your system context' "$PROTOCOL"; then
   pass "execute-protocol.md: old LLM-composed skill selection removed"
 else
   fail "execute-protocol.md: still has old LLM-composed skill selection instruction"
 fi
 
-# Positive: SKILL_BLOCK variable used in execute-protocol (Dev/QA team spawns)
-if grep -q 'SKILL_BLOCK' "$PROTOCOL"; then
-  pass "execute-protocol.md: SKILL_BLOCK variable referenced for team spawns"
+# Negative: SKILL_BLOCK variable removed from execute-protocol
+if ! grep -q 'SKILL_BLOCK' "$PROTOCOL"; then
+  pass "execute-protocol.md: SKILL_BLOCK variable removed"
 else
-  fail "execute-protocol.md: SKILL_BLOCK variable missing"
+  fail "execute-protocol.md: SKILL_BLOCK still referenced (should be removed)"
+fi
+
+# Negative: generate-skill-activation.sh removed from execute-protocol
+if ! grep -q 'generate-skill-activation.sh' "$PROTOCOL"; then
+  pass "execute-protocol.md: generate-skill-activation.sh references removed"
+else
+  fail "execute-protocol.md: still references generate-skill-activation.sh"
 fi
 
 # Positive: orchestrator-composed skill_activation in Scout/Lead spawn templates
@@ -596,11 +550,25 @@ else
   fail "vibe.md or research.md: missing skill_activation in Scout/Lead spawn templates"
 fi
 
-# Anti-LLM-composition directive in execute-protocol (Dev/QA teams)
-if grep -q 'Do NOT attempt to compose skill activation yourself' "$PROTOCOL"; then
-  pass "execute-protocol.md: anti-LLM-composition directive present"
+# Positive: intelligent selection language in vibe.md
+if grep -q 'evaluate installed skills' "$VIBE_CMD"; then
+  pass "vibe.md: uses intelligent skill evaluation language"
 else
-  fail "execute-protocol.md: missing anti-LLM-composition directive"
+  fail "vibe.md: missing intelligent skill evaluation language"
+fi
+
+# Negative: old "Do not skip any listed skill" removed
+if ! grep -q 'Do not skip any listed skill' "$VIBE_CMD" && ! grep -q 'Do not skip any listed skill' "$RESEARCH_CMD"; then
+  pass "vibe.md + research.md: 'Do not skip any listed skill' removed"
+else
+  fail "vibe.md or research.md: still has 'Do not skip any listed skill'"
+fi
+
+# Anti-LLM-composition directive removed (no longer using pre-computed blocks)
+if ! grep -q 'Do NOT attempt to compose skill activation yourself' "$PROTOCOL"; then
+  pass "execute-protocol.md: anti-LLM-composition directive removed (intelligent selection now)"
+else
+  fail "execute-protocol.md: anti-LLM-composition directive still present"
 fi
 
 if ! (grep -Ei 'skill_activation|Skill\(' "$PROTOCOL" "$VIBE_CMD" "$RESEARCH_CMD" | grep -qiE 'if you need|if relevant|clearly relevant'); then
@@ -644,16 +612,13 @@ else
   fail "hooks.json: inject-subagent-skills.sh still present (should be removed)"
 fi
 
-# Compaction durability: compile-context.sh emits skills for all 6 compiled roles
+# Compaction durability: compile-context.sh should NOT call emit_skills_section for any role
 COMPILER="$ROOT/scripts/compile-context.sh"
-for role in lead dev qa scout debugger architect; do
-  # Check that the role case block calls emit_skills_section
-  if awk "/^  ${role}\\)/,/;;/" "$COMPILER" | grep -q 'emit_skills_section'; then
-    pass "compile-context.sh: calls emit_skills_section for $role"
-  else
-    fail "compile-context.sh: missing emit_skills_section for $role"
-  fi
-done
+if ! grep -q 'emit_skills_section' "$COMPILER"; then
+  pass "compile-context.sh: emit_skills_section fully removed (all roles)"
+else
+  fail "compile-context.sh: emit_skills_section still present"
+fi
 
 # Negative check: no file should use the old "is 0" / "is a positive integer" phrasing
 for _cmd_file in $_MAX_TURNS_COMMANDS; do

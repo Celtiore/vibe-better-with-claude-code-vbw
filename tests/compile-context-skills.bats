@@ -73,16 +73,16 @@ EOF
   ! grep -q "</available_skills>" "$TEST_TEMP_DIR/.vbw-planning/phases/01-test-phase/.context-dev.md"
 }
 
-@test "compile-context: mandatory skill activation present when plan has skills_used" {
+@test "compile-context: no mandatory skill activation (emit_skills_section removed)" {
   create_test_skill "test-skill"
   create_plan_with_skills
   cd "$TEST_TEMP_DIR"
   run bash "$SCRIPTS_DIR/compile-context.sh" 01 dev .vbw-planning/phases
   [ "$status" -eq 0 ]
-  grep -q "### Mandatory Skill Activation" "$TEST_TEMP_DIR/.vbw-planning/phases/01-test-phase/.context-dev.md"
+  ! grep -q "### Mandatory Skill Activation" "$TEST_TEMP_DIR/.vbw-planning/phases/01-test-phase/.context-dev.md"
 }
 
-@test "compile-context: no mandatory skill activation when plan has no skills_used" {
+@test "compile-context: no mandatory skill activation even without skills_used" {
   cd "$TEST_TEMP_DIR"
   # Plan without skills_used frontmatter
   cat > "$TEST_TEMP_DIR/.vbw-planning/phases/01-test-phase/PLAN.md" <<'EOF'
@@ -93,7 +93,7 @@ effort: balanced
 ## Tasks
 - [ ] TASK-01: Do something
 EOF
-  # Override HOME so emit-skill-xml.sh won't find real user skills
+  # Override HOME so no real user skills are found
   HOME="$TEST_TEMP_DIR" run bash "$SCRIPTS_DIR/compile-context.sh" 01 dev .vbw-planning/phases
   [ "$status" -eq 0 ]
   ! grep -q "### Mandatory Skill Activation" "$TEST_TEMP_DIR/.vbw-planning/phases/01-test-phase/.context-dev.md"

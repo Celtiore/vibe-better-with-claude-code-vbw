@@ -226,29 +226,6 @@ emit_codebase_mapping_hint() {
   fi
 }
 
-# --- Skill context helper (compaction-safe) ---
-# Emits skill activation + available skills sections.
-# Also writes .skill-activation-block.txt sidecar for orchestrator TaskCreate injection.
-# This survives compaction because agents re-read .context-{role}.md from disk.
-emit_skills_section() {
-  # Generate mandatory skill activation block (also writes sidecar file)
-  local activation_args=()
-  if [ -n "$PHASE_DIR" ] && [ -d "$PHASE_DIR" ]; then
-    activation_args+=(--phase-dir "$PHASE_DIR")
-  fi
-  if [ -n "${PLAN_PATH:-}" ] && [ -f "$PLAN_PATH" ]; then
-    activation_args+=("$PLAN_PATH")
-  fi
-  local activation_block
-  activation_block=$(bash "$SCRIPT_DIR/generate-skill-activation.sh" "${activation_args[@]}" 2>/dev/null || true)
-  if [ -n "$activation_block" ]; then
-    echo ""
-    echo "### Mandatory Skill Activation"
-    echo "Include the following block verbatim in every subagent task description:"
-    echo "$activation_block"
-  fi
-}
-
 # --- Role-specific output ---
 case "$ROLE" in
   lead)
@@ -298,8 +275,6 @@ case "$ROLE" in
       fi
       # --- Codebase mapping hint (issue #80) ---
       emit_codebase_mapping_hint ARCHITECTURE CONCERNS STRUCTURE
-      # --- Compaction-safe skill context ---
-      emit_skills_section
       # --- V3: Include RESEARCH.md if present (per-plan preferred) ---
       RESEARCH_FILE=$(resolve_research_file "$PHASE_DIR" "$PLAN_PATH")
       if [ -n "$RESEARCH_FILE" ] && [ -f "$RESEARCH_FILE" ]; then
@@ -332,8 +307,6 @@ case "$ROLE" in
       fi
       # --- Codebase mapping hint (issue #78) ---
       emit_codebase_mapping_hint CONVENTIONS PATTERNS STRUCTURE DEPENDENCIES
-      # --- Compaction-safe skill context ---
-      emit_skills_section
       # --- V3: Delta context (REQ-06) ---
       if [ "$V3_DELTA_ENABLED" = "true" ] && [ -f "${SCRIPT_DIR}/delta-files.sh" ]; then
         DELTA_FILES=$(bash "${SCRIPT_DIR}/delta-files.sh" "$PHASE_DIR" "$PLAN_PATH" 2>/dev/null || true)
@@ -415,8 +388,6 @@ case "$ROLE" in
       fi
       # --- Codebase mapping hint (issue #79) ---
       emit_codebase_mapping_hint TESTING CONCERNS ARCHITECTURE
-      # --- Compaction-safe skill context ---
-      emit_skills_section
     } > "${PHASE_DIR}/.context-qa.md"
     ;;
 
@@ -450,8 +421,6 @@ case "$ROLE" in
           echo "$CONVENTIONS"
         fi
       fi
-      # --- Compaction-safe skill context ---
-      emit_skills_section
       # --- V3: Include RESEARCH.md if present (per-plan preferred) ---
       RESEARCH_FILE=$(resolve_research_file "$PHASE_DIR" "$PLAN_PATH")
       if [ -n "$RESEARCH_FILE" ] && [ -f "$RESEARCH_FILE" ]; then
@@ -510,8 +479,6 @@ case "$ROLE" in
       fi
       # --- Codebase mapping hint (issue #75) ---
       emit_codebase_mapping_hint ARCHITECTURE CONCERNS PATTERNS DEPENDENCIES
-      # --- Compaction-safe skill context ---
-      emit_skills_section
       # --- V3: Include RESEARCH.md if present (per-plan preferred) ---
       RESEARCH_FILE=$(resolve_research_file "$PHASE_DIR" "$PLAN_PATH")
       if [ -n "$RESEARCH_FILE" ] && [ -f "$RESEARCH_FILE" ]; then
@@ -586,8 +553,6 @@ case "$ROLE" in
       fi
       # --- Codebase mapping hint (issue #81) ---
       emit_codebase_mapping_hint ARCHITECTURE STACK
-      # --- Compaction-safe skill context ---
-      emit_skills_section
       # --- V3: Include RESEARCH.md if present (per-plan preferred) ---
       RESEARCH_FILE=$(resolve_research_file "$PHASE_DIR" "$PLAN_PATH")
       if [ -n "$RESEARCH_FILE" ] && [ -f "$RESEARCH_FILE" ]; then
