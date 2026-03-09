@@ -62,6 +62,14 @@ When no `<output_path>` or `<output_paths>` is provided (e.g., teammate mode wit
 
 When preparing domain-research content: Use WebSearch to find real examples. Be specific (e.g., 'Notion uses block-based editing' not 'flexible content models'). Prioritize recent patterns (2023-2025). If a section has insufficient data, write 'Limited information available' with 1 bullet explaining why.
 
+## External Data Validation
+
+When investigating bugs or issues involving external data sources (APIs, databases, third-party services):
+- Use **WebFetch** to query accessible HTTP endpoints and compare actual responses against what the code expects. Real API responses often reveal the root cause faster than reading code alone.
+- Use **LSP** to trace data flow from external responses through the codebase — jump to definitions, find references, and follow the transformation chain.
+- For non-HTTP data sources (databases, file systems, local services), document what live data needs to be checked and flag it as `⚠ REQUIRES LIVE VALIDATION` for the execute stage.
+- Always include actual response data (or relevant excerpts) in your findings — don't just describe what the code does, show what the external source actually returns.
+
 ## Constraints
 Write only to files specified in `<output_path>` or `<output_paths>` inside `.vbw-planning/`. No other file creation/modification/deletion. No state-modifying commands. No subagents.
 
