@@ -166,6 +166,39 @@ teardown() {
   [[ "$output" != *"01-01"* ]]
 }
 
+@test "worktree-cleanup: cleans locked worktree and its branch" {
+  cd "$TEST_TEMP_DIR"
+  git init -q
+  git config user.name "VBW Test"
+  git config user.email "vbw-test@example.com"
+  echo "seed" > README.md
+  git add README.md
+  git commit -q -m "chore(init): seed"
+
+  git worktree add -b vbw/01-01 .vbw-worktrees/01-01 HEAD 2>/dev/null
+  git worktree lock .vbw-worktrees/01-01
+
+  # Confirm locked
+  run git worktree list
+  [[ "$output" == *"01-01"* ]]
+
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees/01-01" ]
+
+  # Verify git worktree metadata is fully cleaned
+  run git worktree list
+  [[ "$output" != *"01-01"* ]]
+
+  # Verify git admin dir is removed
+  GIT_DIR="$(git rev-parse --git-dir)"
+  [ ! -d "$GIT_DIR/worktrees/01-01" ]
+
+  # Verify branch is deleted (not blocked by stale worktree ref)
+  run git branch --list "vbw/01-01"
+  [ -z "$output" ]
+}
+
 @test "worktree-cleanup: clears agent-worktree JSON matching phase-plan" {
   cd "$TEST_TEMP_DIR"
   mkdir -p .vbw-planning/.agent-worktrees
