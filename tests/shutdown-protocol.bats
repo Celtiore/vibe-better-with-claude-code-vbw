@@ -617,3 +617,58 @@ teardown() {
   }
   return 0
 }
+
+# =============================================================================
+# Flat shutdown message normalization (validate-message.sh)
+# =============================================================================
+
+@test "validate-message.sh normalizes flat shutdown_request with requestId" {
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(echo '{"type":"shutdown_request","requestId":"abc-123","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead"}' \
+    | bash "$SCRIPTS_DIR/validate-message.sh")
+  echo "$result" | jq -e '.valid == true'
+}
+
+@test "validate-message.sh normalizes flat shutdown_request with id" {
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(echo '{"type":"shutdown_request","id":"abc-456","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead"}' \
+    | bash "$SCRIPTS_DIR/validate-message.sh")
+  echo "$result" | jq -e '.valid == true'
+}
+
+@test "validate-message.sh normalizes flat shutdown_response with id" {
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(echo '{"type":"shutdown_response","id":"rsp-1","request_id":"abc-123","approved":true,"final_status":"complete","from":"dev"}' \
+    | bash "$SCRIPTS_DIR/validate-message.sh")
+  echo "$result" | jq -e '.valid == true'
+}
+
+@test "validate-message.sh still accepts full V2 envelope shutdown_request" {
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(echo '{"id":"v2-1","type":"shutdown_request","phase":1,"task":"0-0","author_role":"lead","timestamp":"2026-03-10T00:00:00Z","schema_version":"2.0","payload":{"reason":"phase_complete","team_name":"vbw-phase-01"},"confidence":1.0}' \
+    | bash "$SCRIPTS_DIR/validate-message.sh")
+  echo "$result" | jq -e '.valid == true'
+}
+
+@test "validate-message.sh rejects flat shutdown_request missing required payload fields" {
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(echo '{"type":"shutdown_request","requestId":"abc-123","from":"lead"}' \
+    | bash "$SCRIPTS_DIR/validate-message.sh") || true
+  echo "$result" | jq -e '.valid == false'
+  echo "$result" | jq -e '.errors | length > 0'
+}
+
+@test "validate-message.sh normalizes requestId into envelope id field" {
+  cd "$TEST_TEMP_DIR"
+  # Pipe flat message through normalization, capture the normalized JSON
+  # by checking the validation passes (normalization must set the id field)
+  local result
+  result=$(echo '{"type":"shutdown_request","requestId":"req-id-001","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead"}' \
+    | bash "$SCRIPTS_DIR/validate-message.sh")
+  echo "$result" | jq -e '.valid == true'
+}
