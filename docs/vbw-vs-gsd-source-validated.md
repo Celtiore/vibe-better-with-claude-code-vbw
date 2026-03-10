@@ -111,7 +111,7 @@ The plan checker (`gsd-plan-checker`, 24.2KB) verifies plans across 8 dimensions
 - `gsd-tools.cjs` verification suite: `verify plan-structure`, `verify phase-completeness`, `verify references`, `verify commits`, `verify artifacts`, `verify key-links`
 - `gsd-plan-checker` agent (24.2KB): 8-dimension plan verification
 
-**The real difference:** GSD's QA is one tier (verifier agent + UAT), invoked per workflow. VBW has three tiers (Quick 5-10 checks, Standard 15-25, Deep 30+) with the tier selected based on effort profile. VBW's QA is a dedicated agent role (`vbw-qa`) with platform-enforced read-only permissions; GSD's verifier has full tool access.
+**The real difference:** GSD's QA is one tier (verifier agent + UAT), invoked per workflow. VBW has three tiers (Quick 5-10 checks, Standard 15-25, Deep 30+) with the tier selected based on effort profile. VBW's QA is a dedicated agent role (`vbw-qa`) with platform-denied Write/Edit tools; it persists VERIFICATION.md only through a deterministic writer script (`write-verification.sh`). GSD's verifier has full tool access.
 
 **Corrected position:** GSD has formal QA via its verifier agent and UAT workflow. VBW has tiered QA with platform-enforced agent permissions.
 
@@ -273,7 +273,7 @@ This is more structured than a general "log deviations" instruction.
 | Feature | VBW | GSD |
 |---------|-----|-----|
 | **Automated QA** | 3-tier (Quick/Standard/Deep) via `vbw-qa` agent | Single-tier via `gsd-verifier` agent |
-| **QA agent permissions** | Platform-enforced read-only (`disallowedTools`) | Full tool access (read+write) |
+| **QA agent permissions** | Write/Edit tools platform-denied; persists VERIFICATION.md via deterministic writer script | Full tool access (read+write) |
 | **Verification methodology** | Goal-backward | Goal-backward |
 | **Artifact verification** | SUMMARY.md + VERIFICATION.md | SUMMARY.md + VERIFICATION.md |
 | **Verification reference** | `verification-protocol.md` | `verification-patterns.md` (16.5KB, 4-level framework) |

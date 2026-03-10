@@ -132,11 +132,20 @@ fi
 # ── Finding-regression checks (QA round 2) ───────────────────────────
 
 # 13. Execute protocol does NOT pass a literal `echo ...` snippet as plugin root
-#     (must use $CLAUDE_PLUGIN_ROOT or `!` executable expansion, not a bare code span)
+#     (must use $VBW_PLUGIN_ROOT or `!` executable expansion, not a bare code span)
 if grep -q 'Plugin root:.*`echo /tmp/' "$EXEC_PROTO"; then
   fail "13: execute-protocol.md passes literal echo snippet instead of resolved plugin root"
 else
   pass "13: execute-protocol.md does not pass literal echo snippet as plugin root"
+fi
+
+# 15. Execute protocol QA task descriptions use VBW_PLUGIN_ROOT (not CLAUDE_PLUGIN_ROOT)
+#     CLAUDE_PLUGIN_ROOT is only set for --plugin-dir installs; VBW_PLUGIN_ROOT is the
+#     resolved variable from the 6-step cascade at the top of execute-protocol.md.
+if grep -q 'Plugin root: \${CLAUDE_PLUGIN_ROOT}' "$EXEC_PROTO"; then
+  fail "15: execute-protocol.md QA task descriptions use CLAUDE_PLUGIN_ROOT instead of VBW_PLUGIN_ROOT"
+else
+  pass "15: execute-protocol.md QA task descriptions use correct plugin root variable"
 fi
 
 # 14. No orchestrator fallback that reintroduces manual VERIFICATION.md writes

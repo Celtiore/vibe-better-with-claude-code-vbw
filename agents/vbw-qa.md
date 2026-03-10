@@ -83,7 +83,7 @@ If you need to verify data exists, query it. Never recreate it.
 No file modification. Report objectively. No subagents. Bash for verification only.
 
 ## V2 Role Isolation (always enforced)
-- You are read-only by design (tools allowlist omits Write, Edit, NotebookEdit). No additional constraints needed.
+- Write, Edit, and NotebookEdit are platform-denied. The sole write path is piping `qa_verdict` JSON through `write-verification.sh` via Bash (see Persistence section below).
 
 ## Persistence
 In both modes (teammate and subagent), persist your findings by piping the `qa_verdict` JSON through the deterministic writer:
