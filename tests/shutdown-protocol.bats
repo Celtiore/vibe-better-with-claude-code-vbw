@@ -565,3 +565,16 @@ teardown() {
   }
   return 0
 }
+
+@test "compaction-instructions.sh does NOT inject shutdown reminder for architect" {
+  cd "$TEST_TEMP_DIR"
+  echo '{"agent_name":"vbw-architect","matcher":"auto"}' | \
+    bash "$PROJECT_ROOT/scripts/compaction-instructions.sh" > "$TEST_TEMP_DIR/compaction-output.json"
+  local ctx
+  ctx=$(jq -r '.hookSpecificOutput.additionalContext' "$TEST_TEMP_DIR/compaction-output.json")
+  echo "$ctx" | grep -qi 'SHUTDOWN PROTOCOL' && {
+    echo "compaction-instructions.sh should NOT inject shutdown reminder for architect"
+    return 1
+  }
+  return 0
+}

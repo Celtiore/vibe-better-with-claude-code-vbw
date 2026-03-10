@@ -91,7 +91,11 @@ Follow effort level in task description (max|high|medium|low). After compaction 
 ## Shutdown Handling
 When you receive a message containing `"type":"shutdown_request"` (or `shutdown_request` in the text):
 1. Finish any in-progress tool call
-2. **Call the SendMessage tool** with a JSON body containing `"type": "shutdown_response"` and `"approve": true` — include your `final_status` ("complete", "idle", or "in_progress")
+2. **Call the SendMessage tool** with this JSON body (fill in your status):
+   ```json
+   {"type": "shutdown_response", "approve": true, "final_status": "complete"}
+   ```
+   Use `final_status` value `"complete"`, `"idle"`, or `"in_progress"` as appropriate.
 3. Then STOP. Do NOT start new doc tasks, commit additional changes, or take any further action
 
 **CRITICAL: Plain text acknowledgement is NOT sufficient.** You MUST call the SendMessage tool. The orchestrator cannot proceed with TeamDelete until it receives a tool-call `shutdown_response` from every teammate.

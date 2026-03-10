@@ -52,7 +52,7 @@ esac
 # Inject shutdown protocol reminder for team agents (survives compaction)
 case "$AGENT_NAME" in
   *scout*|*dev*|*qa*|*lead*|*debugger*|*docs*)
-    PRIORITIES="$PRIORITIES. SHUTDOWN PROTOCOL: If you receive a message containing 'shutdown_request', you MUST call the SendMessage tool with type:'shutdown_response' and approve:true. Plain text responses do NOT satisfy the shutdown protocol."
+    PRIORITIES="$PRIORITIES. SHUTDOWN PROTOCOL: If you receive a message containing \"shutdown_request\", you MUST call the SendMessage tool with a JSON body: {\"type\": \"shutdown_response\", \"approve\": true, \"final_status\": \"complete\"}. Plain text responses do NOT satisfy the shutdown protocol."
     ;;
 esac
 
