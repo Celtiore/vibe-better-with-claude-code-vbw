@@ -392,17 +392,30 @@ teardown() {
 }
 
 # =============================================================================
-# Finding 6: v2_typed_protocol=false fallback for shutdown messages
+# Finding 6: v2_typed_protocol is graduated — validator always validates
 # =============================================================================
 
-@test "validate-message: shutdown_request passes when v2_typed_protocol=false" {
+@test "validate-message: shutdown_request validates even when v2_typed_protocol absent (graduated flag)" {
   cd "$TEST_TEMP_DIR"
-  jq '.v2_typed_protocol = false' \
+  # Remove the flag entirely (simulates graduated config after migration)
+  jq 'del(.v2_typed_protocol)' \
     "$TEST_TEMP_DIR/.vbw-planning/config.json" > "$TEST_TEMP_DIR/.vbw-planning/config.json.tmp" \
     && mv "$TEST_TEMP_DIR/.vbw-planning/config.json.tmp" "$TEST_TEMP_DIR/.vbw-planning/config.json"
+  # Valid message should still pass
   MSG='{"id":"shut-fallback","type":"shutdown_request","phase":1,"task":"","author_role":"lead","timestamp":"2026-02-12T10:30:00Z","schema_version":"2.0","confidence":"high","payload":{"reason":"phase_complete","team_name":"vbw-phase-01"}}'
   run bash "$SCRIPTS_DIR/validate-message.sh" "$MSG"
   [ "$status" -eq 0 ]
+}
+
+@test "validate-message: invalid shutdown_request rejected even when v2_typed_protocol absent" {
+  cd "$TEST_TEMP_DIR"
+  jq 'del(.v2_typed_protocol)' \
+    "$TEST_TEMP_DIR/.vbw-planning/config.json" > "$TEST_TEMP_DIR/.vbw-planning/config.json.tmp" \
+    && mv "$TEST_TEMP_DIR/.vbw-planning/config.json.tmp" "$TEST_TEMP_DIR/.vbw-planning/config.json"
+  # Missing required payload fields → should be rejected
+  MSG='{"id":"shut-invalid","type":"shutdown_request","phase":1,"task":"","author_role":"lead","timestamp":"2026-02-12T10:30:00Z","schema_version":"2.0","confidence":"high","payload":{}}'
+  run bash "$SCRIPTS_DIR/validate-message.sh" "$MSG"
+  [ "$status" -eq 2 ]
 }
 
 # =============================================================================
@@ -736,4 +749,48 @@ teardown() {
   echo "$normalized" | jq -e '.confidence == 0.5'
   # confidence should NOT be inside payload
   echo "$normalized" | jq -e '(.payload | has("confidence")) | not'
+}
+
+# =============================================================================
+# Prompt-equivalence: compaction reminder must match agent final_status semantics
+# =============================================================================
+
+@test "compaction reminder includes all final_status values from agent prompts" {
+  cd "$TEST_TEMP_DIR"
+  # Extract final_status values from one canonical agent prompt (vbw-dev.md)
+  local agent_statuses
+  agent_statuses=$(grep -o '"complete".*"idle".*"in_progress"' "$PROJECT_ROOT/agents/vbw-dev.md" || true)
+  [ -n "$agent_statuses" ]
+
+  # Verify compaction reminder includes the same three values
+  local compaction_output
+  compaction_output=$(echo '{"agent_name":"vbw-dev","matcher":"auto"}' \
+    | bash "$SCRIPTS_DIR/compaction-instructions.sh" 2>/dev/null \
+    | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null || true)
+  echo "$compaction_output" | grep -q 'complete|idle|in_progress'
+}
+
+@test "shutdown recovery guidance present in all team-producing commands" {
+  # All commands that create teams must mention plain text retry and doctor cleanup
+  for cmd in vibe.md debug.md map.md; do
+    local content
+    content=$(cat "$PROJECT_ROOT/commands/$cmd")
+    echo "$content" | grep -q 'plain text' || {
+      echo "FAIL: $cmd missing plain text retry guidance"
+      return 1
+    }
+    echo "$content" | grep -q 'doctor' || {
+      echo "FAIL: $cmd missing /vbw:doctor cleanup reference"
+      return 1
+    }
+  done
+}
+
+@test "handoff-schemas.md backward compat describes graduated flag accurately" {
+  local schemas_content
+  schemas_content=$(cat "$PROJECT_ROOT/references/handoff-schemas.md")
+  # Must mention "graduated" (the flag is always-on)
+  echo "$schemas_content" | grep -q 'graduated'
+  # Must NOT claim short-circuit/fail-open behavior
+  ! echo "$schemas_content" | grep -q 'short-circuits to valid'
 }

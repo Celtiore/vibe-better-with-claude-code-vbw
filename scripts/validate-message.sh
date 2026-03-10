@@ -7,7 +7,7 @@ set -u
 # Checks: (1) envelope completeness, (2) known type, (3) payload required fields,
 #          (4) role authorization, (5) file references against contract.
 # Output: JSON {valid: bool, errors: [...]}
-# Exit: 0 when valid (or flag off), 2 when invalid and v2_typed_protocol=true.
+# Exit: 0 when valid, 2 when invalid.
 
 PLANNING_DIR=".vbw-planning"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

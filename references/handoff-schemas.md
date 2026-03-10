@@ -33,7 +33,7 @@ V2 inter-agent messages use strict JSON schemas. Every message includes a mandat
 | shutdown_request | lead (orchestrator) | dev, qa, scout, lead, debugger, docs |
 | shutdown_response | dev, qa, scout, lead, debugger, docs | lead (orchestrator) |
 
-Unauthorized sender -> message rejected (v2_typed_protocol=true) or logged (false).
+Unauthorized sender -> message rejected.
 
 ## `scout_findings` (Scout -> Lead/Architect)
 
@@ -333,11 +333,11 @@ On receiving `shutdown_request`: finish any in-progress tool call, **call the Se
 
 ## Backward Compatibility
 
-Old-format messages (without full envelope) are accepted when `v2_typed_protocol=false`. The validate-message.sh script parses the `type` field to determine schema and validates accordingly.
+The `v2_typed_protocol` flag is a graduated feature flag — it has been always-on since v1.20 and is stripped from configs by `migrate-config.sh`. `validate-message.sh` always validates messages against the V2 schema; there is no fail-open bypass.
 
-**Note:** `shutdown_request` and `shutdown_response` were introduced in v2.0. When `v2_typed_protocol=false`, validate-message.sh short-circuits to valid (no schema check), so shutdown messages pass through without rejection. Agents running in V1 mode will not recognize these types and should treat unrecognized messages as plain markdown.
+Flat shutdown messages (without the full V2 envelope) are handled via **normalization**: `validate-message.sh` detects flat `shutdown_request`/`shutdown_response` messages (no `payload` key) and wraps them into V2 envelope shape before validation. This means simplified inbox delivery works — agents do not need to construct a full envelope.
 
 When receiving messages, agents should:
 1. Try to parse as V2 typed message (full envelope)
-2. Fall back to V1 format (simple type + payload)
+2. Fall back to flat JSON with `type` field (normalized automatically by the validator)
 3. Fall back to plain markdown on parse failure

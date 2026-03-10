@@ -293,10 +293,10 @@ EOF
 
   run_migration
 
-  # agent_teams:true → prefer_teams:"always" → migrated to "auto" (#198)
+  # agent_teams:true → prefer_teams:"always" (rename only; "always" is preserved)
   run jq -r '.prefer_teams' "$TEST_TEMP_DIR/.vbw-planning/config.json"
   [ "$status" -eq 0 ]
-  [ "$output" = "auto" ]
+  [ "$output" = "always" ]
 
   run jq -r 'has("agent_teams")' "$TEST_TEMP_DIR/.vbw-planning/config.json"
   [ "$status" -eq 0 ]
@@ -338,8 +338,8 @@ EOF
   [ "$output" = "auto" ]
 }
 
-@test "migration converts prefer_teams always to auto" {
-  # "always" was the old VBW default, not a user choice — migrate to "auto"
+@test "migration preserves prefer_teams always (intentional user choice)" {
+  # "always" may be a user-explicit setting via /vbw:config — do not clobber
   cat > "$TEST_TEMP_DIR/.vbw-planning/config.json" <<'EOF'
 {
   "effort": "balanced",
@@ -351,7 +351,7 @@ EOF
 
   run jq -r '.prefer_teams' "$TEST_TEMP_DIR/.vbw-planning/config.json"
   [ "$status" -eq 0 ]
-  [ "$output" = "auto" ]
+  [ "$output" = "always" ]
 }
 
 @test "migration preserves prefer_teams when_parallel" {

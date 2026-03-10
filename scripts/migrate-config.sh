@@ -106,15 +106,9 @@ if ! jq -e 'has("prefer_teams")' "$CONFIG_FILE" >/dev/null 2>&1; then
   fi
 fi
 
-# One-time migration: prefer_teams "always" was the old VBW default (not a user
-# choice). Change to "auto" to reduce unnecessary team-creation exposure (#198).
-CURRENT_PREFER_TEAMS=$(jq -r '.prefer_teams // ""' "$CONFIG_FILE" 2>/dev/null) || CURRENT_PREFER_TEAMS=""
-if [ "$CURRENT_PREFER_TEAMS" = "always" ]; then
-  if ! apply_update '.prefer_teams = "auto"'; then
-    echo "ERROR: Config migration failed while updating prefer_teams." >&2
-    exit 1
-  fi
-fi
+# Note: prefer_teams "always" is a valid user-explicit setting (set via
+# /vbw:config). Do NOT migrate it to "auto" — there is no way to distinguish
+# a user's intentional choice from an old VBW default (#198 QA round 4).
 
 # Strip graduated feature flags — core infrastructure flags are always-on.
 # These keys have no runtime effect but accumulate in brownfield configs.
