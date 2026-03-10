@@ -167,10 +167,10 @@ EOF
 
   run_migration
 
-  # Verify prefer_teams was added with "always" default
+  # Verify prefer_teams was added with "auto" default
   run jq -r '.prefer_teams' "$TEST_TEMP_DIR/.vbw-planning/config.json"
   [ "$status" -eq 0 ]
-  [ "$output" = "always" ]
+  [ "$output" = "auto" ]
 }
 
 @test "migration adds planning_tracking and auto_push defaults" {

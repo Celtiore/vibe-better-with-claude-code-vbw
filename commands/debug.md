@@ -42,7 +42,7 @@ Recent commits:
 
 3. **Routing decision + delegation marker:** Read prefer_teams config:
     ```bash
-    PREFER_TEAMS=$(jq -r '.prefer_teams // "always"' .vbw-planning/config.json 2>/dev/null)
+    PREFER_TEAMS=$(jq -r '.prefer_teams // "auto"' .vbw-planning/config.json 2>/dev/null)
     ```
 
     Before spawning any agent, activate the delegation guard:

@@ -405,7 +405,7 @@ This mode handles the case where a milestone was archived before UAT issues were
      ```
    - **Team creation:** Read prefer_teams config:
      ```bash
-     PREFER_TEAMS=$(jq -r '.prefer_teams // "always"' .vbw-planning/config.json 2>/dev/null)
+     PREFER_TEAMS=$(jq -r '.prefer_teams // "auto"' .vbw-planning/config.json 2>/dev/null)
      ```
      Decision tree:
      - `prefer_teams='always'`: Create team even for Lead-only (no Scout)

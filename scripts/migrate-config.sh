@@ -100,7 +100,7 @@ if ! jq -e 'has("model_overrides")' "$CONFIG_FILE" >/dev/null 2>&1; then
 fi
 
 if ! jq -e 'has("prefer_teams")' "$CONFIG_FILE" >/dev/null 2>&1; then
-  if ! apply_update '. + {prefer_teams: "always"}'; then
+  if ! apply_update '. + {prefer_teams: "auto"}'; then
     echo "ERROR: Config migration failed while adding prefer_teams." >&2
     exit 1
   fi
