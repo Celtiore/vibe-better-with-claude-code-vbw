@@ -17,6 +17,7 @@ LOG_FILE="$PLANNING_DIR/.hook-errors.log"
 . "$SCRIPT_DIR/resolve-claude-dir.sh"
 
 TEAMS_DIR="$CLAUDE_DIR/teams"
+TASKS_DIR="$CLAUDE_DIR/tasks"
 STALE_THRESHOLD_SECONDS=7200  # 2 hours
 
 # Platform-specific stat command for modification time
@@ -55,6 +56,7 @@ scan_stale_teams() {
     if [ ! -f "$team_dir/config.json" ]; then
       case "$team_name" in vbw-*)
         echo "orphaned_team|$team_name|no config.json (ghost team residual)"
+        [ -d "$TASKS_DIR/$team_name" ] && echo "orphaned_tasks|$team_name|paired tasks dir (will be removed with team)"
       ;; esac
       continue
     fi
@@ -83,6 +85,7 @@ scan_stale_teams() {
     local hours=$((age / 3600))
     local minutes=$(((age % 3600) / 60))
     echo "stale_team|$team_name|age: ${hours}h ${minutes}m"
+    [ -d "$TASKS_DIR/$team_name" ] && echo "stale_tasks|$team_name|paired tasks dir (will be removed with team)"
   done
 }
 

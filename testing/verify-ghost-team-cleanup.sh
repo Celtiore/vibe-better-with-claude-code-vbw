@@ -313,12 +313,15 @@ test_clean_script_has_configless_pass() {
   fi
 }
 
-# Test 14: clean-stale-teams.sh only targets vbw-* prefixed teams in configless pass
+# Test 14: clean-stale-teams.sh only targets vbw-* prefixed teams in configless pass (pass 1)
 test_clean_script_vbw_prefix_guard() {
-  if grep -q 'case "$team_name" in vbw-\*)' "$CLEAN_SCRIPT"; then
-    pass "clean-stale-teams.sh has vbw-* prefix guard in configless pass"
+  # Scope to pass 1 only — pass 2 has its own guard tested separately (test 25)
+  local pass1_region
+  pass1_region=$(sed -n '/^# Pass 1/,/^# Pass 2/p' "$CLEAN_SCRIPT")
+  if echo "$pass1_region" | grep -q 'case "$team_name" in vbw-\*)'; then
+    pass "clean-stale-teams.sh has vbw-* prefix guard in configless pass (pass 1)"
   else
-    fail "clean-stale-teams.sh missing vbw-* prefix guard"
+    fail "clean-stale-teams.sh missing vbw-* prefix guard in pass 1"
   fi
 }
 
@@ -425,6 +428,54 @@ test_clean_script_pass2_vbw_prefix_guard() {
   fi
 }
 
+# Test 23: Doctor scan reports paired tasks dir for orphaned team
+test_doctor_scan_reports_paired_tasks() {
+  TMPDIR_BASE=$(mktemp -d "$TEST_PARENT/XXXXXX")
+  local claude_dir="$TMPDIR_BASE/claude"
+  local planning_dir="$TMPDIR_BASE/project/.vbw-planning"
+  mkdir -p "$claude_dir/teams/vbw-phase-07/inboxes"
+  mkdir -p "$claude_dir/tasks/vbw-phase-07"
+  mkdir -p "$planning_dir"
+  echo '{}' > "$claude_dir/teams/vbw-phase-07/inboxes/team-lead.json"
+
+  local output
+  output=$(cd "$TMPDIR_BASE/project" && \
+    CLAUDE_CONFIG_DIR="$claude_dir" VBW_PLANNING_DIR="$planning_dir" \
+    bash "$DOCTOR_SCRIPT" scan 2>/dev/null) || true
+
+  if echo "$output" | grep -q "orphaned_tasks|vbw-phase-07"; then
+    pass "doctor scan reports paired tasks dir for orphaned team"
+  else
+    fail "doctor scan did not report paired tasks dir. Output: $output"
+  fi
+  rm -rf "$TMPDIR_BASE"
+}
+
+# Test 24: Doctor scan reports paired tasks dir for stale team
+test_doctor_scan_reports_stale_paired_tasks() {
+  TMPDIR_BASE=$(mktemp -d "$TEST_PARENT/XXXXXX")
+  local claude_dir="$TMPDIR_BASE/claude"
+  local planning_dir="$TMPDIR_BASE/project/.vbw-planning"
+  mkdir -p "$claude_dir/teams/vbw-phase-12/inboxes"
+  mkdir -p "$claude_dir/tasks/vbw-phase-12"
+  mkdir -p "$planning_dir"
+  echo '{"name":"vbw-phase-12"}' > "$claude_dir/teams/vbw-phase-12/config.json"
+  echo '{}' > "$claude_dir/teams/vbw-phase-12/inboxes/team-lead.json"
+  touch -t 202001010000 "$claude_dir/teams/vbw-phase-12/inboxes/team-lead.json"
+
+  local output
+  output=$(cd "$TMPDIR_BASE/project" && \
+    CLAUDE_CONFIG_DIR="$claude_dir" VBW_PLANNING_DIR="$planning_dir" \
+    bash "$DOCTOR_SCRIPT" scan 2>/dev/null) || true
+
+  if echo "$output" | grep -q "stale_tasks|vbw-phase-12"; then
+    pass "doctor scan reports paired tasks dir for stale team"
+  else
+    fail "doctor scan did not report stale paired tasks dir. Output: $output"
+  fi
+  rm -rf "$TMPDIR_BASE"
+}
+
 # --- Run all tests ---
 echo "=== Ghost Team Cleanup Tests (#203) ==="
 echo ""
@@ -454,6 +505,8 @@ test_clean_script_has_configless_pass
 test_clean_script_vbw_prefix_guard
 test_non_vbw_stale_configless_preserved_pass2
 test_clean_script_pass2_vbw_prefix_guard
+test_doctor_scan_reports_paired_tasks
+test_doctor_scan_reports_stale_paired_tasks
 
 echo ""
 echo "==============================="
