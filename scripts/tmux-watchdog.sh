@@ -70,14 +70,13 @@ check_compaction_timeouts() {
   local compacting_dir="$PLANNING_DIR/.compacting"
   [ ! -d "$compacting_dir" ] && return
 
-  local now marker pid pane_id agent_name started_at age
+  local now marker pid agent_name started_at age
   now=$(date +%s)
 
   for marker in "$compacting_dir"/*.json; do
     [ ! -f "$marker" ] && continue
 
     pid=$(jq -r '.pid // ""' "$marker" 2>/dev/null)
-    pane_id=$(jq -r '.pane_id // ""' "$marker" 2>/dev/null)
     agent_name=$(jq -r '.agent_name // "unknown"' "$marker" 2>/dev/null)
     started_at=$(jq -r '.started_at // 0' "$marker" 2>/dev/null)
 
