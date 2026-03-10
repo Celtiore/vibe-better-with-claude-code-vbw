@@ -190,13 +190,27 @@ teardown() {
   run git worktree list
   [[ "$output" != *"01-01"* ]]
 
-  # Verify git admin dir is removed
+  # Verify no admin dir references our worktree path
   GIT_DIR="$(git rev-parse --git-dir)"
-  [ ! -d "$GIT_DIR/worktrees/01-01" ]
+  if [ -d "$GIT_DIR/worktrees" ]; then
+    for gf in "$GIT_DIR/worktrees"/*/gitdir; do
+      [ -f "$gf" ] || continue
+      ! grep -q "01-01" "$gf"
+    done
+  fi
 
   # Verify branch is deleted (not blocked by stale worktree ref)
   run git branch --list "vbw/01-01"
   [ -z "$output" ]
+
+  # Verify the worktree can be cleanly recreated after cleanup
+  run git worktree add -b vbw/01-01 .vbw-worktrees/01-01 HEAD
+  [ "$status" -eq 0 ]
+  [ -d ".vbw-worktrees/01-01" ]
+
+  # Clean up the recreated worktree
+  git worktree remove .vbw-worktrees/01-01 --force 2>/dev/null || true
+  git branch -d vbw/01-01 2>/dev/null || true
 }
 
 @test "worktree-cleanup: clears agent-worktree JSON matching phase-plan" {

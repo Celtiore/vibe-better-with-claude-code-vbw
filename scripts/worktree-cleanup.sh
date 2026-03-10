@@ -16,7 +16,6 @@ WORKTREES_PARENT=".vbw-worktrees"
 WORKTREE_DIR="${WORKTREES_PARENT}/${PHASE}-${PLAN}"
 BRANCH="vbw/${PHASE}-${PLAN}"
 AGENT_WORKTREES_DIR=".vbw-planning/.agent-worktrees"
-WORKTREE_ADMIN_NAME="${PHASE}-${PLAN}"
 
 # Unlock the worktree if locked (locked worktrees resist single --force)
 git worktree unlock "$WORKTREE_DIR" 2>/dev/null || true
@@ -30,15 +29,34 @@ rm -rf "$WORKTREE_DIR" 2>/dev/null || true
 # Prune stale git worktree metadata for directories that no longer exist
 git worktree prune 2>/dev/null || true
 
-# Belt-and-suspenders: if git porcelain failed to clean the admin dir, remove it
-# directly. This handles edge cases where prune skips locked/corrupt entries.
+# Belt-and-suspenders: if git porcelain failed to clean the admin dir, find and
+# remove it by matching the gitdir content (not by guessing the admin dir name,
+# since Git may suffix it to avoid collisions).
 GIT_DIR="$(git rev-parse --git-dir 2>/dev/null)" || true
-if [ -n "${GIT_DIR:-}" ] && [ -d "$GIT_DIR/worktrees/$WORKTREE_ADMIN_NAME" ]; then
-  rm -rf "$GIT_DIR/worktrees/$WORKTREE_ADMIN_NAME" 2>/dev/null || true
+if [ -n "${GIT_DIR:-}" ] && [ -d "$GIT_DIR/worktrees" ]; then
+  WORKTREE_ABS="$(cd "$(dirname "$WORKTREE_DIR")" 2>/dev/null && pwd)/$(basename "$WORKTREE_DIR")" 2>/dev/null || true
+  if [ -n "${WORKTREE_ABS:-}" ]; then
+    for admin_dir in "$GIT_DIR/worktrees"/*/; do
+      [ -d "$admin_dir" ] || continue
+      gitdir_file="${admin_dir}gitdir"
+      [ -f "$gitdir_file" ] || continue
+      recorded="$(cat "$gitdir_file" 2>/dev/null)" || continue
+      # gitdir stores path to worktree's .git file; strip trailing /.git
+      recorded_wt="${recorded%/.git}"
+      # Resolve to absolute for comparison
+      recorded_wt_abs="$(cd "$recorded_wt" 2>/dev/null && pwd)" 2>/dev/null || recorded_wt_abs=""
+      if [ "$recorded_wt_abs" = "$WORKTREE_ABS" ] || [ "$recorded_wt" = "$WORKTREE_DIR" ]; then
+        rm -rf "$admin_dir" 2>/dev/null || true
+      fi
+    done
+  fi
 fi
 
-# Remove hidden dot-files from parent (macOS artifacts: .DS_Store, .localized, ._* etc.)
-find "$WORKTREES_PARENT" -maxdepth 1 -type f -name '.*' ! -name '.' -delete 2>/dev/null || true
+# Remove hidden entries from parent (macOS artifacts: .DS_Store, .localized, ._* etc.)
+for entry in "$WORKTREES_PARENT"/.*; do
+  case "$(basename "$entry")" in .|..) continue ;; esac
+  rm -rf "$entry" 2>/dev/null || true
+done
 # Remove parent .vbw-worktrees/ if now empty
 rmdir "$WORKTREES_PARENT" 2>/dev/null || true
 
