@@ -42,9 +42,15 @@ log() {
 log "Watchdog started for session: $SESSION (PID=$$)"
 
 # Clean stale compaction markers from previous (possibly crashed) sessions.
-# Remove files only (not directory) to avoid TOCTOU race with concurrent PreCompact mkdir -p.
+# Only remove markers whose PIDs are dead — live PIDs may be actively compacting.
 mkdir -p "$PLANNING_DIR/.compacting" 2>/dev/null || true
-rm -f "$PLANNING_DIR/.compacting"/*.json 2>/dev/null || true
+for _stale_marker in "$PLANNING_DIR/.compacting"/*.json; do
+  [ ! -f "$_stale_marker" ] && continue
+  _stale_pid=$(jq -r '.pid // ""' "$_stale_marker" 2>/dev/null)
+  if [ -z "$_stale_pid" ] || ! kill -0 "$_stale_pid" 2>/dev/null; then
+    rm -f "$_stale_marker" 2>/dev/null || true
+  fi
+done
 
 # Validate timeout: must be a positive integer, fallback to 300
 COMPACTION_TIMEOUT="${VBW_COMPACTION_TIMEOUT:-300}"
