@@ -50,11 +50,45 @@ get_mtime() {
 # Current timestamp
 NOW=$(date +%s)
 
-# Scan teams directory
+# Pass 1: Immediately clean configless team directories (orphaned/corrupted).
+# These are definitively dead — no config.json means TeamDelete left residuals
+# or the orchestrator rm'd config before TeamDelete. No time threshold needed.
 for team_dir in "$TEAMS_DIR"/*; do
   [ ! -d "$team_dir" ] && continue
 
   team_name=$(basename "$team_dir")
+
+  # Only target VBW-owned teams
+  case "$team_name" in vbw-*) ;; *) continue ;; esac
+
+  # If config.json exists, this is a live or stale-but-intact team — skip (handled in pass 2)
+  [ -f "$team_dir/config.json" ] && continue
+
+  # Configless directory — orphaned residual. Clean immediately.
+  if mv "$team_dir" "$TEMP_DIR/$team_name" 2>/dev/null; then
+    teams_cleaned=$((teams_cleaned + 1))
+    log_cleanup "Orphaned team cleanup (no config.json): $team_name"
+  fi
+
+  # Also remove paired tasks directory if it exists
+  if [ -d "$TASKS_DIR/$team_name" ]; then
+    if mv "$TASKS_DIR/$team_name" "$TEMP_DIR/${team_name}-tasks" 2>/dev/null; then
+      tasks_cleaned=$((tasks_cleaned + 1))
+      log_cleanup "Orphaned tasks cleanup: $team_name (paired with configless team)"
+    fi
+  fi
+done
+
+# Pass 2: Clean stale VBW teams (have config.json but inbox older than threshold)
+# Same vbw-* scope as pass 1 — VBW should not remove other plugins' teams.
+for team_dir in "$TEAMS_DIR"/*; do
+  [ ! -d "$team_dir" ] && continue
+
+  team_name=$(basename "$team_dir")
+
+  # Only target VBW-owned teams
+  case "$team_name" in vbw-*) ;; *) continue ;; esac
+
   inbox_dir="$team_dir/inboxes"
 
   # Skip if no inboxes directory
