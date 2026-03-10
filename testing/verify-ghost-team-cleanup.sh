@@ -204,7 +204,7 @@ test_pass2_stale_team_with_config_removed() {
 
 # --- Integration Tests: doctor-cleanup.sh scan ---
 
-# Test 6: Doctor scan reports orphaned (configless) teams
+# Test 8: Doctor scan reports orphaned (configless) VBW teams
 test_doctor_scan_reports_orphaned() {
   TMPDIR_BASE=$(mktemp -d "$TEST_PARENT/XXXXXX")
   local claude_dir="$TMPDIR_BASE/claude"
@@ -219,9 +219,31 @@ test_doctor_scan_reports_orphaned() {
     bash "$DOCTOR_SCRIPT" scan 2>/dev/null) || true
 
   if echo "$output" | grep -q "orphaned_team|vbw-phase-05"; then
-    pass "doctor scan reports orphaned configless team"
+    pass "doctor scan reports orphaned VBW configless team"
   else
-    fail "doctor scan did not report orphaned team. Output: $output"
+    fail "doctor scan did not report orphaned VBW team. Output: $output"
+  fi
+  rm -rf "$TMPDIR_BASE"
+}
+
+# Test 9: Doctor scan does NOT report non-VBW configless teams
+test_doctor_scan_skips_non_vbw_orphan() {
+  TMPDIR_BASE=$(mktemp -d "$TEST_PARENT/XXXXXX")
+  local claude_dir="$TMPDIR_BASE/claude"
+  local planning_dir="$TMPDIR_BASE/project/.vbw-planning"
+  mkdir -p "$claude_dir/teams/my-custom-team/inboxes"
+  mkdir -p "$planning_dir"
+  echo '{}' > "$claude_dir/teams/my-custom-team/inboxes/agent.json"
+
+  local output
+  output=$(cd "$TMPDIR_BASE/project" && \
+    CLAUDE_CONFIG_DIR="$claude_dir" VBW_PLANNING_DIR="$planning_dir" \
+    bash "$DOCTOR_SCRIPT" scan 2>/dev/null) || true
+
+  if echo "$output" | grep -q "orphaned_team|my-custom-team"; then
+    fail "doctor scan should not report non-VBW configless team"
+  else
+    pass "doctor scan skips non-VBW configless team"
   fi
   rm -rf "$TMPDIR_BASE"
 }
@@ -300,39 +322,60 @@ test_clean_script_vbw_prefix_guard() {
   fi
 }
 
-# Test 15: debug.md has pre-TeamCreate cleanup
+# Test 15: debug.md has pre-TeamCreate cleanup before TeamCreate
 test_debug_pre_teamcreate_cleanup() {
-  if grep -q 'Pre-TeamCreate cleanup' "$ROOT/commands/debug.md"; then
-    pass "debug.md has pre-TeamCreate cleanup"
+  local cleanup_line naming_line
+  cleanup_line=$(grep -n 'Pre-TeamCreate cleanup' "$ROOT/commands/debug.md" | head -1 | cut -d: -f1)
+  naming_line=$(grep -n 'team_name="vbw-debug-' "$ROOT/commands/debug.md" | head -1 | cut -d: -f1)
+  if [ -n "$cleanup_line" ] && [ -n "$naming_line" ] && [ "$cleanup_line" -lt "$naming_line" ]; then
+    pass "debug.md has pre-TeamCreate cleanup before TeamCreate"
   else
-    fail "debug.md missing pre-TeamCreate cleanup"
+    fail "debug.md pre-TeamCreate cleanup missing or out of order (cleanup=$cleanup_line, naming=$naming_line)"
   fi
 }
 
-# Test 16: map.md has pre-TeamCreate cleanup
-test_map_pre_teamcreate_cleanup() {
-  if grep -q 'Pre-TeamCreate cleanup' "$ROOT/commands/map.md"; then
-    pass "map.md has pre-TeamCreate cleanup"
+# Test 16: map.md Step 3-duo has pre-TeamCreate cleanup
+test_map_duo_pre_teamcreate_cleanup() {
+  if grep -q 'Pre-TeamCreate cleanup.*team_name="vbw-map-duo"' "$ROOT/commands/map.md"; then
+    pass "map.md Step 3-duo has pre-TeamCreate cleanup with vbw-map-duo naming"
   else
-    fail "map.md missing pre-TeamCreate cleanup"
+    fail "map.md Step 3-duo missing pre-TeamCreate cleanup or vbw-map-duo naming"
   fi
 }
 
-# Test 17: debug.md uses vbw-debug- team naming convention
+# Test 17: map.md Step 3-quad has pre-TeamCreate cleanup
+test_map_quad_pre_teamcreate_cleanup() {
+  if grep -q 'Pre-TeamCreate cleanup.*team_name="vbw-map-quad"' "$ROOT/commands/map.md"; then
+    pass "map.md Step 3-quad has pre-TeamCreate cleanup with vbw-map-quad naming"
+  else
+    fail "map.md Step 3-quad missing pre-TeamCreate cleanup or vbw-map-quad naming"
+  fi
+}
+
+# Test 18: debug.md uses parameter-style vbw-debug- team naming
 test_debug_uses_vbw_prefix_naming() {
-  if grep -q 'vbw-debug-{timestamp}' "$ROOT/commands/debug.md"; then
-    pass "debug.md uses vbw-debug- team naming"
+  if grep -q 'team_name="vbw-debug-{timestamp}"' "$ROOT/commands/debug.md"; then
+    pass "debug.md uses parameter-style vbw-debug- team naming"
   else
-    fail "debug.md does not use vbw-debug- team naming"
+    fail "debug.md does not use parameter-style vbw-debug- team naming"
   fi
 }
 
-# Test 18: map.md specifies vbw-map- team naming convention
-test_map_specifies_vbw_prefix_naming() {
-  if grep -q 'vbw-map-duo\|vbw-map-quad' "$ROOT/commands/map.md"; then
-    pass "map.md specifies vbw-map- team naming"
+# Test 19: map.md specifies parameter-style vbw-map-duo naming
+test_map_duo_naming() {
+  if grep -q 'team_name="vbw-map-duo"' "$ROOT/commands/map.md"; then
+    pass "map.md specifies parameter-style vbw-map-duo naming"
   else
-    fail "map.md does not specify vbw-map- team naming"
+    fail "map.md missing parameter-style vbw-map-duo naming"
+  fi
+}
+
+# Test 20: map.md specifies parameter-style vbw-map-quad naming
+test_map_quad_naming() {
+  if grep -q 'team_name="vbw-map-quad"' "$ROOT/commands/map.md"; then
+    pass "map.md specifies parameter-style vbw-map-quad naming"
+  else
+    fail "map.md missing parameter-style vbw-map-quad naming"
   fi
 }
 
@@ -348,16 +391,19 @@ test_multiple_configless_cleaned
 test_configless_vbw_debug_team_removed
 test_pass2_stale_team_with_config_removed
 test_doctor_scan_reports_orphaned
+test_doctor_scan_skips_non_vbw_orphan
 test_exec_protocol_post_teamdelete_cleanup
 test_exec_protocol_pre_teamcreate_cleanup
 test_vibe_post_teamdelete_cleanup
 test_vibe_pre_teamcreate_cleanup
 test_map_post_teamdelete_cleanup
-test_map_pre_teamcreate_cleanup
 test_debug_post_teamdelete_cleanup
 test_debug_pre_teamcreate_cleanup
+test_map_duo_pre_teamcreate_cleanup
+test_map_quad_pre_teamcreate_cleanup
 test_debug_uses_vbw_prefix_naming
-test_map_specifies_vbw_prefix_naming
+test_map_duo_naming
+test_map_quad_naming
 test_clean_script_has_configless_pass
 test_clean_script_vbw_prefix_guard
 

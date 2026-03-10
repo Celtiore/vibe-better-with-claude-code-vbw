@@ -51,8 +51,11 @@ scan_stale_teams() {
     team_name=$(basename "$team_dir")
 
     # Check for orphaned/configless team directories (no config.json = corrupted residual)
+    # Only report VBW-owned teams — non-VBW configless dirs may belong to other plugins
     if [ ! -f "$team_dir/config.json" ]; then
-      echo "orphaned_team|$team_name|no config.json (ghost team residual)"
+      case "$team_name" in vbw-*)
+        echo "orphaned_team|$team_name|no config.json (ghost team residual)"
+      ;; esac
       continue
     fi
 
