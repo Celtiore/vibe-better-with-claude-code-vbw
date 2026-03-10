@@ -113,6 +113,15 @@ teardown() {
   [ ! -d ".vbw-worktrees" ]
 }
 
+@test "worktree-cleanup: removes parent .vbw-worktrees even with .DS_Store" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .vbw-worktrees/01-01/.vbw-planning
+  touch .vbw-worktrees/.DS_Store
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees" ]
+}
+
 @test "worktree-cleanup: keeps .vbw-worktrees when other worktrees exist" {
   cd "$TEST_TEMP_DIR"
   mkdir -p .vbw-worktrees/01-01/.vbw-planning
