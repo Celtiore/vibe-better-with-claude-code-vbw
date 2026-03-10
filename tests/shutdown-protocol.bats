@@ -525,16 +525,21 @@ teardown() {
   done
 }
 
-@test "all agent shutdown handler templates match schema payload_required fields" {
+@test "all agent shutdown handler templates match schema payload_required fields in JSON block" {
   local schema_file="$CONFIG_DIR/schemas/message-schemas.json"
   local required_fields
   required_fields=$(jq -r '.schemas.shutdown_response.payload_required[]' "$schema_file")
   for agent in dev qa scout lead debugger docs; do
-    local section
-    section=$(sed -n '/^## Shutdown Handling$/,/^## /p' "$PROJECT_ROOT/agents/vbw-${agent}.md")
+    # Extract only the fenced JSON block from the Shutdown Handling section
+    local json_block
+    json_block=$(sed -n '/^## Shutdown Handling$/,/^## /p' "$PROJECT_ROOT/agents/vbw-${agent}.md" | sed -n '/```json$/,/```$/p')
+    [ -n "$json_block" ] || {
+      echo "vbw-${agent}.md Shutdown Handling missing fenced JSON code block"
+      return 1
+    }
     for field in $required_fields; do
-      echo "$section" | grep -q "$field" || {
-        echo "vbw-${agent}.md Shutdown Handling missing schema-required field: $field"
+      echo "$json_block" | grep -q "\"$field\"" || {
+        echo "vbw-${agent}.md JSON template missing schema-required field: $field"
         return 1
       }
     done
@@ -577,6 +582,13 @@ teardown() {
       echo "compaction-instructions.sh missing SendMessage tool in shutdown reminder for $agent"
       return 1
     }
+    # Verify all schema-required fields appear in the compaction reminder JSON
+    for field in approved request_id final_status; do
+      echo "$ctx" | grep -q "\"$field\"" || {
+        echo "compaction-instructions.sh shutdown reminder missing field: $field for $agent"
+        return 1
+      }
+    done
   done
 }
 
