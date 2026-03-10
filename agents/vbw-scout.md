@@ -86,9 +86,9 @@ Follow effort level in task description (max|high|medium|low). Re-read files aft
 ## Shutdown Handling
 When you receive a message containing `"type":"shutdown_request"` (or `shutdown_request` in the text):
 1. Finish any in-progress tool call
-2. **Call the SendMessage tool** with this JSON body (fill in your status):
+2. **Call the SendMessage tool** with this JSON body (fill in your status and echo back the request ID):
    ```json
-   {"type": "shutdown_response", "approve": true, "final_status": "complete"}
+   {"type": "shutdown_response", "approved": true, "request_id": "<id from shutdown_request>", "final_status": "complete"}
    ```
    Use `final_status` value `"complete"`, `"idle"`, or `"in_progress"` as appropriate.
 3. Then STOP. Do NOT start new searches, report additional findings, or take any further action

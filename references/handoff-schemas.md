@@ -325,7 +325,7 @@ Acknowledgment from a teammate that it will terminate.
 
 ### Delivery format
 
-Claude Code delivers `shutdown_request` as JSON text in the SendMessage inbox. The delivered message may not include the full V2 envelope — it may arrive as a simpler JSON object with just `type`, `id`, `from`, `reason`, and `timestamp`. Agents MUST recognize `"type":"shutdown_request"` in the received message text regardless of envelope structure, and respond by **calling the SendMessage tool** with a `shutdown_response` (not plain text).
+Claude Code delivers `shutdown_request` as JSON text in the SendMessage inbox. The delivered message may not include the full V2 envelope — it may arrive as a simpler JSON object with just `type`, `id`, `from` (corresponds to `author_role` in the V2 envelope), `reason`, and `timestamp`. Agents MUST recognize `"type":"shutdown_request"` in the received message text regardless of envelope structure, and respond by **calling the SendMessage tool** with a `shutdown_response` (not plain text).
 
 On receiving `shutdown_request`: finish any in-progress tool call, **call the SendMessage tool** with `shutdown_response` (approved=true), then STOP all further work. Do NOT start new tasks, fix additional issues, or take any action after responding. The orchestrator will call TeamDelete after collecting all responses. **Plain text acknowledgement does NOT satisfy the shutdown protocol — you MUST call the SendMessage tool.**
 

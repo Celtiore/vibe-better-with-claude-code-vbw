@@ -503,14 +503,41 @@ teardown() {
   done
 }
 
-@test "all agent shutdown handlers specify approve: true" {
+@test "all agent shutdown handlers specify approved (not approve) field" {
   for agent in dev qa scout lead debugger docs; do
     local section
     section=$(sed -n '/^## Shutdown Handling$/,/^## /p' "$PROJECT_ROOT/agents/vbw-${agent}.md")
-    echo "$section" | grep -q 'approve.*true' || {
-      echo "vbw-${agent}.md Shutdown Handling missing approve: true instruction"
+    echo "$section" | grep -q '"approved"' || {
+      echo "vbw-${agent}.md Shutdown Handling uses wrong field name (should be \"approved\", not \"approve\")"
       return 1
     }
+  done
+}
+
+@test "all agent shutdown handlers include request_id in template" {
+  for agent in dev qa scout lead debugger docs; do
+    local section
+    section=$(sed -n '/^## Shutdown Handling$/,/^## /p' "$PROJECT_ROOT/agents/vbw-${agent}.md")
+    echo "$section" | grep -q 'request_id' || {
+      echo "vbw-${agent}.md Shutdown Handling missing request_id in JSON template"
+      return 1
+    }
+  done
+}
+
+@test "all agent shutdown handler templates match schema payload_required fields" {
+  local schema_file="$CONFIG_DIR/schemas/message-schemas.json"
+  local required_fields
+  required_fields=$(jq -r '.schemas.shutdown_response.payload_required[]' "$schema_file")
+  for agent in dev qa scout lead debugger docs; do
+    local section
+    section=$(sed -n '/^## Shutdown Handling$/,/^## /p' "$PROJECT_ROOT/agents/vbw-${agent}.md")
+    for field in $required_fields; do
+      echo "$section" | grep -q "$field" || {
+        echo "vbw-${agent}.md Shutdown Handling missing schema-required field: $field"
+        return 1
+      }
+    done
   done
 }
 
