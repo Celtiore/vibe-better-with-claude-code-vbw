@@ -137,6 +137,8 @@ VBW integrates with [Skills.sh](https://skills.sh), the open-source skill regist
 
 Five or six lines of pure situational awareness, rendered after every response. Phase progress, plan completion, effort profile, QA status... everything a senior engineer would track on a whiteboard, except the whiteboard has been replaced by a terminal and the senior engineer has been replaced by you.
 
+Four config switches let you trim what the statusline shows — hide the Limits line entirely, suppress it only for API-key sessions, hide agent progress in tmux, or collapse the full statusline to a single line in tmux worktree panes. See [Display](#display) for details.
+
 ---
 
 ## Installation
@@ -567,6 +569,10 @@ Quick reference for every key in `config/defaults.json`, in order. Click the sec
 | `rolling_summary` | `false` | [Cross-phase context](#cross-phase-context) |
 | `require_phase_discussion` | `false` | [Agent behavior](#agent-behavior) |
 | `auto_uat` | `false` | [Autonomy levels](#autonomy-levels) |
+| `statusline_hide_limits` | `false` | [Display](#display) |
+| `statusline_hide_limits_for_api_key` | `false` | [Display](#display) |
+| `statusline_hide_agent_in_tmux` | `false` | [Display](#display) |
+| `statusline_collapse_agent_in_tmux` | `false` | [Display](#display) |
 | `bash_guard` | `true`* | [Safety](#safety) |
 
 *`bash_guard` is not in `defaults.json` — it's read directly from project config with a default of `true` when absent.
@@ -850,9 +856,17 @@ These flags control optional runtime subsystems — execution integrity, observa
 | :--- | :--- | :--- | :--- |
 | `visual_format` | string | `unicode` | `unicode` / `ascii` |
 | `branch_per_milestone` | boolean | `false` | `true` / `false` |
+| `statusline_hide_limits` | boolean | `false` | `true` / `false` |
+| `statusline_hide_limits_for_api_key` | boolean | `false` | `true` / `false` |
+| `statusline_hide_agent_in_tmux` | boolean | `false` | `true` / `false` |
+| `statusline_collapse_agent_in_tmux` | boolean | `false` | `true` / `false` |
 
 - **`visual_format`** — Intended to switch between Unicode symbols (✓ ✗ ◆ ○ ⚡ ➜, box-drawing characters) and ASCII equivalents. Currently declared but not yet wired into agent output — agents always use Unicode.
 - **`branch_per_milestone`** — Intended to auto-create a git branch per milestone during Bootstrap. Currently declared but not yet implemented — has no runtime effect.
+- **`statusline_hide_limits`** — Suppress the Limits line unconditionally. Use when you never want to see token-limit information in the statusline.
+- **`statusline_hide_limits_for_api_key`** — Suppress the Limits line only when authenticated via an API key (not via Claude.ai OAuth). No effect when `statusline_hide_limits` is also `true`.
+- **`statusline_hide_agent_in_tmux`** — Suppress the Build/agent progress line while inside a tmux session. No effect outside tmux or when no build is running.
+- **`statusline_collapse_agent_in_tmux`** — Collapse the full multi-line statusline into a single summary line in agent/worktree tmux panes. Only applies inside tmux in a git worktree; no effect in the main repo pane.
 
 ### Staged rollout
 
