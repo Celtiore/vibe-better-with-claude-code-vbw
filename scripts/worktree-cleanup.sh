@@ -23,8 +23,12 @@ git worktree remove "$WORKTREE_DIR" --force 2>/dev/null || true
 # Remove residual filesystem artifacts (e.g. .vbw-planning/, .DS_Store)
 rm -rf "$WORKTREE_DIR" 2>/dev/null || true
 
-# Remove parent .vbw-worktrees/ if now empty (strip .DS_Store first)
-rm -f "$WORKTREES_PARENT/.DS_Store" 2>/dev/null || true
+# Prune stale git worktree metadata for directories that no longer exist
+git worktree prune 2>/dev/null || true
+
+# Remove hidden dot-files from parent (macOS artifacts: .DS_Store, .localized, ._* etc.)
+find "$WORKTREES_PARENT" -maxdepth 1 -name '.*' ! -name '.' -delete 2>/dev/null || true
+# Remove parent .vbw-worktrees/ if now empty
 rmdir "$WORKTREES_PARENT" 2>/dev/null || true
 
 # Delete the branch with -d (not -D) to avoid silently deleting unmerged branches

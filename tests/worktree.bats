@@ -122,6 +122,16 @@ teardown() {
   [ ! -d ".vbw-worktrees" ]
 }
 
+@test "worktree-cleanup: removes parent .vbw-worktrees with mixed hidden files" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .vbw-worktrees/01-01/.vbw-planning
+  touch .vbw-worktrees/.DS_Store
+  touch .vbw-worktrees/.localized
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees" ]
+}
+
 @test "worktree-cleanup: keeps .vbw-worktrees when other worktrees exist" {
   cd "$TEST_TEMP_DIR"
   mkdir -p .vbw-worktrees/01-01/.vbw-planning
@@ -131,6 +141,29 @@ teardown() {
   [ ! -d ".vbw-worktrees/01-01" ]
   [ -d ".vbw-worktrees/02-01" ]
   [ -d ".vbw-worktrees" ]
+}
+
+@test "worktree-cleanup: deregisters real git worktree and prunes metadata" {
+  cd "$TEST_TEMP_DIR"
+  git init -q
+  git config user.name "VBW Test"
+  git config user.email "vbw-test@example.com"
+  echo "seed" > README.md
+  git add README.md
+  git commit -q -m "chore(init): seed"
+
+  git worktree add -b vbw/01-01 .vbw-worktrees/01-01 HEAD 2>/dev/null
+  # Confirm worktree is registered
+  run git worktree list
+  [[ "$output" == *"01-01"* ]]
+
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees/01-01" ]
+
+  # Verify git worktree metadata is cleaned up
+  run git worktree list
+  [[ "$output" != *"01-01"* ]]
 }
 
 @test "worktree-cleanup: clears agent-worktree JSON matching phase-plan" {
