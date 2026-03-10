@@ -11,6 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEMPLATE="$ROOT/templates/STATE.md"
 TODO_CMD="$ROOT/commands/todo.md"
+LIST_CMD="$ROOT/commands/list-todos.md"
 BOOTSTRAP="$ROOT/scripts/bootstrap/bootstrap-state.sh"
 
 TOTAL_PASS=0
@@ -36,6 +37,8 @@ check "TODO-01" "todo command anchors insertion on ## Todos" grep -q 'Find `## T
 check "TODO-02" "todo command does not reference Pending Todos" test ! "$(grep -c 'Pending Todos' "$TODO_CMD")" -gt 0
 check "TODO-03" "todo command avoids preflight plugin-root resolver shell block" test ! "$(grep -c 'VBW_CACHE_ROOT=' "$TODO_CMD")" -gt 0
 check "TODO-04" "todo command explains write-access requirement in restricted modes" grep -qi 'write access.*restricted\|restricted.*write access' "$TODO_CMD"
+check "LIST-01" "list-todos command avoids preflight plugin-root resolver shell block" test ! "$(grep -c 'VBW_CACHE_ROOT=' "$LIST_CMD")" -gt 0
+check "LIST-02" "list-todos command explains restricted-mode requirement" grep -qi 'restricted mode\|restricted.*permission' "$LIST_CMD"
 
 echo ""
 echo "=== Bootstrap Output Contracts ==="

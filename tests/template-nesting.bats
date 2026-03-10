@@ -398,15 +398,17 @@ _canonical_pwd_pattern() {
   printf 'cd "$R" 2>/dev/null && pwd -P'
 }
 
-@test "all 18 preamble commands use pwd -P for canonical symlink resolution" {
-  for cmd in config debug discuss fix help init list-todos map qa research resume skills status todo update verify vibe whats-new; do
+@test "all 16 preamble commands use pwd -P for canonical symlink resolution" {
+  # todo and list-todos intentionally have no shell preamble (fix for #201)
+  for cmd in config debug discuss fix help init map qa research resume skills status update verify vibe whats-new; do
     grep -q "$(_canonical_pwd_pattern)" "$PROJECT_ROOT/commands/${cmd}.md" || \
       { echo "FAIL: ${cmd}.md missing canonical pwd -P resolution"; return 1; }
   done
 }
 
-@test "all 18 preamble commands link REAL_R not raw R" {
-  for cmd in config debug discuss fix help init list-todos map qa research resume skills status todo update verify vibe whats-new; do
+@test "all 16 preamble commands link REAL_R not raw R" {
+  # todo and list-todos intentionally have no shell preamble (fix for #201)
+  for cmd in config debug discuss fix help init map qa research resume skills status update verify vibe whats-new; do
     grep -q 'ln -s "$REAL_R" "$LINK"' "$PROJECT_ROOT/commands/${cmd}.md" || \
       { echo "FAIL: ${cmd}.md still links raw \$R instead of \$REAL_R"; return 1; }
   done

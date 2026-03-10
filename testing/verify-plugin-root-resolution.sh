@@ -289,9 +289,10 @@ else
 fi
 
 # Check 11: targeted command preambles use CLAUDE_SESSION_ID:-default session key
+# todo.md and list-todos.md intentionally have no shell preamble (fix for #201) — skip from preamble checks
 TARGET_COMMANDS=(
-  config.md debug.md discuss.md fix.md help.md init.md list-todos.md map.md qa.md
-  research.md resume.md skills.md status.md todo.md update.md verify.md vibe.md whats-new.md
+  config.md debug.md discuss.md fix.md help.md init.md map.md qa.md
+  research.md resume.md skills.md status.md update.md verify.md vibe.md whats-new.md
 )
 for rel in "${TARGET_COMMANDS[@]}"; do
   file="$COMMANDS_DIR/$rel"
