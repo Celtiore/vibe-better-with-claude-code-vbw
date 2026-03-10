@@ -14,7 +14,7 @@ setup() {
   mkdir -p "$TEST_TEMP_DIR/.vbw-planning/.events"
   mkdir -p "$TEST_TEMP_DIR/config/schemas"
   cp "$CONFIG_DIR/schemas/message-schemas.json" "$TEST_TEMP_DIR/config/schemas/"
-  # Enable V2 typed protocol
+  # V2 typed protocol graduated — flag set for backward compat with older test configs
   jq '.v2_typed_protocol = true | .v3_event_log = true' \
     "$TEST_TEMP_DIR/.vbw-planning/config.json" > "$TEST_TEMP_DIR/.vbw-planning/config.json.tmp" \
     && mv "$TEST_TEMP_DIR/.vbw-planning/config.json.tmp" "$TEST_TEMP_DIR/.vbw-planning/config.json"
@@ -757,10 +757,15 @@ teardown() {
 
 @test "compaction reminder includes all final_status values from agent prompts" {
   cd "$TEST_TEMP_DIR"
-  # Extract final_status values from one canonical agent prompt (vbw-dev.md)
-  local agent_statuses
-  agent_statuses=$(grep -o '"complete".*"idle".*"in_progress"' "$PROJECT_ROOT/agents/vbw-dev.md" || true)
-  [ -n "$agent_statuses" ]
+  # Verify ALL 6 team agents have the canonical final_status trio
+  for agent in dev lead qa scout debugger docs; do
+    local agent_statuses
+    agent_statuses=$(grep -o '"complete".*"idle".*"in_progress"' "$PROJECT_ROOT/agents/vbw-${agent}.md" || true)
+    [ -n "$agent_statuses" ] || {
+      echo "FAIL: vbw-${agent}.md missing final_status values"
+      return 1
+    }
+  done
 
   # Verify compaction reminder includes the same three values
   local compaction_output
@@ -771,7 +776,8 @@ teardown() {
 }
 
 @test "shutdown recovery guidance present in all team-producing commands" {
-  # All commands that create teams must mention plain text retry and doctor cleanup
+  # All commands that create teams must mention plain text retry, doctor cleanup,
+  # and zero-teammate verification
   for cmd in vibe.md debug.md map.md; do
     local content
     content=$(cat "$PROJECT_ROOT/commands/$cmd")
@@ -781,6 +787,10 @@ teardown() {
     }
     echo "$content" | grep -q 'doctor' || {
       echo "FAIL: $cmd missing /vbw:doctor cleanup reference"
+      return 1
+    }
+    echo "$content" | grep -qi 'zero active teammates\|ZERO active teammates' || {
+      echo "FAIL: $cmd missing zero-teammate verification"
       return 1
     }
   done
