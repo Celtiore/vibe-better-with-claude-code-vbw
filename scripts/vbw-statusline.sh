@@ -178,6 +178,8 @@ if ! cache_fresh "$FAST_CF" 5; then
     fi
     EF=$(jq -r '.effort // "balanced"' .vbw-planning/config.json 2>/dev/null)
     MP=$(jq -r '.model_profile // "quality"' .vbw-planning/config.json 2>/dev/null)
+    HIDE_AGENT_TMUX=$(jq -r '.statusline_hide_agent_in_tmux // false' .vbw-planning/config.json 2>/dev/null)
+    COLLAPSE_AGENT_TMUX=$(jq -r '.statusline_collapse_agent_in_tmux // false' .vbw-planning/config.json 2>/dev/null)
   fi
   if git rev-parse --git-dir >/dev/null 2>&1; then
     BR=$(git branch --show-current 2>/dev/null)
@@ -252,17 +254,39 @@ if ! cache_fresh "$FAST_CF" 5; then
 
   AGENT_DATA="0"
 
-  printf '%s\n' "${PH:-0}|${TT:-0}|${EF}|${MP}|${BR}|${PD}|${PT}|${PPD}|${QA}|${GH_URL}|${GIT_STAGED:-0}|${GIT_MODIFIED:-0}|${GIT_AHEAD:-0}|${EXEC_STATUS:-}|${EXEC_WAVE:-0}|${EXEC_TWAVES:-0}|${EXEC_DONE:-0}|${EXEC_TOTAL:-0}|${EXEC_CURRENT:-}|${AGENT_DATA:-0}|${PPT:-0}|${QA_COLOR:-D}" > "$FAST_CF" 2>/dev/null
+  # Sanitize pipe characters in EXEC_CURRENT (user-defined plan title) to
+  # prevent field misalignment in the pipe-delimited fast cache.
+  _EXEC_CURRENT_SAFE="${EXEC_CURRENT//|/-}"
+
+  printf '%s\n' "${PH:-0}|${TT:-0}|${EF}|${MP}|${BR}|${PD}|${PT}|${PPD}|${QA}|${GH_URL}|${GIT_STAGED:-0}|${GIT_MODIFIED:-0}|${GIT_AHEAD:-0}|${EXEC_STATUS:-}|${EXEC_WAVE:-0}|${EXEC_TWAVES:-0}|${EXEC_DONE:-0}|${EXEC_TOTAL:-0}|${_EXEC_CURRENT_SAFE:-}|${AGENT_DATA:-0}|${PPT:-0}|${QA_COLOR:-D}|${HIDE_AGENT_TMUX:-false}|${COLLAPSE_AGENT_TMUX:-false}" > "$FAST_CF" 2>/dev/null
 fi
 
 if [ -O "$FAST_CF" ]; then
   # shellcheck disable=SC2034
   IFS='|' read -r PH TT EF MP BR PD PT PPD QA GH_URL GIT_STAGED GIT_MODIFIED GIT_AHEAD \
                   EXEC_STATUS EXEC_WAVE EXEC_TWAVES EXEC_DONE EXEC_TOTAL EXEC_CURRENT \
-                  AGENT_N PPT QA_COLOR < "$FAST_CF"
+                  AGENT_N PPT QA_COLOR HIDE_AGENT_TMUX COLLAPSE_AGENT_TMUX < "$FAST_CF"
 fi
 
 AGENT_LINE=""
+
+# --- Early collapse exit: skip slow cache for collapsed worktree panes ---
+# In collapsed worktrees, the output only uses input-parsed values (MODEL, PCT,
+# CTX_USED_FMT, etc.), so we can skip OAuth/API/cost/update work entirely.
+if [ -n "${TMUX:-}" ]; then
+  _GIT_DIR=$(git rev-parse --git-dir 2>/dev/null)
+  _GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [ -n "$_GIT_DIR" ] && [ -n "$_GIT_COMMON" ] && [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+    _MAIN_ROOT=$(dirname "$_GIT_COMMON")
+    _COLLAPSE_WT=$(jq -r '.statusline_collapse_agent_in_tmux // false' \
+      "$_MAIN_ROOT/.vbw-planning/config.json" 2>/dev/null)
+    if [ "$_COLLAPSE_WT" = "true" ]; then
+      [ "$PCT" -ge 90 ] && BC="$R" || { [ "$PCT" -ge 70 ] && BC="$Y" || BC="$G"; }
+      printf '%b\n' "Model: ${D}${MODEL}${X} ${D}│${X} Context: ${BC}${PCT}%${X} ${CTX_USED_FMT}/${CTX_SIZE_FMT} ${D}│${X} Tokens: ${IN_TOK_FMT}"
+      exit 0
+    fi
+  fi
+fi
 
 # --- Slow cache (60s TTL): usage limits + update check ---
 SLOW_CF="${_CACHE}-slow"
@@ -276,8 +300,8 @@ if ! cache_fresh "$SLOW_CF" 60; then
     OAUTH_TOKEN="$VBW_OAUTH_TOKEN"
   fi
 
-  # Priority 2: system credential store
-  if [ -z "$OAUTH_TOKEN" ]; then
+  # Priority 2: system credential store (skip if VBW_SKIP_KEYCHAIN=1, e.g. in tests)
+  if [ -z "$OAUTH_TOKEN" ] && [ "${VBW_SKIP_KEYCHAIN:-0}" != "1" ]; then
     if [ "$_OS" = "Darwin" ]; then
       CRED_JSON=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
       if [ -n "$CRED_JSON" ]; then
@@ -301,8 +325,15 @@ if ! cache_fresh "$SLOW_CF" 60; then
 
   # Priority 3: credentials file (check both with and without leading dot,
   # across all common Claude config locations)
+  # When VBW_SKIP_KEYCHAIN=1 (e.g. in tests), only check the explicitly-set
+  # CLAUDE_CONFIG_DIR — skip hardcoded fallback paths that may hold real credentials.
   if [ -z "$OAUTH_TOKEN" ]; then
-    for _cdir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do
+    if [ "${VBW_SKIP_KEYCHAIN:-0}" = "1" ]; then
+      _p3_dirs=("${CLAUDE_CONFIG_DIR:-}")
+    else
+      _p3_dirs=("${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude")
+    fi
+    for _cdir in "${_p3_dirs[@]}"; do
       [ -z "$_cdir" ] && continue
       for _cred in "$_cdir/.credentials.json" "$_cdir/credentials.json"; do
         if [ -f "$_cred" ]; then
@@ -314,12 +345,16 @@ if ! cache_fresh "$SLOW_CF" 60; then
   fi
 
   # Priority 4: detect auth method via claude CLI (distinguishes OAuth vs API key)
-  if [ -z "$OAUTH_TOKEN" ]; then
+  # Skip if VBW_SKIP_AUTH_CLI=1 (e.g. in tests on dev machines with real auth)
+  if [ -z "$OAUTH_TOKEN" ] && [ "${VBW_SKIP_AUTH_CLI:-0}" != "1" ]; then
     AUTH_STATUS=$(CLAUDECODE="" claude auth status --json 2>/dev/null) || AUTH_STATUS=""
     if [ -n "$AUTH_STATUS" ]; then
       AUTH_METHOD=$(echo "$AUTH_STATUS" | jq -r '.authMethod // empty' 2>/dev/null)
     fi
   fi
+
+  HIDE_LIMITS=$(jq -r '.statusline_hide_limits // false' .vbw-planning/config.json 2>/dev/null)
+  HIDE_LIMITS_API=$(jq -r '.statusline_hide_limits_for_api_key // false' .vbw-planning/config.json 2>/dev/null)
 
   FIVE_PCT=0; FIVE_EPOCH=0; WEEK_PCT=0; WEEK_EPOCH=0; SONNET_PCT=-1
   EXTRA_ENABLED=0; EXTRA_PCT=-1; EXTRA_USED_C=0; EXTRA_LIMIT_C=0; FETCH_OK="noauth"
@@ -367,13 +402,13 @@ if ! cache_fresh "$SLOW_CF" 60; then
     [ "$NEWEST" = "$REMOTE_VER" ] && UPDATE_AVAIL="$REMOTE_VER"
   fi
 
-  printf '%s\n' "${FIVE_PCT:-0}|${FIVE_EPOCH:-0}|${WEEK_PCT:-0}|${WEEK_EPOCH:-0}|${SONNET_PCT:--1}|${EXTRA_ENABLED:-0}|${EXTRA_PCT:--1}|${EXTRA_USED_C:-0}|${EXTRA_LIMIT_C:-0}|${FETCH_OK}|${UPDATE_AVAIL:-}|${AUTH_METHOD:-}" > "$SLOW_CF" 2>/dev/null
+  printf '%s\n' "${FIVE_PCT:-0}|${FIVE_EPOCH:-0}|${WEEK_PCT:-0}|${WEEK_EPOCH:-0}|${SONNET_PCT:--1}|${EXTRA_ENABLED:-0}|${EXTRA_PCT:--1}|${EXTRA_USED_C:-0}|${EXTRA_LIMIT_C:-0}|${FETCH_OK}|${UPDATE_AVAIL:-}|${AUTH_METHOD:-}|${HIDE_LIMITS:-false}|${HIDE_LIMITS_API:-false}" > "$SLOW_CF" 2>/dev/null
 fi
 
 if [ -O "$SLOW_CF" ]; then
   IFS='|' read -r FIVE_PCT FIVE_EPOCH WEEK_PCT WEEK_EPOCH SONNET_PCT \
                   EXTRA_ENABLED EXTRA_PCT EXTRA_USED_C EXTRA_LIMIT_C \
-                  FETCH_OK UPDATE_AVAIL AUTH_METHOD < "$SLOW_CF"
+                  FETCH_OK UPDATE_AVAIL AUTH_METHOD HIDE_LIMITS HIDE_LIMITS_API < "$SLOW_CF"
 fi
 
 # --- Cost cache: delta attribution per render ---
@@ -455,6 +490,13 @@ else
   USAGE_LINE="${D}Limits: N/A (using API key)${X}"
 fi
 
+# --- Hide-limits suppression ---
+if [ "$HIDE_LIMITS" = "true" ]; then
+  USAGE_LINE=""
+elif [ "$HIDE_LIMITS_API" = "true" ] && [ "$FETCH_OK" = "noauth" ]; then
+  USAGE_LINE=""
+fi
+
 # --- GitHub link (OSC 8 clickable) ---
 GH_LINK=""
 REPO_LABEL=""
@@ -477,7 +519,12 @@ FL=$((PCT * 10 / 100)); EM=$((10 - FL))
 CTX_BAR=""; [ "$FL" -gt 0 ] && CTX_BAR=$(printf "%${FL}s" | sed 's/ /▓/g')
 [ "$EM" -gt 0 ] && CTX_BAR="${CTX_BAR}$(printf "%${EM}s" | sed 's/ /░/g')"
 
-if [ "$EXEC_STATUS" = "running" ] && [ "${EXEC_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
+_HIDE_EXEC_TMUX=false
+if [ "$HIDE_AGENT_TMUX" = "true" ] && [ -n "${TMUX:-}" ] && [ "$EXEC_STATUS" = "running" ]; then
+  _HIDE_EXEC_TMUX=true
+fi
+
+if [ "$_HIDE_EXEC_TMUX" != "true" ] && [ "$EXEC_STATUS" = "running" ] && [ "${EXEC_TOTAL:-0}" -gt 0 ] 2>/dev/null; then
   EXEC_PCT=$((EXEC_DONE * 100 / EXEC_TOTAL))
   L1="${C}${B}[VBW]${X} Build: $(progress_bar "$EXEC_PCT" 8) ${EXEC_DONE}/${EXEC_TOTAL} plans"
   [ "${EXEC_TWAVES:-0}" -gt 1 ] 2>/dev/null && L1="$L1 ${D}│${X} Wave ${EXEC_WAVE}/${EXEC_TWAVES}"
@@ -540,7 +587,7 @@ fi
 
 printf '%b\n' "$L1"
 printf '%b\n' "$L2"
-printf '%b\n' "$L3"
+[ -n "$L3" ] && printf '%b\n' "$L3"
 printf '%b\n' "$L4"
 
 exit 0

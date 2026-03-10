@@ -44,6 +44,7 @@ npm-debug.log*
 
 # Non-production files
 a_non_prod_files/
+.vbw-worktrees/
 
 # Local Debugging
 diag-session-key.md
