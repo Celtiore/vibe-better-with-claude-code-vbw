@@ -34,8 +34,8 @@ release_lock() {
 # --- Subcommands ---
 cmd_register() {
   local pid="$1"
-  # Validate PID format (numeric)
-  if ! echo "$pid" | grep -qE '^[0-9]+$'; then
+  # Validate PID format (positive integer, no leading zeros)
+  if ! echo "$pid" | grep -qE '^[1-9][0-9]*$'; then
     echo "ERROR: Invalid PID format: $pid" >&2
     return 1
   fi
@@ -60,8 +60,8 @@ cmd_register() {
 
 cmd_unregister() {
   local pid="$1"
-  # Validate PID format
-  if ! echo "$pid" | grep -qE '^[0-9]+$'; then
+  # Validate PID format (positive integer, no leading zeros)
+  if ! echo "$pid" | grep -qE '^[1-9][0-9]*$'; then
     echo "ERROR: Invalid PID format: $pid" >&2
     return 1
   fi
@@ -91,8 +91,8 @@ cmd_list() {
   # Filter out dead PIDs (kill -0 checks existence without signaling)
   while IFS= read -r pid; do
     [ -z "$pid" ] && continue
-    # Validate numeric
-    if ! echo "$pid" | grep -qE '^[0-9]+$'; then
+    # Validate positive integer PID
+    if ! echo "$pid" | grep -qE '^[1-9][0-9]*$'; then
       continue
     fi
     # Check if process exists
