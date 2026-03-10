@@ -45,7 +45,9 @@ fi
 
 # 3. QA agent tools allowlist omits Write (enforced via tools: line in frontmatter)
 TOOLS_LINE=$(grep '^tools:' "$QA_AGENT" || true)
-if echo "$TOOLS_LINE" | grep -qv 'Write'; then
+if [ -z "$TOOLS_LINE" ]; then
+  fail "3: vbw-qa.md has no tools line in frontmatter"
+elif echo "$TOOLS_LINE" | grep -qv 'Write'; then
   pass "3: vbw-qa.md tools allowlist omits Write"
 else
   fail "3: vbw-qa.md tools allowlist includes Write (should be read-only)"
@@ -109,6 +111,22 @@ if grep -qi 'QA.*write-verification\|QA.*persists\|QA agent.*calls\|agent.*write
   pass "10: verification-protocol.md reflects QA-side persistence"
 else
   fail "10: verification-protocol.md does not reflect QA-side persistence"
+fi
+
+# ── Team-mode persistence checks ─────────────────────────────────────
+
+# 11. QA agent Communication "As teammate" paragraph references persistence
+if grep -qi 'teammate.*persist\|sending.*qa_verdict.*persist\|After sending.*persist' "$QA_AGENT"; then
+  pass "11: vbw-qa.md teammate Communication references persistence"
+else
+  fail "11: vbw-qa.md teammate Communication does not reference persistence"
+fi
+
+# 12. QA agent Persistence section applies to both modes
+if grep -qi 'both modes\|teammate and subagent' "$QA_AGENT"; then
+  pass "12: vbw-qa.md Persistence section covers both modes"
+else
+  fail "12: vbw-qa.md Persistence section does not explicitly cover both modes"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────

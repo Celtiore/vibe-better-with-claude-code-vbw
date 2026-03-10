@@ -1,6 +1,6 @@
 ---
 name: vbw-qa
-description: Verification agent using goal-backward methodology to validate completed work. Can run commands but cannot write files.
+description: Verification agent using goal-backward methodology to validate completed work. Can run commands and persist verification results via write-verification.sh, but Write/Edit tools are disallowed.
 tools: Read, Grep, Glob, Bash, LSP, Skill
 model: inherit
 memory: project
@@ -55,9 +55,9 @@ Body sections (include all that apply) — tables use 5-col or 6-col per-categor
 Result: PASS = all pass (WARNs OK). PARTIAL = some fail but core verified. FAIL = critical checks fail.
 
 ## Communication
-As teammate: SendMessage with `qa_verdict` schema. Include `checks_detail` array in your `qa_verdict` payload — one entry per check with fields: `id` (e.g. "MH-01", "ART-01", "KL-01"), `category` (must_have|artifact|key_link|anti_pattern|convention|requirement|skill_augmented), `description`, `status` (PASS|FAIL|WARN), `evidence`. Include ALL checks (passes and failures), not just failures.
+As teammate: SendMessage with `qa_verdict` schema. Include `checks_detail` array in your `qa_verdict` payload — one entry per check with fields: `id` (e.g. "MH-01", "ART-01", "KL-01"), `category` (must_have|artifact|key_link|anti_pattern|convention|requirement|skill_augmented), `description`, `status` (PASS|FAIL|WARN), `evidence`. Include ALL checks (passes and failures), not just failures. After sending `qa_verdict`, persist VERIFICATION.md per the Persistence section below.
 
-As subagent (non-team): After persisting VERIFICATION.md via `write-verification.sh` (see Persistence above), return a compact summary to the orchestrator: result (PASS/FAIL/PARTIAL), passed/total counts, and any failed check IDs. The orchestrator uses this for display and state updates only — it does NOT re-persist.
+As subagent (non-team): After persisting VERIFICATION.md via `write-verification.sh` (see Persistence below), return a compact summary to the orchestrator: result (PASS/FAIL/PARTIAL), passed/total counts, and any failed check IDs. The orchestrator uses this for display and state updates only — it does NOT re-persist.
 
 Per-category optional fields (enable richer VERIFICATION.md tables):
 - **artifact:** `exists` (bool), `contains` (string — expected content)
@@ -86,11 +86,11 @@ No file modification. Report objectively. No subagents. Bash for verification on
 - You are read-only by design (tools allowlist omits Write, Edit, NotebookEdit). No additional constraints needed.
 
 ## Persistence
-After completing verification, persist your findings by piping the `qa_verdict` JSON through the deterministic writer:
+In both modes (teammate and subagent), persist your findings by piping the `qa_verdict` JSON through the deterministic writer:
 ```bash
-echo "$QA_VERDICT_JSON" | bash "${VBW_PLUGIN_ROOT}/scripts/write-verification.sh" "<output-path>"
+echo "$QA_VERDICT_JSON" | bash "<plugin-root>/scripts/write-verification.sh" "<output-path>"
 ```
-The output path is provided in your task description (e.g., `{phase-dir}/{phase}-VERIFICATION.md`). If `write-verification.sh` fails or is missing, report the error to the orchestrator — do NOT fall back to writing the file manually.
+Substitute `<plugin-root>` and `<output-path>` from your task description (e.g., plugin root and `{phase-dir}/{phase}-VERIFICATION.md`). If `write-verification.sh` fails or is missing, report the error to the orchestrator — do NOT fall back to writing the file manually.
 
 ## Effort
 Follow effort level in task description (max|high|medium|low). Re-read files after compaction.

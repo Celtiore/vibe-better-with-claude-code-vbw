@@ -283,7 +283,7 @@ This is more structured than a general "log deviations" instruction.
 
 GSD's `verification-patterns.md` is particularly notable — it provides detailed bash patterns for stub detection, component verification, API route verification, database schema verification, and wiring verification across React/Next.js, Express, Prisma, and other stacks. This is practical, language-specific guidance that VBW's protocol doesn't include.
 
-VBW's tiered QA with platform-enforced read-only agent permissions is genuinely unique. A QA agent that literally cannot write files provides stronger verification independence.
+VBW's tiered QA with platform-enforced read-only agent permissions is genuinely unique. A QA agent with Write/Edit tools disallowed — restricted to persisting only through the deterministic `write-verification.sh` script — provides stronger verification independence.
 
 ### Session Continuity
 
@@ -330,7 +330,7 @@ Different approaches to interruptions: VBW renumbers directories, file prefixes,
 | Capability | Implementation | Why It Matters |
 |------------|---------------|----------------|
 | **Blocking platform hooks (exit 2)** | `hard-gate.sh`, `qa-gate.sh`, `file-guard.sh`, `bash-guard.sh`, `security-filter.sh`, `archive-uat-guard.sh` | Model cannot bypass these during compaction or context overflow |
-| **Platform-enforced agent permissions** | `disallowedTools` in agent YAML — Scout and QA cannot write files | Verified tool restriction at the platform level, not instruction level |
+| **Platform-enforced agent permissions** | `disallowedTools` in agent YAML — Scout cannot write files; QA restricted to persistence via `write-verification.sh` | Verified tool restriction at the platform level, not instruction level |
 | **Worktree isolation** | `worktree-create.sh`, `worktree-target.sh`, `worktree-agent-map.sh` | Physical filesystem separation for parallel agents |
 | **Lease locks** | `lease-lock.sh` | File-level exclusive locking during parallel execution |
 | **Contract system** | `generate-contract.sh`, `validate-contract.sh` with hash integrity | Tasks operate within declared boundaries, hash prevents tampering |
