@@ -18,6 +18,11 @@ LOCK_DIR="/tmp/vbw-agent-pid-lock"
 acquire_lock() {
   local retries=50
   while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    retries=$((retries - 1))
+    if [ "$retries" -le 0 ]; then
+      echo "ERROR: Failed to acquire lock after 50 attempts" >&2
+      return 1
+    fi
     # Check for stale lock on every iteration
     if [ -f "${LOCK_DIR}/pid" ]; then
       local lock_pid
@@ -43,11 +48,6 @@ acquire_lock() {
       # No pid file after 0.5s — lock is orphaned, remove it
       rmdir "$LOCK_DIR" 2>/dev/null || true
       continue
-    fi
-    retries=$((retries - 1))
-    if [ "$retries" -le 0 ]; then
-      echo "ERROR: Failed to acquire lock after 50 attempts" >&2
-      return 1
     fi
     sleep 0.1
   done
@@ -105,9 +105,15 @@ cmd_unregister() {
     return 0
   fi
 
-  # Remove the PID line
+  # Remove the PID line (defensive rm -f mirrors cmd_prune pattern)
+  rm -f "${PID_FILE}.tmp" 2>/dev/null || true
   grep -v "^${pid}$" "$PID_FILE" > "${PID_FILE}.tmp" 2>/dev/null || true
   mv "${PID_FILE}.tmp" "$PID_FILE"
+
+  # Remove empty PID file (all entries unregistered)
+  if [ ! -s "$PID_FILE" ]; then
+    rm -f "$PID_FILE"
+  fi
 
   release_lock
   trap - EXIT
