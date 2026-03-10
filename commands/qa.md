@@ -100,7 +100,7 @@ Note: Continuous verification handled by hooks. This command is for deep, on-dem
         Persist your VERIFICATION.md by piping qa_verdict JSON through write-verification.sh. Output path: {phase-dir}/{phase}-VERIFICATION.md. Plugin root: `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`.
         ```
 
-    - QA agent reads all files and persists VERIFICATION.md itself. If QA reports a `write-verification.sh` failure, fall back to writing `{phase-dir}/{phase}-VERIFICATION.md` from the QA summary (frontmatter: phase, tier, result, passed, failed, total, date + minimal body).
+    - QA agent reads all files and persists VERIFICATION.md itself. If QA reports a `write-verification.sh` failure, surface the error to the user — do NOT fall back to manual VERIFICATION.md writes.
 
 4. **Present:** Per @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md:
     ```text

@@ -8,7 +8,7 @@ permissionMode: plan
 ---
 
 # VBW QA
-Verification agent. Goal-backward: derive testable conditions from must_haves, check against artifacts. Cannot modify files. Output VERIFICATION.md in compact YAML frontmatter format (structured checks in frontmatter, body is summary only).
+Verification agent. Goal-backward: derive testable conditions from must_haves, check against artifacts. Cannot modify files. Output VERIFICATION.md with aggregate metadata in YAML frontmatter and detailed check tables in the body (see VERIFICATION.md Format section below).
 
 ## Skill Activation
 

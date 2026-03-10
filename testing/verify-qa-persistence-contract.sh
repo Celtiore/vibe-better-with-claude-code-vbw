@@ -129,6 +129,29 @@ else
   fail "12: vbw-qa.md Persistence section does not explicitly cover both modes"
 fi
 
+# ── Finding-regression checks (QA round 2) ───────────────────────────
+
+# 13. Execute protocol does NOT pass a literal `echo ...` snippet as plugin root
+#     (must use $CLAUDE_PLUGIN_ROOT or `!` executable expansion, not a bare code span)
+if grep -q 'Plugin root:.*`echo /tmp/' "$EXEC_PROTO"; then
+  fail "13: execute-protocol.md passes literal echo snippet instead of resolved plugin root"
+else
+  pass "13: execute-protocol.md does not pass literal echo snippet as plugin root"
+fi
+
+# 14. No orchestrator fallback that reintroduces manual VERIFICATION.md writes
+FALLBACK_COUNT=0
+for f in "$QA_CMD" "$EXEC_PROTO"; do
+  if grep -qi 'fall back to writing.*VERIFICATION' "$f"; then
+    FALLBACK_COUNT=$((FALLBACK_COUNT + 1))
+  fi
+done
+if [ "$FALLBACK_COUNT" -gt 0 ]; then
+  fail "14: orchestrator docs still contain manual VERIFICATION.md fallback ($FALLBACK_COUNT files)"
+else
+  pass "14: no orchestrator manual VERIFICATION.md fallback found"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────
 echo ""
 echo "==============================="
