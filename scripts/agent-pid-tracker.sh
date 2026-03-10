@@ -17,7 +17,31 @@ LOCK_DIR="/tmp/vbw-agent-pid-lock"
 # --- File locking helpers ---
 acquire_lock() {
   local retries=50
+  local stale_checked=0
   while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    # On first failure, check for stale lock from a crashed process
+    if [ "$stale_checked" -eq 0 ]; then
+      stale_checked=1
+      if [ -f "${LOCK_DIR}/pid" ]; then
+        local lock_pid
+        lock_pid=$(cat "${LOCK_DIR}/pid" 2>/dev/null || echo "")
+        if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+          # Lock holder is dead — remove stale lock and retry immediately
+          rm -f "${LOCK_DIR}/pid"
+          rmdir "$LOCK_DIR" 2>/dev/null || true
+          continue
+        fi
+      else
+        # Lock dir exists but no pid file — treat as stale after a brief wait
+        sleep 0.2
+        if mkdir "$LOCK_DIR" 2>/dev/null; then
+          break
+        fi
+        # Still held — force-remove orphaned lock (no pid to validate)
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+        continue
+      fi
+    fi
     retries=$((retries - 1))
     if [ "$retries" -le 0 ]; then
       echo "ERROR: Failed to acquire lock after 50 attempts" >&2
@@ -25,10 +49,13 @@ acquire_lock() {
     fi
     sleep 0.1
   done
+  # Record our PID so other processes can detect stale locks
+  echo $$ > "${LOCK_DIR}/pid" 2>/dev/null || true
   return 0
 }
 
 release_lock() {
+  rm -f "${LOCK_DIR}/pid" 2>/dev/null || true
   rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
@@ -113,6 +140,9 @@ cmd_prune() {
 
   local temp_file="${PID_FILE}.tmp"
   local kept=0
+
+  # Remove any leftover temp file from a previously interrupted prune
+  rm -f "$temp_file" 2>/dev/null || true
 
   while IFS= read -r pid; do
     [ -z "$pid" ] && continue

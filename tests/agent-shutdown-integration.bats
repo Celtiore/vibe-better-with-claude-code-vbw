@@ -229,6 +229,66 @@ simulate_session_stop() {
   [ ! -f ".vbw-planning/.agent-pids" ]
 }
 
+@test "prune ignores leftover .agent-pids.tmp from interrupted prune" {
+  cd "$TEST_TEMP_DIR"
+  # Simulate interrupted prune that left a stale temp file with a dead PID
+  echo "12345" > ".vbw-planning/.agent-pids.tmp"
+
+  # Put a live PID in the real file
+  sleep 30 &
+  local alive_pid=$!
+
+  printf "${alive_pid}\n99996\n" > ".vbw-planning/.agent-pids"
+
+  run bash "$SCRIPTS_DIR/agent-pid-tracker.sh" prune
+  [ "$status" -eq 0 ]
+
+  # File should contain ONLY the live PID (stale temp content must not leak)
+  [ -f ".vbw-planning/.agent-pids" ]
+  run cat ".vbw-planning/.agent-pids"
+  [ "$output" = "$alive_pid" ]
+
+  # Temp file should be cleaned up
+  [ ! -f ".vbw-planning/.agent-pids.tmp" ]
+
+  kill "$alive_pid" 2>/dev/null || true
+}
+
+@test "prune recovers from stale lock left by crashed process" {
+  cd "$TEST_TEMP_DIR"
+  # Simulate stale lock from a crashed process
+  mkdir -p /tmp/vbw-agent-pid-lock
+  echo "99999" > /tmp/vbw-agent-pid-lock/pid
+
+  printf '99997\n99998\n' > ".vbw-planning/.agent-pids"
+
+  run bash "$SCRIPTS_DIR/agent-pid-tracker.sh" prune
+  [ "$status" -eq 0 ]
+
+  # All dead PIDs should be pruned — file removed
+  [ ! -f ".vbw-planning/.agent-pids" ]
+
+  # Lock should be released
+  [ ! -d /tmp/vbw-agent-pid-lock ]
+}
+
+@test "prune recovers from stale lock directory with no pid file" {
+  cd "$TEST_TEMP_DIR"
+  # Simulate stale lock dir with no pid file (edge case: lock created but pid write failed)
+  mkdir -p /tmp/vbw-agent-pid-lock
+
+  printf '99997\n99998\n' > ".vbw-planning/.agent-pids"
+
+  run bash "$SCRIPTS_DIR/agent-pid-tracker.sh" prune
+  [ "$status" -eq 0 ]
+
+  # All dead PIDs should be pruned
+  [ ! -f ".vbw-planning/.agent-pids" ]
+
+  # Lock should be released
+  [ ! -d /tmp/vbw-agent-pid-lock ]
+}
+
 # =============================================================================
 # Session Stop Cleanup
 # =============================================================================
