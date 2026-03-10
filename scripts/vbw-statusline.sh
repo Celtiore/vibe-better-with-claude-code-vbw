@@ -253,20 +253,28 @@ if ! cache_fresh "$FAST_CF" 5; then
   fi
 
   AGENT_DATA="0"
-  VBW_CTX=0; [ -f ".vbw-planning/.vbw-context" ] && VBW_CTX=1
 
   # Sanitize pipe characters in EXEC_CURRENT (user-defined plan title) to
   # prevent field misalignment in the pipe-delimited fast cache.
   _EXEC_CURRENT_SAFE="${EXEC_CURRENT//|/-}"
 
-  printf '%s\n' "${PH:-0}|${TT:-0}|${EF}|${MP}|${BR}|${PD}|${PT}|${PPD}|${QA}|${GH_URL}|${GIT_STAGED:-0}|${GIT_MODIFIED:-0}|${GIT_AHEAD:-0}|${EXEC_STATUS:-}|${EXEC_WAVE:-0}|${EXEC_TWAVES:-0}|${EXEC_DONE:-0}|${EXEC_TOTAL:-0}|${_EXEC_CURRENT_SAFE:-}|${AGENT_DATA:-0}|${PPT:-0}|${QA_COLOR:-D}|${HIDE_AGENT_TMUX:-false}|${COLLAPSE_AGENT_TMUX:-false}|${VBW_CTX}" > "$FAST_CF" 2>/dev/null
+  printf '%s\n' "${PH:-0}|${TT:-0}|${EF}|${MP}|${BR}|${PD}|${PT}|${PPD}|${QA}|${GH_URL}|${GIT_STAGED:-0}|${GIT_MODIFIED:-0}|${GIT_AHEAD:-0}|${EXEC_STATUS:-}|${EXEC_WAVE:-0}|${EXEC_TWAVES:-0}|${EXEC_DONE:-0}|${EXEC_TOTAL:-0}|${_EXEC_CURRENT_SAFE:-}|${AGENT_DATA:-0}|${PPT:-0}|${QA_COLOR:-D}|${HIDE_AGENT_TMUX:-false}|${COLLAPSE_AGENT_TMUX:-false}" > "$FAST_CF" 2>/dev/null
 fi
 
 if [ -O "$FAST_CF" ]; then
   # shellcheck disable=SC2034
   IFS='|' read -r PH TT EF MP BR PD PT PPD QA GH_URL GIT_STAGED GIT_MODIFIED GIT_AHEAD \
                   EXEC_STATUS EXEC_WAVE EXEC_TWAVES EXEC_DONE EXEC_TOTAL EXEC_CURRENT \
-                  AGENT_N PPT QA_COLOR HIDE_AGENT_TMUX COLLAPSE_AGENT_TMUX VBW_CTX < "$FAST_CF"
+                  AGENT_N PPT QA_COLOR HIDE_AGENT_TMUX COLLAPSE_AGENT_TMUX < "$FAST_CF"
+fi
+
+# Badge color: live check (not cached) so transitions are immediate.
+# [ -f ] is a single stat() syscall — negligible cost vs cache TTL staleness.
+VBW_CTX=0; [ -f ".vbw-planning/.vbw-context" ] && VBW_CTX=1
+if [ "$VBW_CTX" = "1" ]; then
+  VC="${C}${B}"
+else
+  VC="${D}"
 fi
 
 AGENT_LINE=""
@@ -287,13 +295,6 @@ if [ -n "${TMUX:-}" ]; then
       exit 0
     fi
   fi
-fi
-
-# Badge color: cyan+bold when VBW context active in session, dim otherwise
-if [ "${VBW_CTX:-0}" = "1" ]; then
-  VC="${C}${B}"
-else
-  VC="${D}"
 fi
 
 # --- Slow cache (60s TTL): usage limits + update check ---
