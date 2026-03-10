@@ -56,7 +56,7 @@ if [ "$MSG_TYPE_PRENORM" = "shutdown_request" ] || [ "$MSG_TYPE_PRENORM" = "shut
     FLAT_AUTHOR=$(echo "$MSG" | jq -r '.from // .author_role // "unknown"' 2>/dev/null) || FLAT_AUTHOR=""
     MSG=$(echo "$MSG" | jq --arg fid "$FLAT_ID" --arg fauthor "$FLAT_AUTHOR" '
       {
-        id: ($fid | if . == "" then "normalized-\(now | tostring)" else . end),
+        id: ($fid | if . == "" then "normalized-\(now | floor | tostring)" else . end),
         type: .type,
         phase: (.phase // 0),
         task: (.task // "0-0"),
@@ -65,7 +65,7 @@ if [ "$MSG_TYPE_PRENORM" = "shutdown_request" ] || [ "$MSG_TYPE_PRENORM" = "shut
         timestamp: (.timestamp // (now | tostring)),
         schema_version: (.schema_version // "2.0"),
         payload: (del(.type, .id, .requestId, .from, .phase, .task,
-                      .author_role, .target_role, .timestamp, .schema_version)),
+                      .author_role, .target_role, .timestamp, .schema_version, .confidence)),
         confidence: (.confidence // 1.0)
       }
     ' 2>/dev/null) || true

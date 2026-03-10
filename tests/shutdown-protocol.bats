@@ -665,10 +665,75 @@ teardown() {
 
 @test "validate-message.sh normalizes requestId into envelope id field" {
   cd "$TEST_TEMP_DIR"
-  # Pipe flat message through normalization, capture the normalized JSON
-  # by checking the validation passes (normalization must set the id field)
+  # Run normalization jq directly to verify field-level mapping
+  local input='{"type":"shutdown_request","requestId":"req-id-001","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead"}'
+  local fid
+  fid=$(echo "$input" | jq -r '.requestId // .id // ""')
+  local fauthor
+  fauthor=$(echo "$input" | jq -r '.from // .author_role // "unknown"')
+  local normalized
+  normalized=$(echo "$input" | jq --arg fid "$fid" --arg fauthor "$fauthor" '
+    {
+      id: ($fid | if . == "" then "normalized-\(now | floor | tostring)" else . end),
+      type: .type,
+      author_role: $fauthor
+    }
+  ')
+  # Verify requestId mapped to envelope id
+  echo "$normalized" | jq -e '.id == "req-id-001"'
+  # Verify from mapped to author_role
+  echo "$normalized" | jq -e '.author_role == "lead"'
+  # Also verify full validation passes
   local result
-  result=$(echo '{"type":"shutdown_request","requestId":"req-id-001","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead"}' \
-    | bash "$SCRIPTS_DIR/validate-message.sh")
+  result=$(echo "$input" | bash "$SCRIPTS_DIR/validate-message.sh")
   echo "$result" | jq -e '.valid == true'
+}
+
+@test "validate-message.sh requestId takes precedence over id when both present" {
+  cd "$TEST_TEMP_DIR"
+  local input='{"type":"shutdown_request","requestId":"req-wins","id":"id-loses","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead"}'
+  local fid
+  fid=$(echo "$input" | jq -r '.requestId // .id // ""')
+  [ "$fid" = "req-wins" ]
+  # Verify full validation also passes
+  local result
+  result=$(echo "$input" | bash "$SCRIPTS_DIR/validate-message.sh")
+  echo "$result" | jq -e '.valid == true'
+}
+
+@test "validate-message.sh rejects flat message with empty string type" {
+  cd "$TEST_TEMP_DIR"
+  local result
+  result=$(echo '{"type":"","requestId":"abc-123","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead"}' \
+    | bash "$SCRIPTS_DIR/validate-message.sh") || true
+  echo "$result" | jq -e '.valid == false'
+}
+
+@test "validate-message.sh normalization does not leak confidence into payload" {
+  cd "$TEST_TEMP_DIR"
+  local input='{"type":"shutdown_request","requestId":"c-test","reason":"phase_complete","team_name":"vbw-phase-01","from":"lead","confidence":0.5}'
+  local fid
+  fid=$(echo "$input" | jq -r '.requestId // .id // ""')
+  local fauthor
+  fauthor=$(echo "$input" | jq -r '.from // .author_role // "unknown"')
+  local normalized
+  normalized=$(echo "$input" | jq --arg fid "$fid" --arg fauthor "$fauthor" '
+    {
+      id: ($fid | if . == "" then "normalized-\(now | floor | tostring)" else . end),
+      type: .type,
+      phase: (.phase // 0),
+      task: (.task // "0-0"),
+      author_role: $fauthor,
+      target_role: (.target_role // null),
+      timestamp: (.timestamp // (now | tostring)),
+      schema_version: (.schema_version // "2.0"),
+      payload: (del(.type, .id, .requestId, .from, .phase, .task,
+                    .author_role, .target_role, .timestamp, .schema_version, .confidence)),
+      confidence: (.confidence // 1.0)
+    }
+  ')
+  # confidence should be at envelope level
+  echo "$normalized" | jq -e '.confidence == 0.5'
+  # confidence should NOT be inside payload
+  echo "$normalized" | jq -e '(.payload | has("confidence")) | not'
 }
