@@ -18,19 +18,21 @@ teardown() {
   [ "$output" = "none" ]
 }
 
-@test "init major creates research stage" {
+@test "init major creates research stage in round dir" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | head -1)" = "research" ]
-  [ -f "$PHASE_DIR/.uat-remediation-stage" ]
-  [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "research" ]
+  [ -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
+  grep -q "^stage=research$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^round=01$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  [ -d "$PHASE_DIR/remediation/round-01" ]
 }
 
-@test "init minor creates fix stage" {
+@test "init minor creates fix stage in round dir" {
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "minor"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | head -1)" = "fix" ]
-  [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "fix" ]
+  grep -q "^stage=fix$" "$PHASE_DIR/remediation/.uat-remediation-stage"
 }
 
 @test "init unknown severity defaults to research" {
@@ -39,11 +41,20 @@ teardown() {
   [ "$(echo "$output" | head -1)" = "research" ]
 }
 
+@test "init removes legacy state file" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  [ ! -f "$PHASE_DIR/.uat-remediation-stage" ]
+  [ -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
+}
+
 @test "advance major chain: research -> plan -> execute -> done" {
   bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major" >/dev/null
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
   [ "$output" = "plan" ]
+  grep -q "^stage=plan$" "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
   [ "$output" = "execute" ]
@@ -60,17 +71,27 @@ teardown() {
 }
 
 @test "advance from done stays done" {
-  echo "done" > "$PHASE_DIR/.uat-remediation-stage"
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=done\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
   [ "$output" = "done" ]
 }
 
-@test "advance from research goes to plan" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+@test "advance preserves round number" {
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=research\nround=03\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
   [ "$output" = "plan" ]
+  grep -q "^round=03$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+}
+
+@test "legacy state file at phase root is read correctly" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get "$PHASE_DIR"
+  [ "$output" = "research" ]
 }
 
 @test "legacy plan stage still advances to execute" {
@@ -89,12 +110,15 @@ teardown() {
   [ "$output" = "plan" ]
 }
 
-@test "reset removes state file" {
+@test "reset removes both state files" {
   bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major" >/dev/null
+  # Also put a legacy file to test both are removed
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" reset "$PHASE_DIR"
   [ "$status" -eq 0 ]
   [ "$output" = "none" ]
+  [ ! -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
   [ ! -f "$PHASE_DIR/.uat-remediation-stage" ]
 }
 
@@ -298,11 +322,15 @@ EOF
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | head -1)" = "research" ]
-  # State file was created
-  [ -f "$PHASE_DIR/.uat-remediation-stage" ]
-  [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "research" ]
+  # State file was created in round-dir location
+  [ -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
+  grep -q "^stage=research$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^round=01$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  # Round directory created
+  [ -d "$PHASE_DIR/remediation/round-01" ]
   # Plan metadata emitted
-  echo "$output" | grep -q "^next_plan=01$"
+  echo "$output" | grep -q "^round=01$"
+  echo "$output" | grep -q "^round_dir=.*remediation/round-01$"
   echo "$output" | grep -q "^research_path=$"
   echo "$output" | grep -q "^plan_path=$"
   # CONTEXT emitted after metadata
@@ -311,7 +339,8 @@ EOF
 }
 
 @test "get-or-init returns existing stage without side effects" {
-  echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=plan\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
   cat > "$PHASE_DIR/01-UAT.md" <<'EOF'
 # UAT Report
 - Should not be emitted
@@ -321,17 +350,19 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | head -1)" = "plan" ]
   # Plan metadata emitted even on resume
-  echo "$output" | grep -q "^next_plan=01$"
+  echo "$output" | grep -q "^round=01$"
+  echo "$output" | grep -q "^round_dir=.*remediation/round-01$"
   echo "$output" | grep -q "^research_path=$"
   echo "$output" | grep -q "^plan_path=$"
   # State file unchanged
-  [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "plan" ]
+  grep -q "^stage=plan$" "$PHASE_DIR/remediation/.uat-remediation-stage"
   # No CONTEXT emitted on resume
   ! echo "$output" | grep -q "^---CONTEXT---$"
 }
 
 @test "get-or-init returns done when stage is done" {
-  echo "done" > "$PHASE_DIR/.uat-remediation-stage"
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=done\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
@@ -342,7 +373,7 @@ EOF
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "minor"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | head -1)" = "fix" ]
-  [ "$(cat "$PHASE_DIR/.uat-remediation-stage")" = "fix" ]
+  grep -q "^stage=fix$" "$PHASE_DIR/remediation/.uat-remediation-stage"
 }
 
 @test "get-or-init without severity exits with error" {
@@ -350,62 +381,42 @@ EOF
   [ "$status" -eq 1 ]
 }
 
-# --- plan metadata tests ---
+# --- round-dir plan metadata tests ---
 
-@test "get-or-init next_plan=01 when no plans exist" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+@test "get-or-init round=01 and round_dir on fresh init" {
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=research\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=01$"
+  echo "$output" | grep -q "^round=01$"
+  echo "$output" | grep -q "^round_dir=.*remediation/round-01$"
   echo "$output" | grep -q "^plan_path=$"
 }
 
-@test "get-or-init next_plan increments from existing plans" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md" "$PHASE_DIR/01-03-PLAN.md"
+@test "get-or-init research_path finds file in round dir" {
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  printf 'stage=research\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  echo "# Research" > "$PHASE_DIR/remediation/round-01/R01-RESEARCH.md"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=04$"
-  echo "$output" | grep -q "^plan_path=$"
+  echo "$output" | grep -q "^research_path=.*remediation/round-01/R01-RESEARCH.md$"
 }
 
-@test "get-or-init next_plan handles many plans (14 -> 15)" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
-  for i in $(seq -w 1 14); do
-    touch "$PHASE_DIR/01-${i}-PLAN.md"
-  done
+@test "get-or-init plan_path finds file in round dir" {
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  printf 'stage=plan\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  echo "# Plan" > "$PHASE_DIR/remediation/round-01/R01-PLAN.md"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=15$"
+  echo "$output" | grep -q "^plan_path=.*remediation/round-01/R01-PLAN.md$"
 }
 
-@test "get-or-init research_path empty when no research exists" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
-
-  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^research_path=$"
-  echo "$output" | grep -q "^plan_path=$"
-}
-
-@test "get-or-init research_path finds per-plan research" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md"
-  touch "$PHASE_DIR/01-03-RESEARCH.md"
-
-  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
-  [ "$status" -eq 0 ]
-  # next_plan=03, per-plan research at 01-03-RESEARCH.md
-  echo "$output" | grep -q "^next_plan=03$"
-  echo "$output" | grep -q "^research_path=.*01-03-RESEARCH.md$"
-  echo "$output" | grep -q "^plan_path=$"
-}
-
-@test "get-or-init research_path finds legacy research" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+@test "get-or-init research_path falls back to legacy phase root" {
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=research\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
   touch "$PHASE_DIR/01-RESEARCH.md"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
@@ -413,17 +424,26 @@ EOF
   echo "$output" | grep -q "^research_path=.*01-RESEARCH.md$"
 }
 
-@test "get-or-init per-plan research takes priority over legacy" {
-  echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  touch "$PHASE_DIR/01-02-RESEARCH.md"
+@test "get-or-init per-plan research at phase root found as legacy fallback" {
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=plan\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md"
+  touch "$PHASE_DIR/01-03-RESEARCH.md"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "^research_path=.*01-03-RESEARCH.md$"
+}
+
+@test "get-or-init round-dir research takes priority over legacy" {
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  printf 'stage=plan\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  echo "# Round research" > "$PHASE_DIR/remediation/round-01/R01-RESEARCH.md"
   touch "$PHASE_DIR/01-RESEARCH.md"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=02$"
-  echo "$output" | grep -q "^research_path=.*01-02-RESEARCH.md$"
-  echo "$output" | grep -q "^plan_path=$"
+  echo "$output" | grep -q "^research_path=.*remediation/round-01/R01-RESEARCH.md$"
 }
 
 @test "get-or-init metadata emitted before CONTEXT block" {
@@ -437,93 +457,63 @@ EOF
 
   # Find line numbers: metadata must come before ---CONTEXT---
   local meta_line context_line
-  meta_line=$(echo "$output" | grep -n "^next_plan=" | head -1 | cut -d: -f1)
+  meta_line=$(echo "$output" | grep -n "^round=" | head -1 | cut -d: -f1)
   context_line=$(echo "$output" | grep -n "^---CONTEXT---$" | head -1 | cut -d: -f1)
   [ -n "$meta_line" ]
   [ -n "$context_line" ]
   [ "$meta_line" -lt "$context_line" ]
 }
 
-# --- stage-aware plan metadata edge cases ---
+# --- legacy state migration tests ---
 
-@test "get-or-init plan stage: session died after writing plan — next_plan reuses research MM" {
-  # Scenario: research created 01-04-RESEARCH.md, plan created 01-04-PLAN.md,
-  # but session died before advancing to execute. Stage is still "plan".
+@test "get-or-init migrates legacy state file to new location" {
   echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md" "$PHASE_DIR/01-03-PLAN.md"
-  touch "$PHASE_DIR/01-04-PLAN.md"
-  touch "$PHASE_DIR/01-04-RESEARCH.md"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | head -1)" = "plan" ]
-  # Should use research MM=04, NOT highest_plan+1=05
-  echo "$output" | grep -q "^next_plan=04$"
-  echo "$output" | grep -q "^research_path=.*01-04-RESEARCH.md$"
-  echo "$output" | grep -q "^plan_path=.*01-04-PLAN.md$"
+  # Legacy file removed
+  [ ! -f "$PHASE_DIR/.uat-remediation-stage" ]
+  # New file created
+  [ -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
+  grep -q "^stage=plan$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^round=01$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  # Round dir created
+  [ -d "$PHASE_DIR/remediation/round-01" ]
 }
 
-@test "get-or-init plan stage: research done, plan not yet written" {
-  # Scenario: research created 01-02-RESEARCH.md, session died before plan was written.
-  echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md"
-  touch "$PHASE_DIR/01-02-RESEARCH.md"
+@test "legacy done stage migrates correctly" {
+  echo "done" > "$PHASE_DIR/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  # Should use research MM=02
-  echo "$output" | grep -q "^next_plan=02$"
-  echo "$output" | grep -q "^research_path=.*01-02-RESEARCH.md$"
-  echo "$output" | grep -q "^plan_path=$"
+  [ "$(echo "$output" | head -1)" = "done" ]
 }
 
-@test "get-or-init execute stage: uses research-plan correlation" {
-  # Scenario: stage=execute, plan 04 exists with matching research
-  echo "execute" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md" "$PHASE_DIR/01-03-PLAN.md"
-  touch "$PHASE_DIR/01-04-PLAN.md"
-  touch "$PHASE_DIR/01-04-RESEARCH.md"
+# --- needs-round tests ---
+
+@test "needs-round creates new round directory and resets to research" {
+  bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major" >/dev/null
+  # Advance through to done
+  bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR" >/dev/null
+  bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR" >/dev/null
+  bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR" >/dev/null
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" needs-round "$PHASE_DIR"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | head -1)" = "research" ]
+  echo "$output" | grep -q "^round=02$"
+  echo "$output" | grep -q "^round_dir=.*remediation/round-02$"
+  [ -d "$PHASE_DIR/remediation/round-02" ]
+  grep -q "^stage=research$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^round=02$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+}
+
+@test "get-or-init plan_path empty when plan does not exist in round dir" {
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  printf 'stage=research\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
   [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=04$"
-  echo "$output" | grep -q "^plan_path=.*01-04-PLAN.md$"
-}
-
-@test "get-or-init research stage: always uses highest_plan+1 even with matching research" {
-  # Scenario: second round of remediation. Plans 01+02 exist, research 02 exists.
-  # Research stage should compute next_plan=03 (for the new remediation round),
-  # NOT use research MM=02.
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md"
-  touch "$PHASE_DIR/01-02-RESEARCH.md"
-
-  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=03$"
-  echo "$output" | grep -q "^plan_path=$"
-}
-
-@test "get-or-init plan stage: no per-plan research falls back to plan+1" {
-  # Scenario: only legacy research exists, no per-plan research files.
-  # Falls back to highest_plan+1 since no per-plan research to correlate.
-  echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md"
-  touch "$PHASE_DIR/01-RESEARCH.md"
-
-  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=03$"
-  echo "$output" | grep -q "^research_path=.*01-RESEARCH.md$"
-  echo "$output" | grep -q "^plan_path=$"
-}
-
-@test "get-or-init plan_path empty when plan does not exist" {
-  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
-  touch "$PHASE_DIR/01-01-PLAN.md"
-
-  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "^next_plan=02$"
   echo "$output" | grep -q "^plan_path=$"
 }

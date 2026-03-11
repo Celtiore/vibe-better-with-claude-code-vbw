@@ -23,10 +23,20 @@ if [ ! -d "$PHASE_DIR" ]; then
   exit 0
 fi
 
-# Find all PLAN files sorted by plan number
+# Find all PLAN files sorted by plan number (phase root + round dirs)
 PLAN_FILES=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | sort)
+ROUND_PLAN_FILES=$(find "$PHASE_DIR" -path '*/remediation/round-*/R*-PLAN.md' 2>/dev/null | sort)
 
-if [ -z "$PLAN_FILES" ]; then
+ALL_PLAN_FILES="$PLAN_FILES"
+if [ -n "$ROUND_PLAN_FILES" ]; then
+  if [ -n "$ALL_PLAN_FILES" ]; then
+    ALL_PLAN_FILES=$(printf '%s\n%s' "$ALL_PLAN_FILES" "$ROUND_PLAN_FILES")
+  else
+    ALL_PLAN_FILES="$ROUND_PLAN_FILES"
+  fi
+fi
+
+if [ -z "$ALL_PLAN_FILES" ]; then
   echo "verify_context=empty"
   exit 0
 fi
@@ -72,8 +82,11 @@ while IFS= read -r plan_file; do
   ' "$plan_file" 2>/dev/null) || MUST_HAVES=""
 
   # Find corresponding SUMMARY file
+  # Phase-root plans: {NN}-{MM}-PLAN.md → {NN}-{MM}-SUMMARY.md (same dir)
+  # Round-dir plans: R{RR}-PLAN.md → R{RR}-SUMMARY.md (same dir)
   PLAN_BASE=$(basename "$plan_file" | sed 's/-PLAN\.md$//')
-  SUMMARY_FILE=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name "${PLAN_BASE}-SUMMARY.md" 2>/dev/null | head -1)
+  PLAN_DIR=$(dirname "$plan_file")
+  SUMMARY_FILE=$(find "$PLAN_DIR" -maxdepth 1 ! -name '.*' -name "${PLAN_BASE}-SUMMARY.md" 2>/dev/null | head -1)
 
   STATUS="no_summary"
   WHAT_BUILT=""
@@ -128,6 +141,6 @@ while IFS= read -r plan_file; do
   echo "files_modified: ${FILES_MODIFIED:-none}"
   echo "status: ${STATUS}"
   echo ""
-done <<< "$PLAN_FILES"
+done <<< "$ALL_PLAN_FILES"
 
 echo "verify_plan_count=${PLAN_COUNT}"

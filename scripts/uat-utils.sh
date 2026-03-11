@@ -96,12 +96,11 @@ latest_non_source_uat() {
   return 0
 }
 
-# count_uat_rounds — Count archived UAT round files in a phase directory.
+# count_uat_rounds — Count remediation rounds in both flat and round-dir layouts.
 #
-# Scans for {phase_num}-UAT-round-*.md files, extracts the numeric round
-# suffix from each, and prints the maximum round number found (0 if none).
-# This is the single source of truth for round semantics — display round
-# is count + 1 when active issues exist.
+# Flat layout: scans for {phase_num}-UAT-round-*.md files at phase root.
+# Round-dir layout: scans for remediation/round-*/R*-UAT.md files.
+# Returns the maximum round number found across both locations (0 if none).
 count_uat_rounds() {
   local dir="$1"
   local phase_num="$2"
@@ -112,6 +111,7 @@ count_uat_rounds() {
     *) dir="$dir/" ;;
   esac
 
+  # Flat layout: {phase_num}-UAT-round-{NN}.md
   for rf in "${dir}${phase_num}"-UAT-round-*.md; do
     [ -f "$rf" ] || continue
     local round_num
@@ -123,12 +123,24 @@ count_uat_rounds() {
     fi
   done
 
+  # Round-dir layout: remediation/round-{NN}/R{NN}-UAT.md
+  for rf in "${dir}"remediation/round-*/R*-UAT.md; do
+    [ -f "$rf" ] || continue
+    local rr_num
+    rr_num=$(basename "$rf" | sed 's/^R0*\([0-9]*\)-UAT\.md$/\1/')
+    if [ -n "$rr_num" ] && echo "$rr_num" | grep -qE '^[0-9]+$'; then
+      if [ "$rr_num" -gt "$max_round" ] 2>/dev/null; then
+        max_round="$rr_num"
+      fi
+    fi
+  done
+
   printf '%d' "$max_round"
 }
 
 # extract_round_issue_ids — Extract test IDs that had "Result: issue" in a
 # UAT round file. Prints one ID per line. Works on both archived round files
-# and active UAT files.
+# (flat layout) and round-dir UAT files (R{RR}-UAT.md).
 extract_round_issue_ids() {
   local file="$1"
   [ -f "$file" ] || return 0

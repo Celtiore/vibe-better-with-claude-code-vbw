@@ -10,17 +10,19 @@
 #   uat-remediation-state.sh reset       <phase-dir>             → removes state file
 #   uat-remediation-state.sh init        <phase-dir> <severity>  → initializes for severity
 #   uat-remediation-state.sh get-or-init <phase-dir> <severity>  → returns existing stage or initializes
+#   uat-remediation-state.sh needs-round <phase-dir>             → starts a new remediation round
 #
 # get-or-init is the preferred entry point for orchestrators:
 #   - If a stage file already exists (resume case), returns the persisted stage — no init side effects.
 #   - If no stage file exists (first entry), runs full init (CONTEXT pre-seeding, etc.) and returns
 #     the stage + ---CONTEXT--- block — identical to calling init directly.
 #   - Both paths emit plan metadata after the stage line:
-#       next_plan=XX          — zero-padded next plan number (based on existing *-PLAN.md files)
-#       research_path=<path>  — path to existing per-plan or legacy RESEARCH.md (empty if none)
-#       plan_path=<path>      — path to existing PLAN.md for next_plan (empty if none)
-#     Stage-aware: for plan/execute stages, uses research-plan correlation to find
-#     the correct working plan number (handles session-death-before-advance).
+#       round=RR              — zero-padded current round number
+#       round_dir=<path>      — path to the current round directory
+#       research_path=<path>  — path to existing RESEARCH.md (empty if none)
+#       plan_path=<path>      — path to existing PLAN.md (empty if none)
+#     Stage-aware: for plan/execute stages, uses file presence to find
+#     the correct working state (handles session-death-before-advance).
 #     This eliminates Search/Glob tool calls the orchestrator would otherwise need.
 #   This eliminates the two-step get→init pattern that wastes a tool call and forces
 #   the LLM to reason about the intermediate "none" value.
@@ -29,7 +31,11 @@
 #   (discuss is skipped — the UAT report serves as the scoping document)
 # Stages (minor-only path):     fix → done
 #
-# The state file is {phase-dir}/.uat-remediation-stage and contains a single word.
+# Remediation artifacts live in {phase-dir}/remediation/round-{RR}/ with
+# R{RR}-RESEARCH.md, R{RR}-PLAN.md, R{RR}-SUMMARY.md, R{RR}-UAT.md naming.
+# State file: {phase-dir}/remediation/.uat-remediation-stage (key=value pairs).
+# Legacy fallback: reads {phase-dir}/.uat-remediation-stage (single word) for
+# projects bootstrapped before round-dir support.
 
 set -eo pipefail
 
@@ -58,7 +64,8 @@ case "$PHASE_DIR" in
     ;;
 esac
 
-STATE_FILE="$PHASE_DIR/.uat-remediation-stage"
+STATE_FILE="$PHASE_DIR/remediation/.uat-remediation-stage"
+LEGACY_STATE_FILE="$PHASE_DIR/.uat-remediation-stage"
 
 # Major/critical chain order (UAT report serves as discussion — no separate discuss step)
 MAJOR_STAGES=("research" "plan" "execute" "done")
@@ -67,10 +74,37 @@ MINOR_STAGES=("fix" "done")
 
 get_stage() {
   if [ -f "$STATE_FILE" ]; then
-    cat "$STATE_FILE" | tr -d '[:space:]'
+    # New format: key=value pairs — extract stage value
+    local _val
+    _val=$(grep '^stage=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    if [ -n "$_val" ]; then
+      echo "$_val"
+    else
+      # Fallback: treat as single-word (shouldn't happen, but safe)
+      tr -d '[:space:]' < "$STATE_FILE"
+    fi
+  elif [ -f "$LEGACY_STATE_FILE" ]; then
+    # Legacy format: single word file at phase root
+    cat "$LEGACY_STATE_FILE" | tr -d '[:space:]'
   else
     echo "none"
   fi
+}
+
+get_round() {
+  if [ -f "$STATE_FILE" ]; then
+    local _val
+    _val=$(grep '^round=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    echo "${_val:-01}"
+  else
+    echo "01"
+  fi
+}
+
+get_round_dir() {
+  local round
+  round=$(get_round)
+  echo "$PHASE_DIR/remediation/round-${round}"
 }
 
 next_stage() {
@@ -102,11 +136,23 @@ next_stage() {
 
 do_init() {
   local severity="$1"
+  local initial_stage
   case "$severity" in
-    major|critical) echo "research" > "$STATE_FILE"; echo "research" ;;
-    minor)          echo "fix" > "$STATE_FILE"; echo "fix" ;;
-    *)              echo "research" > "$STATE_FILE"; echo "research" ;;
+    major|critical) initial_stage="research" ;;
+    minor)          initial_stage="fix" ;;
+    *)              initial_stage="research" ;;
   esac
+
+  # Create remediation directory and first round dir
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+
+  # Write key=value state file
+  printf 'stage=%s\nround=01\n' "$initial_stage" > "$STATE_FILE"
+
+  # Remove legacy state file if it exists (migrated to new location)
+  rm -f "$LEGACY_STATE_FILE"
+
+  echo "$initial_stage"
 
   # Pre-seed the phase CONTEXT.md with UAT report content so the
   # require_phase_discussion gate sees pre_seeded: true and skips
@@ -212,69 +258,53 @@ emit_init_context() {
 }
 
 emit_plan_metadata() {
-  # Compute next plan number from existing *-PLAN.md and *-RESEARCH.md files.
-  # Stage-aware: for plan/execute stages, uses research-plan correlation to find
-  # the current working plan number (handles session-death-before-advance edge case).
-  # Also reports existing research and plan file paths.
+  # Emit round-dir metadata for orchestrators.
+  # Reports the current round, round directory, and paths to existing
+  # research/plan files within the round dir (with legacy phase-root fallback).
   local stage="$1"
-  local phase_basename phase_prefix highest_plan_mm next_mm research_path="" plan_path=""
-  phase_basename=$(basename "$PHASE_DIR")
-  phase_prefix=$(echo "$phase_basename" | sed 's/-[^0-9].*//')
+  local round round_dir research_path="" plan_path=""
 
-  # Find highest MM from {phase}-{MM}-PLAN.md files
-  highest_plan_mm=$(find "$PHASE_DIR" -maxdepth 1 -name '*-PLAN.md' ! -name '.*' 2>/dev/null \
-    | sed -n "s|.*/[0-9]*-\([0-9][0-9]\)-PLAN\.md$|\1|p" \
-    | sort -n | tail -1)
+  round=$(get_round)
+  round_dir=$(get_round_dir)
 
-  if [ "$stage" = "plan" ] || [ "$stage" = "execute" ]; then
-    # For plan/execute: use research-plan correlation to find current working number.
-    # The research file was created with the correct MM during the research stage.
-    # If highest_research_mm >= highest_plan_mm, that's our current plan number
-    # (handles: plan written but stage not yet advanced to execute).
-    local highest_research_mm
-    highest_research_mm=$(find "$PHASE_DIR" -maxdepth 1 -name '*-RESEARCH.md' ! -name '.*' 2>/dev/null \
-      | sed -n "s|.*/[0-9]*-\([0-9][0-9]\)-RESEARCH\.md$|\1|p" \
-      | sort -n | tail -1)
-
-    if [ -n "$highest_research_mm" ]; then
-      local research_num=$((10#$highest_research_mm))
-      local plan_num=$((10#${highest_plan_mm:-0}))
-      if [ "$research_num" -ge "$plan_num" ]; then
-        next_mm=$(printf '%02d' "$research_num")
-      else
-        # Research behind plans (shouldn't happen, but safe fallback)
-        next_mm=$(printf '%02d' $(( plan_num + 1 )))
-      fi
-    elif [ -n "$highest_plan_mm" ]; then
-      next_mm=$(printf '%02d' $(( 10#$highest_plan_mm + 1 )))
-    else
-      next_mm="01"
-    fi
+  # Check for existing research in round dir first, then legacy phase root
+  local rr_research="${round_dir}/R${round}-RESEARCH.md"
+  if [ -f "$rr_research" ]; then
+    research_path="$rr_research"
   else
-    # For research/fix/done stages: next plan is after highest existing plan
-    if [ -n "$highest_plan_mm" ]; then
-      next_mm=$(printf '%02d' $(( 10#$highest_plan_mm + 1 )))
-    else
-      next_mm="01"
+    # Legacy fallback: per-plan research at phase root (brownfield)
+    local phase_basename phase_prefix
+    phase_basename=$(basename "$PHASE_DIR")
+    phase_prefix=$(echo "$phase_basename" | sed 's/-[^0-9].*//')
+    local legacy_per_plan legacy_phase_level
+    # Scan for highest per-plan research in phase root
+    legacy_per_plan=$(find "$PHASE_DIR" -maxdepth 1 -name "${phase_prefix}-*-RESEARCH.md" ! -name '.*' 2>/dev/null | sort | tail -1)
+    legacy_phase_level="${PHASE_DIR}/${phase_prefix}-RESEARCH.md"
+    if [ -n "$legacy_per_plan" ] && [ -f "$legacy_per_plan" ]; then
+      research_path="$legacy_per_plan"
+    elif [ -f "$legacy_phase_level" ]; then
+      research_path="$legacy_phase_level"
     fi
   fi
 
-  # Check for existing research: per-plan first, then legacy
-  local per_plan_research="${PHASE_DIR}/${phase_prefix}-${next_mm}-RESEARCH.md"
-  local legacy_research="${PHASE_DIR}/${phase_prefix}-RESEARCH.md"
-  if [ -f "$per_plan_research" ]; then
-    research_path="$per_plan_research"
-  elif [ -f "$legacy_research" ]; then
-    research_path="$legacy_research"
+  # Check for existing plan in round dir first, then legacy phase root
+  local rr_plan="${round_dir}/R${round}-PLAN.md"
+  if [ -f "$rr_plan" ]; then
+    plan_path="$rr_plan"
+  else
+    # Legacy fallback: highest plan file at phase root
+    local phase_basename phase_prefix
+    phase_basename=$(basename "$PHASE_DIR")
+    phase_prefix=$(echo "$phase_basename" | sed 's/-[^0-9].*//')
+    local legacy_plan
+    legacy_plan=$(find "$PHASE_DIR" -maxdepth 1 -name "${phase_prefix}-*-PLAN.md" ! -name '.*' 2>/dev/null | sort | tail -1)
+    if [ -n "$legacy_plan" ] && [ -f "$legacy_plan" ]; then
+      plan_path="$legacy_plan"
+    fi
   fi
 
-  # Check if plan already exists for computed next_plan
-  local plan_file="${PHASE_DIR}/${phase_prefix}-${next_mm}-PLAN.md"
-  if [ -f "$plan_file" ]; then
-    plan_path="$plan_file"
-  fi
-
-  echo "next_plan=${next_mm}"
+  echo "round=${round}"
+  echo "round_dir=${round_dir}"
   echo "research_path=${research_path}"
   echo "plan_path=${plan_path}"
 }
@@ -290,14 +320,30 @@ case "$CMD" in
       echo "done"
     else
       new_stage=$(next_stage "$current")
-      echo "$new_stage" > "$STATE_FILE"
+      round=$(get_round)
+      mkdir -p "$(dirname "$STATE_FILE")"
+      printf 'stage=%s\nround=%s\n' "$new_stage" "$round" > "$STATE_FILE"
+      # Remove legacy state file if we migrated to new location
+      [ -f "$LEGACY_STATE_FILE" ] && rm -f "$LEGACY_STATE_FILE"
       echo "$new_stage"
     fi
     ;;
 
   reset)
-    rm -f "$STATE_FILE"
+    rm -f "$STATE_FILE" "$LEGACY_STATE_FILE"
     echo "none"
+    ;;
+
+  needs-round)
+    # Start a new remediation round: increment round, create dir, reset to research
+    current_round=$(get_round)
+    next_round=$(( 10#$current_round + 1 ))
+    next_round_padded=$(printf '%02d' "$next_round")
+    mkdir -p "$PHASE_DIR/remediation/round-${next_round_padded}"
+    printf 'stage=research\nround=%s\n' "$next_round_padded" > "$STATE_FILE"
+    echo "research"
+    echo "round=${next_round_padded}"
+    echo "round_dir=$PHASE_DIR/remediation/round-${next_round_padded}"
     ;;
 
   init)
@@ -306,6 +352,7 @@ case "$CMD" in
       exit 1
     fi
     do_init "$SEVERITY_ARG"
+    emit_plan_metadata "$(get_stage)"
     emit_init_context
     ;;
 
@@ -316,12 +363,19 @@ case "$CMD" in
     fi
     existing=$(get_stage)
     if [ "$existing" != "none" ]; then
+      # If resuming from legacy state file, migrate to new format
+      if [ ! -f "$STATE_FILE" ] && [ -f "$LEGACY_STATE_FILE" ]; then
+        mkdir -p "$PHASE_DIR/remediation/round-01"
+        printf 'stage=%s\nround=01\n' "$existing" > "$STATE_FILE"
+        rm -f "$LEGACY_STATE_FILE"
+      fi
       echo "$existing"
       emit_plan_metadata "$existing"
     else
       do_init "$SEVERITY_ARG"
       # Init always sets research or fix — read back for stage-aware metadata
-      emit_plan_metadata "$(cat "$STATE_FILE" | tr -d '[:space:]')"
+      _init_stage=$(get_stage)
+      emit_plan_metadata "$_init_stage"
       emit_init_context
     fi
     ;;
