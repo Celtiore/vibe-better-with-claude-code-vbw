@@ -25,6 +25,7 @@ teardown() {
   [ -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
   grep -q "^stage=research$" "$PHASE_DIR/remediation/.uat-remediation-stage"
   grep -q "^round=01$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^layout=round-dir$" "$PHASE_DIR/remediation/.uat-remediation-stage"
   [ -d "$PHASE_DIR/remediation/round-01" ]
 }
 
@@ -414,9 +415,9 @@ EOF
   echo "$output" | grep -q "^plan_path=.*remediation/round-01/R01-PLAN.md$"
 }
 
-@test "get-or-init research_path falls back to legacy phase root" {
+@test "get-or-init research_path falls back to legacy phase root when layout=legacy" {
   mkdir -p "$PHASE_DIR/remediation"
-  printf 'stage=research\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  printf 'stage=research\nround=01\nlayout=legacy\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
   touch "$PHASE_DIR/01-RESEARCH.md"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
@@ -424,9 +425,9 @@ EOF
   echo "$output" | grep -q "^research_path=.*01-RESEARCH.md$"
 }
 
-@test "get-or-init per-plan research at phase root found as legacy fallback" {
+@test "get-or-init per-plan research at phase root found as legacy fallback when layout=legacy" {
   mkdir -p "$PHASE_DIR/remediation"
-  printf 'stage=plan\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  printf 'stage=plan\nround=01\nlayout=legacy\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
   touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md"
   touch "$PHASE_DIR/01-03-RESEARCH.md"
 
@@ -437,7 +438,7 @@ EOF
 
 @test "get-or-init round-dir research takes priority over legacy" {
   mkdir -p "$PHASE_DIR/remediation/round-01"
-  printf 'stage=plan\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  printf 'stage=plan\nround=01\nlayout=legacy\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
   echo "# Round research" > "$PHASE_DIR/remediation/round-01/R01-RESEARCH.md"
   touch "$PHASE_DIR/01-RESEARCH.md"
 
@@ -466,7 +467,7 @@ EOF
 
 # --- legacy state migration tests ---
 
-@test "get-or-init migrates legacy state file to new location" {
+@test "get-or-init migrates legacy state file to new location with layout=legacy" {
   echo "plan" > "$PHASE_DIR/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
@@ -478,8 +479,50 @@ EOF
   [ -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
   grep -q "^stage=plan$" "$PHASE_DIR/remediation/.uat-remediation-stage"
   grep -q "^round=01$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^layout=legacy$" "$PHASE_DIR/remediation/.uat-remediation-stage"
   # Round dir created
   [ -d "$PHASE_DIR/remediation/round-01" ]
+}
+
+@test "legacy migration enables phase-root fallback for research_path" {
+  echo "research" > "$PHASE_DIR/.uat-remediation-stage"
+  touch "$PHASE_DIR/01-RESEARCH.md"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  # Legacy migration sets layout=legacy, enabling phase-root fallback
+  echo "$output" | grep -q "^research_path=.*01-RESEARCH.md$"
+}
+
+@test "fresh init ignores legacy phase-root files (brownfield regression)" {
+  # Simulate brownfield: prior round left many plan/research files at phase root
+  touch "$PHASE_DIR/01-01-PLAN.md" "$PHASE_DIR/01-02-PLAN.md" "$PHASE_DIR/01-15-PLAN.md"
+  touch "$PHASE_DIR/01-13-RESEARCH.md" "$PHASE_DIR/01-15-RESEARCH.md"
+  cat > "$PHASE_DIR/01-UAT.md" <<'EOF'
+# UAT Report
+- Issue from latest round
+EOF
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  # Fresh init writes layout=round-dir — legacy phase-root files must NOT appear
+  echo "$output" | grep -q "^research_path=$"
+  echo "$output" | grep -q "^plan_path=$"
+  grep -q "^layout=round-dir$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+}
+
+@test "get-or-init fresh round ignores stale phase-root files" {
+  # New-format state file with round-dir layout (created by init or needs-round)
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  printf 'stage=research\nround=01\nlayout=round-dir\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  # Stale legacy files from prior completed rounds
+  touch "$PHASE_DIR/01-15-PLAN.md" "$PHASE_DIR/01-15-RESEARCH.md"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" get-or-init "$PHASE_DIR" "major"
+  [ "$status" -eq 0 ]
+  # Must NOT return stale phase-root files
+  echo "$output" | grep -q "^research_path=$"
+  echo "$output" | grep -q "^plan_path=$"
 }
 
 @test "legacy done stage migrates correctly" {
@@ -507,6 +550,7 @@ EOF
   [ -d "$PHASE_DIR/remediation/round-02" ]
   grep -q "^stage=research$" "$PHASE_DIR/remediation/.uat-remediation-stage"
   grep -q "^round=02$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^layout=round-dir$" "$PHASE_DIR/remediation/.uat-remediation-stage"
 }
 
 @test "needs-round from legacy-only state creates remediation dir and round-02" {
@@ -521,10 +565,11 @@ EOF
   echo "$output" | grep -q "^round_dir=.*remediation/round-02$"
   # remediation/ dir and round-02 sub-dir created by mkdir -p
   [ -d "$PHASE_DIR/remediation/round-02" ]
-  # New-format state file written
+  # New-format state file written with round-dir layout (new round = fresh start)
   [ -f "$PHASE_DIR/remediation/.uat-remediation-stage" ]
   grep -q "^stage=research$" "$PHASE_DIR/remediation/.uat-remediation-stage"
   grep -q "^round=02$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  grep -q "^layout=round-dir$" "$PHASE_DIR/remediation/.uat-remediation-stage"
 }
 
 @test "get-or-init plan_path empty when plan does not exist in round dir" {

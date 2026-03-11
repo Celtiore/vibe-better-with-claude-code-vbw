@@ -34,6 +34,8 @@
 # Remediation artifacts live in {phase-dir}/remediation/round-{RR}/ with
 # R{RR}-RESEARCH.md, R{RR}-PLAN.md, R{RR}-SUMMARY.md, R{RR}-UAT.md naming.
 # State file: {phase-dir}/remediation/.uat-remediation-stage (key=value pairs).
+#   layout=round-dir  — artifacts in round dir only (fresh init / needs-round)
+#   layout=legacy     — phase-root artifacts are current round (migrated from old format)
 # Legacy fallback: reads {phase-dir}/.uat-remediation-stage (single word) for
 # projects bootstrapped before round-dir support.
 
@@ -101,6 +103,20 @@ get_round() {
   fi
 }
 
+get_layout() {
+  # Returns "legacy" when phase-root artifacts belong to the current round
+  # (migrated from legacy single-word state file), "round-dir" otherwise.
+  # Only legacy layout enables fallback to phase-root plan/research files.
+  if [ -f "$STATE_FILE" ]; then
+    local _val
+    _val=$(grep '^layout=' "$STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    echo "${_val:-round-dir}"
+  else
+    # Legacy state file at phase root — artifacts are at phase root
+    echo "legacy"
+  fi
+}
+
 get_round_dir() {
   local round
   round=$(get_round)
@@ -146,8 +162,8 @@ do_init() {
   # Create remediation directory and first round dir
   mkdir -p "$PHASE_DIR/remediation/round-01"
 
-  # Write key=value state file
-  printf 'stage=%s\nround=01\n' "$initial_stage" > "$STATE_FILE"
+  # Write key=value state file (layout=round-dir: fresh round, no legacy fallback)
+  printf 'stage=%s\nround=01\nlayout=round-dir\n' "$initial_stage" > "$STATE_FILE"
 
   # Remove legacy state file if it exists (migrated to new location)
   rm -f "$LEGACY_STATE_FILE"
@@ -260,18 +276,21 @@ emit_init_context() {
 emit_plan_metadata() {
   # Emit round-dir metadata for orchestrators.
   # Reports the current round, round directory, and paths to existing
-  # research/plan files within the round dir (with legacy phase-root fallback).
-  local round round_dir research_path="" plan_path=""
+  # research/plan files within the round dir. Legacy phase-root fallback
+  # only applies when layout=legacy (migrated from old single-word state file),
+  # preventing stale artifacts from previous rounds being returned as current.
+  local round round_dir layout research_path="" plan_path=""
 
   round=$(get_round)
   round_dir=$(get_round_dir)
+  layout=$(get_layout)
 
   # Check for existing research in round dir first, then legacy phase root
   local rr_research="${round_dir}/R${round}-RESEARCH.md"
   if [ -f "$rr_research" ]; then
     research_path="$rr_research"
-  else
-    # Legacy fallback: per-plan research at phase root (brownfield)
+  elif [ "$layout" = "legacy" ]; then
+    # Legacy fallback: per-plan research at phase root (brownfield migration only)
     local phase_basename phase_prefix
     phase_basename=$(basename "$PHASE_DIR")
     phase_prefix=$(echo "$phase_basename" | sed 's/-[^0-9].*//')
@@ -290,8 +309,8 @@ emit_plan_metadata() {
   local rr_plan="${round_dir}/R${round}-PLAN.md"
   if [ -f "$rr_plan" ]; then
     plan_path="$rr_plan"
-  else
-    # Legacy fallback: highest plan file at phase root
+  elif [ "$layout" = "legacy" ]; then
+    # Legacy fallback: highest plan file at phase root (brownfield migration only)
     local phase_basename phase_prefix
     phase_basename=$(basename "$PHASE_DIR")
     phase_prefix=$(echo "$phase_basename" | sed 's/-[^0-9].*//')
@@ -320,8 +339,9 @@ case "$CMD" in
     else
       new_stage=$(next_stage "$current")
       round=$(get_round)
+      layout=$(get_layout)
       mkdir -p "$(dirname "$STATE_FILE")"
-      printf 'stage=%s\nround=%s\n' "$new_stage" "$round" > "$STATE_FILE"
+      printf 'stage=%s\nround=%s\nlayout=%s\n' "$new_stage" "$round" "$layout" > "$STATE_FILE"
       # Remove legacy state file if we migrated to new location
       [ -f "$LEGACY_STATE_FILE" ] && rm -f "$LEGACY_STATE_FILE"
       echo "$new_stage"
@@ -339,7 +359,7 @@ case "$CMD" in
     next_round=$(( 10#$current_round + 1 ))
     next_round_padded=$(printf '%02d' "$next_round")
     mkdir -p "$PHASE_DIR/remediation/round-${next_round_padded}"
-    printf 'stage=research\nround=%s\n' "$next_round_padded" > "$STATE_FILE"
+    printf 'stage=research\nround=%s\nlayout=round-dir\n' "$next_round_padded" > "$STATE_FILE"
     echo "research"
     echo "round=${next_round_padded}"
     echo "round_dir=$PHASE_DIR/remediation/round-${next_round_padded}"
@@ -365,7 +385,8 @@ case "$CMD" in
       # If resuming from legacy state file, migrate to new format
       if [ ! -f "$STATE_FILE" ] && [ -f "$LEGACY_STATE_FILE" ]; then
         mkdir -p "$PHASE_DIR/remediation/round-01"
-        printf 'stage=%s\nround=01\n' "$existing" > "$STATE_FILE"
+        # layout=legacy: phase-root artifacts are current work (migrated from old format)
+        printf 'stage=%s\nround=01\nlayout=legacy\n' "$existing" > "$STATE_FILE"
         rm -f "$LEGACY_STATE_FILE"
       fi
       echo "$existing"
