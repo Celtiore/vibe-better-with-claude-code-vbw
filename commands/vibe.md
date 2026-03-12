@@ -358,18 +358,10 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
        - Spawn vbw-dev via Task tool: Set `subagent_type: "vbw:vbw-dev"` and `model: "${DEV_MODEL}"`. If `DEV_MAX_TURNS` is non-empty, also pass `maxTurns: ${DEV_MAX_TURNS}`. If empty, omit maxTurns.
        - Dev prompt MUST include:
          - The task details from the plan (description, files to modify, acceptance criteria).
-         - `"Write your execution summary to {round_dir}/R{RR}-{task-id}-SUMMARY.md"` (e.g., `R01-P07-SUMMARY.md`). Do NOT include wave prefixes (no `W1-`, `W2-`, etc.) in filenames.
+         - `"Append your execution results to {round_dir}/R{RR}-SUMMARY.md under a section header for this task (e.g., ## Task {task-id})."` Do NOT include wave prefixes (no `W1-`, `W2-`, etc.) or task-id segments in the summary filename — all tasks share a single `R{RR}-SUMMARY.md` per round.
          - `"Do NOT create git worktrees. Work in the project root directory."`
          - If `.vbw-planning/codebase/META.md` exists: `"Read CONVENTIONS.md, PATTERNS.md, STRUCTURE.md, and DEPENDENCIES.md (whichever exist) from .vbw-planning/codebase/ to bootstrap codebase understanding before executing."`
        - Display: `◆ Spawning Dev agent for task {task-id} (${DEV_MODEL})...` → `✓ Dev agent complete for task {task-id}`.
-       - Validate: Confirm the summary file exists (read first line).
-     - After all tasks complete, normalize filenames (strips any wave prefixes that leaked):
-       ```bash
-       NORM_SCRIPT="/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/normalize-plan-filenames.sh"
-       if [ -f "$NORM_SCRIPT" ]; then
-         bash "$NORM_SCRIPT" "{round_dir}"
-       fi
-       ```
      - **Worktree cleanup check:** After execution, check for orphan CC worktrees:
        ```bash
        if [ -d ".claude/worktrees" ] && [ -n "$(ls -A .claude/worktrees 2>/dev/null)" ]; then
