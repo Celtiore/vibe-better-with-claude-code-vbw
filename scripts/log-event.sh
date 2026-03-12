@@ -17,8 +17,8 @@ set -u
 #   next_action=<action>  -- e.g., "escalate_lead", "retry", "reassign", "manual_fix"
 #   reason=<description>  -- Human-readable blocker description
 #
-# When v2_typed_protocol=true, unknown event types are rejected
-# (warning to stderr, event not written). When false, all types accepted.
+# Unknown event types are always rejected (warning to stderr, event not
+# written). v2_typed_protocol was graduated in v2.4 and has no runtime effect.
 
 if [ $# -lt 2 ]; then
   exit 0
@@ -99,14 +99,83 @@ else
   EVENT_ID="${TS}-${RANDOM}${RANDOM}"
 fi
 
-PLAN_FIELD=""
+# Build event JSON via jq for safety (handles hyphenated plan IDs, special chars)
+_JQ_ARGS=(
+  --arg ts "$TS"
+  --arg event_id "$EVENT_ID"
+  --arg correlation_id "$CORRELATION_ID"
+  --arg event "$EVENT_TYPE"
+)
+# Emit phase as number if purely numeric, otherwise as string
+case "$PHASE" in
+  *[!0-9]*) _JQ_ARGS+=(--arg phase "$PHASE") ;;
+  *)        _JQ_ARGS+=(--argjson phase "$PHASE") ;;
+esac
+_JQ_EXPR='{ts: $ts, event_id: $event_id, correlation_id: $correlation_id, event: $event, phase: $phase}'
+
 if [ -n "$PLAN" ]; then
-  PLAN_FIELD=",\"plan\":${PLAN}"
+  # Emit plan as number if purely numeric, otherwise as string (hyphenated IDs)
+  case "$PLAN" in
+    *[!0-9]*) _JQ_ARGS+=(--arg plan "$PLAN"); _JQ_EXPR="${_JQ_EXPR} + {plan: \$plan}" ;;
+    *)        _JQ_ARGS+=(--argjson plan "$PLAN"); _JQ_EXPR="${_JQ_EXPR} + {plan: \$plan}" ;;
+  esac
 fi
 
-DATA_FIELD=""
 if [ -n "$DATA_PAIRS" ]; then
-  DATA_FIELD=",\"data\":{${DATA_PAIRS}}"
+  # DATA_PAIRS is pre-formatted JSON object content from key=value args
+  _JQ_ARGS+=(--argjson data "{${DATA_PAIRS}}"); _JQ_EXPR="${_JQ_EXPR} + {data: \$data}"
 fi
 
-echo "{\"ts\":\"${TS}\",\"event_id\":\"${EVENT_ID}\",\"correlation_id\":\"${CORRELATION_ID}\",\"event\":\"${EVENT_TYPE}\",\"phase\":${PHASE}${PLAN_FIELD}${DATA_FIELD}}" >> "$EVENTS_FILE" 2>/dev/null || true
+if command -v jq &>/dev/null; then
+  jq -nc "${_JQ_ARGS[@]}" "$_JQ_EXPR" >> "$EVENTS_FILE" 2>/dev/null || true
+else
+  # Fallback: quote plan field as string for safety when jq unavailable
+  PLAN_FIELD=""
+  if [ -n "$PLAN" ]; then
+    PLAN_FIELD=",\"plan\":\"${PLAN}\""
+  fi
+  DATA_FIELD=""
+  if [ -n "$DATA_PAIRS" ]; then
+    DATA_FIELD=",\"data\":{${DATA_PAIRS}}"
+  fi
+  # Quote phase as string if non-numeric
+  case "$PHASE" in
+    *[!0-9]*) _PHASE_JSON="\"${PHASE}\"" ;;
+    *)        _PHASE_JSON="${PHASE}" ;;
+  esac
+  echo "{\"ts\":\"${TS}\",\"event_id\":\"${EVENT_ID}\",\"correlation_id\":\"${CORRELATION_ID}\",\"event\":\"${EVENT_TYPE}\",\"phase\":${_PHASE_JSON}${PLAN_FIELD}${DATA_FIELD}}" >> "$EVENTS_FILE" 2>/dev/null || true
+fi
+
+# ── MuninnDB Event Router (Approche B) ──────────────────────────────
+# Forward high-value events to muninndb-pending.jsonl for later ingestion.
+# This block is a local customisation — VBW plugin updates will overwrite it.
+# To restore after update: append this block to the end of log-event.sh
+# Config: .vbw-planning/config.json → "muninndb_realtime": true (default)
+# Events forwarded: phase_end, phase_planned, gate_passed, gate_failed,
+#                   task_completed_confirmed, error
+# ─────────────────────────────────────────────────────────────────────
+_MUNINN_EVENTS_FILE="${EVENTS_DIR}/muninndb-pending.jsonl"
+_MUNINN_FORWARD=false
+
+# Check config
+if [ -f "$CONFIG_PATH" ] && command -v jq &>/dev/null; then
+  _MUNINN_ENABLED=$(jq -r '.muninndb_realtime // true' "$CONFIG_PATH" 2>/dev/null)
+  [ "$_MUNINN_ENABLED" = "false" ] && _MUNINN_FORWARD=false
+else
+  _MUNINN_FORWARD=true
+fi
+
+# Filter: only forward high-value lifecycle events
+case "$EVENT_TYPE" in
+  phase_end|phase_planned|gate_passed|gate_failed|task_completed_confirmed|error)
+    _MUNINN_FORWARD=true
+    ;;
+esac
+
+if [ "$_MUNINN_FORWARD" = true ]; then
+  _MUNINN_JSON="{\"ts\":\"${TS}\",\"event_id\":\"${EVENT_ID}\",\"event\":\"${EVENT_TYPE}\",\"phase\":\"${PHASE}\""
+  [ -n "$PLAN" ] && _MUNINN_JSON="${_MUNINN_JSON},\"plan\":\"${PLAN}\""
+  [ -n "$DATA_PAIRS" ] && _MUNINN_JSON="${_MUNINN_JSON},\"data\":{${DATA_PAIRS}}"
+  _MUNINN_JSON="${_MUNINN_JSON},\"source\":\"log-event\",\"synced\":false}"
+  echo "$_MUNINN_JSON" >> "$_MUNINN_EVENTS_FILE" 2>/dev/null || true
+fi
