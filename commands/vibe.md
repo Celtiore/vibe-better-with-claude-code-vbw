@@ -327,7 +327,8 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
      - Lead prompt MUST include:
        - If `research_path` from step 5 is non-empty: `Read {research_path} for full research findings before planning.` (Lead must read the file, do NOT inline a summary.)
        - The priority-ranked issue list from step 3 with recurring-issue annotations.
-       - `"Plans will be executed by a team of parallel Dev agents — one agent per plan. Maximize wave 1 plans (no deps) so agents start simultaneously. Ensure same-wave plans modify disjoint file sets to avoid merge conflicts."`
+       - `"Remediation tasks will be executed sequentially — one Dev agent per task, each waiting for the previous to complete. Do NOT organize into waves or parallel groups. Produce a flat ordered task list where each task can see the results of previous tasks. This is intentional: remediation fixes prior failures, so each fix must build on confirmed-good state from the previous fix."`
+       - `"Follow the PLAN.md template structure: YAML frontmatter (phase, plan, title, depends_on, must_haves) followed by <objective>, <context>, <tasks> with <task> blocks, <verification>, <success_criteria>, and <output> sections."` Use `wave: 1` and `depends_on: []` in frontmatter (no multi-wave plans).
        - Output path: `{round_dir}/R{RR}-PLAN.md` (using `round` from step 5 as `{RR}`).
      - Display `◆ Spawning Lead agent...` → `✓ Lead agent complete`.
      - Normalize plan filenames:
@@ -337,7 +338,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
          bash "$NORM_SCRIPT" "{round_dir}"
        fi
        ```
-     - Validate: Verify plan has valid frontmatter (phase, plan, title, wave, depends_on, must_haves) and tasks.
+     - Validate: Verify plan has valid frontmatter (phase, plan, title, depends_on, must_haves) and tasks.
      - After planning completes, advance:
        ```bash
        bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh advance "$PHASE_DIR"
