@@ -450,3 +450,19 @@ teardown() {
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "suggest-compact: 3-field format respects compaction threshold" {
+  # compaction_threshold is absolute token count — 165000 tokens
+  # 82% of 200K = 164000 used tokens + EST_COST → exceeds 165000 → warn
+  echo '{"compaction_threshold":165000}' > .vbw-planning/config.json
+  echo "my-session|82|200000" > .vbw-planning/.context-usage
+  CLAUDE_SESSION_ID="my-session" run bash "$SCRIPTS_DIR/suggest-compact.sh" execute
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PRE-FLIGHT CONTEXT GUARD"* ]]
+
+  # 30% of 200K = 60000 used tokens + EST_COST → below 165000 → no warn
+  echo "my-session|30|200000" > .vbw-planning/.context-usage
+  CLAUDE_SESSION_ID="my-session" run bash "$SCRIPTS_DIR/suggest-compact.sh" execute
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}

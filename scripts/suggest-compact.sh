@@ -11,7 +11,7 @@ set -u
 #   mode: execute|plan|verify|qa|discuss
 #
 # Reads:
-#   .vbw-planning/.context-usage   — "used_pct|context_window_size" (cached by statusline)
+#   .vbw-planning/.context-usage   — "session_id|used_pct|context_window_size" (cached by statusline; legacy 2-field "used_pct|context_window_size" also accepted)
 #   .vbw-planning/config.json      — compaction_threshold, autonomy, effort
 #   Plugin root reference files     — measured per mode
 #   .vbw-planning/ project files    — measured per mode
