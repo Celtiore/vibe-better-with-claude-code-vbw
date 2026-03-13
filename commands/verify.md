@@ -188,7 +188,9 @@ options:
 
 The tool automatically provides a freeform "Other" option for the user to describe issues.
 
-After response: process (Step 5), persist (Step 7), then present the NEXT test. Repeat until all tests are done, then go to Step 8.
+**STOP HERE.** Wait for the AskUserQuestion response. Do NOT continue to the next test, do NOT skip to Step 6, and do NOT end the turn. The tool call blocks until the user responds.
+
+**After the user responds:** process the response (Step 6), persist to disk (Step 8), then present the NEXT test using the same CHECKPOINT + AskUserQuestion format. **STOP and wait again.** Repeat until all tests are done, then go to Step 9.
 
 ### 6. Response mapping
 
