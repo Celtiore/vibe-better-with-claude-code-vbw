@@ -196,7 +196,7 @@ if [ -d "$PHASES_DIR" ]; then
         continue
       fi
 
-      UAT_FILE=$(latest_non_source_uat "$DIR")
+      UAT_FILE=$(current_uat "$DIR")
       if [ -f "$UAT_FILE" ]; then
         UAT_STATUS=$(extract_status_value "$UAT_FILE")
         if [ "$UAT_STATUS" = "issues_found" ]; then
@@ -313,7 +313,7 @@ if [ -d "$PHASES_DIR" ]; then
           fi
           _rem_stage="done"
         fi
-        if [ "$_rem_stage" = "done" ]; then
+        if [ "$_rem_stage" = "done" ] || [ "$_rem_stage" = "reverify" ]; then
           NEXT_PHASE_STATE="needs_reverification"
         else
           NEXT_PHASE_STATE="needs_uat_remediation"
@@ -405,7 +405,7 @@ if [ ${#PHASE_DIRS[@]} -gt 0 ]; then
     [ "$_uv_plans" -gt 0 ] || continue
     _uv_sums=$(count_complete_summaries "$_uv_dir")
     [ "$_uv_sums" -ge "$_uv_plans" ] || continue
-    _uv_uat=$(latest_non_source_uat "$_uv_dir")
+    _uv_uat=$(current_uat "$_uv_dir")
     _uv_is_unverified=false
     if [ -z "$_uv_uat" ]; then
       _uv_is_unverified=true
@@ -544,7 +544,7 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
         continue
       fi
 
-      _ms_uat=$(latest_non_source_uat "$_ms_phase_dir")
+      _ms_uat=$(current_uat "$_ms_phase_dir")
       if [ -f "$_ms_uat" ]; then
         _ms_uat_status=$(extract_status_value "$_ms_uat")
         if [ "$_ms_uat_status" = "issues_found" ]; then

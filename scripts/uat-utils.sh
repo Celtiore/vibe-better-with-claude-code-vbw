@@ -7,6 +7,8 @@
 #                                   with body-level fallback for brownfield files.
 #   latest_non_source_uat <dir>   — Find the latest canonical UAT file in a phase
 #                                   directory, excluding SOURCE-UAT.md copies.
+#   current_uat <dir>             — Find the active UAT file (round-dir first,
+#                                   then phase-root fallback).
 #   count_uat_rounds <dir> <num>  — Count existing {num}-UAT-round-*.md files
 #                                   in a phase directory. Returns max round number.
 
@@ -155,4 +157,40 @@ extract_round_issue_ids() {
       print id
     }
   ' "$file"
+}
+
+# current_uat — Find the active UAT file, checking round-dir layout first.
+#
+# If the phase has a round-dir remediation layout with an R{RR}-UAT.md in the
+# current round directory, returns that path. Otherwise falls back to
+# latest_non_source_uat() (phase-root UAT).
+#
+# Same contract as latest_non_source_uat: returns a filepath string if found,
+# empty string if not, exit 0 always.
+current_uat() {
+  local dir="$1"
+
+  case "$dir" in
+    */) ;;
+    *) dir="$dir/" ;;
+  esac
+
+  # Check round-dir remediation state
+  local state_file="${dir}remediation/.uat-remediation-stage"
+  if [ -f "$state_file" ]; then
+    local layout round rr
+    layout=$(grep '^layout=' "$state_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    round=$(grep '^round=' "$state_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+    if [ "$layout" = "round-dir" ] && [ -n "$round" ]; then
+      rr=$(printf '%02d' "$round" 2>/dev/null) || rr="$round"
+      local round_uat="${dir}remediation/round-${rr}/R${rr}-UAT.md"
+      if [ -f "$round_uat" ]; then
+        printf '%s\n' "$round_uat"
+        return 0
+      fi
+    fi
+  fi
+
+  # Fall back to phase-root UAT
+  latest_non_source_uat "${dir%/}"
 }

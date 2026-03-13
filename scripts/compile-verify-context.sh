@@ -55,6 +55,7 @@ if [ "$REMEDIATION_ONLY" = true ]; then
     rr=$(printf '%02d' "$LATEST_ROUND")
     ALL_PLAN_FILES=$(find "$REMED_DIR/round-$rr" -maxdepth 1 -name "R${rr}-PLAN.md" 2>/dev/null | sort)
     SCOPE_HEADER="verify_scope=remediation round=$rr"
+    UAT_PATH="remediation/round-$rr/R${rr}-UAT.md"
   else
     # Fallback: no completed round found — use full scope
     REMEDIATION_ONLY=false
@@ -75,6 +76,9 @@ if [ "$REMEDIATION_ONLY" = false ]; then
     fi
   fi
   SCOPE_HEADER="verify_scope=full"
+  # Extract phase number from directory basename (e.g., "03" from "03-slug-name")
+  _phase_num=$(basename "$PHASE_DIR" | sed 's/^\([0-9]*\).*/\1/')
+  UAT_PATH="${_phase_num}-UAT.md"
 fi
 
 if [ -z "$ALL_PLAN_FILES" ]; then
@@ -82,8 +86,9 @@ if [ -z "$ALL_PLAN_FILES" ]; then
   exit 0
 fi
 
-# Emit scope header after confirming plans exist
+# Emit scope header and UAT path after confirming plans exist
 echo "$SCOPE_HEADER"
+echo "uat_path=$UAT_PATH"
 
 PLAN_COUNT=0
 

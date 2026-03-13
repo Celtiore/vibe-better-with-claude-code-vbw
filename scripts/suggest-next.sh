@@ -26,7 +26,7 @@ TARGET_PHASE_ARG="${3:-}"
 PLANNING_DIR=".vbw-planning"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Source shared UAT helpers (extract_status_value → aliased as read_status_field, latest_non_source_uat)
+# Source shared UAT helpers (extract_status_value → aliased as read_status_field, current_uat, latest_non_source_uat)
 # shellcheck source=uat-utils.sh
 . "$SCRIPT_DIR/uat-utils.sh"
 # Alias for backward compat within this script
@@ -384,7 +384,7 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
       if [ "$_plans" -eq 0 ] || [ "$_summaries" -lt "$_plans" ]; then
         continue
       fi
-      _uat=$(latest_non_source_uat "$dir")
+      _uat=$(current_uat "$dir")
       if [ -f "$_uat" ]; then
         _us=$(read_status_field "$_uat")
         if [ "$_us" = "issues_found" ]; then
@@ -400,7 +400,7 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
   fi
 
   if [ -n "$verify_target_phase_dir" ]; then
-    verify_target_uat=$(latest_non_source_uat "$verify_target_phase_dir")
+    verify_target_uat=$(current_uat "$verify_target_phase_dir")
   fi
 
   if [ -f "$verify_target_uat" ]; then

@@ -441,3 +441,79 @@ EOF
   # First non-empty content line should contain verify_scope
   [[ "${lines[0]}" == "verify_scope=full" ]]
 }
+
+# --- uat_path emission tests ---
+
+@test "compile-verify-context: full scope emits uat_path with phase number" {
+  cat > "$PHASE_DIR/03-01-PLAN.md" <<'EOF'
+---
+plan: 01
+title: Plan for uat_path test
+must_haves:
+  - Something testable
+---
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uat_path=03-UAT.md"* ]]
+}
+
+@test "compile-verify-context: remediation scope emits uat_path with round dir" {
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  cat > "$PHASE_DIR/remediation/round-01/R01-PLAN.md" <<'EOF'
+---
+plan: R01
+title: Round 1 remediation
+must_haves:
+  - Fix the issue
+---
+EOF
+  cat > "$PHASE_DIR/remediation/round-01/R01-SUMMARY.md" <<'EOF'
+---
+status: complete
+---
+## What Was Built
+- Fixed things
+## Files Modified
+- file.txt
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" --remediation-only "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uat_path=remediation/round-01/R01-UAT.md"* ]]
+}
+
+@test "compile-verify-context: fallback full scope emits uat_path with phase number" {
+  # Phase-root plan exists
+  cat > "$PHASE_DIR/03-01-PLAN.md" <<'EOF'
+---
+plan: 01
+title: Fallback test
+must_haves:
+  - Feature
+---
+EOF
+
+  # Remediation round with no SUMMARY (incomplete) — forces fallback to full
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  cat > "$PHASE_DIR/remediation/round-01/R01-PLAN.md" <<'EOF'
+---
+plan: R01
+title: Incomplete
+must_haves:
+  - Unfinished
+---
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" --remediation-only "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"verify_scope=full"* ]]
+  [[ "$output" == *"uat_path=03-UAT.md"* ]]
+}

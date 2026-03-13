@@ -98,7 +98,8 @@ QA verification summary (pre-extracted from VERIFICATION.md):
   Use the refreshed output in place of the pre-computed blocks from Context.
 - Use pre-computed verify context from the "Pre-computed verify context" block above (or refreshed output if normalization ran) — it contains per-plan titles, must_haves, what was built, files modified, and status. Do NOT read individual `*-SUMMARY.md` or `*-PLAN.md` files.
 - **Parse `verify_scope`** from the first line of the verify context block. When `verify_scope=remediation round=RR`, this is a re-verification session scoped to remediation round RR only. When `verify_scope=full`, standard full-scope verification. Use this in Step 4 to determine test framing.
-- **If user specified an explicit phase number** that differs from `verify_target_slug`, ignore the pre-computed context (it was generated for the auto-detected phase). Read PLAN/SUMMARY files from the user-specified phase directory instead — this always uses full scope.
+- **Parse `uat_path`** from the second line of the verify context block. This is the relative path (from phase dir) where the UAT file should be written — e.g., `03-UAT.md` for full scope or `remediation/round-01/R01-UAT.md` for remediation scope. Use this in Steps 4, 8, and 9 instead of hardcoding `{phase}-UAT.md`.
+- **If user specified an explicit phase number** that differs from `verify_target_slug`, ignore the pre-computed context (it was generated for the auto-detected phase). Read PLAN/SUMMARY files from the user-specified phase directory instead — this always uses full scope with `uat_path={phase}-UAT.md`.
 
 ### 2. Handle re-verification state
 
@@ -164,7 +165,7 @@ If a plan only contains backend/test/script changes with no user-facing behavior
 
 If a plan's work is purely internal (refactor, test infrastructure, script changes) with no user-facing behavior, generate a single lightweight checkpoint asking the user to confirm the app still works as expected from their perspective, rather than asking them to run automated checks.
 
-Write the initial `{phase}-UAT.md` in the phase directory using the `templates/UAT.md` format:
+Write the initial UAT file at `{phase-dir}/{uat_path}` (using the pre-computed `uat_path` from Step 1) using the `templates/UAT.md` format. If the parent directory doesn't exist (e.g., `remediation/round-01/`), create it first.
 - Populate YAML frontmatter: phase, plan_count, status=in_progress, started=today, total_tests
 - Write all test entries with Result fields empty
 
@@ -287,13 +288,13 @@ Discovered issue D{NN} recorded (severity: {level}).
 
 ### 8. After each response: persist immediately
 
-- Update `{phase}-UAT.md` with the result for this test
+- Update the UAT file at `{phase-dir}/{uat_path}` with the result for this test
 - Write the file to disk (survives /clear)
 - Display progress: `✓ {completed}/{total} tests`
 
 ### 9. Session complete
 
-- Update `{phase}-UAT.md` frontmatter: status (complete or issues_found), completed date, final counts
+- Update the UAT file at `{phase-dir}/{uat_path}` frontmatter: status (complete or issues_found), completed date, final counts
 - Display summary:
 
 ```text
@@ -317,9 +318,22 @@ Discovered issue D{NN} recorded (severity: {level}).
 ```
 These are already recorded in the UAT.md and will flow into remediation alongside test failures. If no discovered issues: omit the section.
 
+**Remediation lifecycle advance (when `verify_scope=remediation`):**
+- If `status=issues_found`: Advance to the next remediation round:
+  ```bash
+  bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh needs-round "{phase-dir}"
+  ```
+  This increments the round counter, creates the next round directory, and resets stage to `research`.
+- If `status=complete`: Remediation verified successfully. Reset remediation stage:
+  ```bash
+  # Clear the remediation state — no more rounds needed
+  _state_file="{phase-dir}/remediation/.uat-remediation-stage"
+  if [ -f "$_state_file" ]; then rm "$_state_file"; fi
+  ```
+
 - If issues found:
   - Any issue severity is `critical` or `major`:
-    - `Suggest /vbw:vibe to continue UAT remediation directly from {phase}-UAT.md`
+    - `Suggest /vbw:vibe to continue UAT remediation directly from {uat_path}`
   - All issues are `minor`:
     - `Suggest /vbw:fix to address recorded issues.`
 
