@@ -61,8 +61,8 @@ if [ -f "$_new_stage_file" ]; then
 elif [ -f "$_stage_file" ]; then
   _REM_STAGE=$(tr -d '[:space:]' < "$_stage_file")
 fi
-if [ "$_REM_STAGE" != "done" ]; then
-  echo "Error: remediation stage is '${_REM_STAGE}', not 'done' — remediation still in progress" >&2
+if [ "$_REM_STAGE" != "done" ] && [ "$_REM_STAGE" != "verify" ]; then
+  echo "Error: remediation stage is '${_REM_STAGE}', not 'done' or 'verify' — remediation still in progress" >&2
   exit 1
 fi
 
@@ -100,18 +100,40 @@ fi
 # For round-dir UATs already in their round directory, skip mv archival
 case "$UAT_FILE" in
   */remediation/round-*/R*-UAT.md)
-    # UAT already lives in its round dir — no archival mv needed, just advance state
-    bash "$_SCRIPT_DIR_PR/uat-remediation-state.sh" needs-round "${PHASE_DIR%/}" >/dev/null
-    rm -f "${PHASE_DIR}.uat-remediation-stage"
-    if git rev-parse --git-dir >/dev/null 2>&1; then
-      git add "${PHASE_DIR}remediation/.uat-remediation-stage" 2>/dev/null || true
-      git rm -f --quiet "${PHASE_DIR}.uat-remediation-stage" 2>/dev/null || true
+    # Extract round number from the UAT filename (e.g., R01 → 1, R02 → 2)
+    _uat_round_raw=$(basename "$UAT_FILE" | sed 's/^R0*\([0-9]*\)-UAT\.md$/\1/')
+    _uat_round="${_uat_round_raw:-0}"
+    # Read current round from state file (strip leading zeros for numeric compare)
+    _cur_round="1"
+    if [ -f "$_new_stage_file" ]; then
+      _cr_val=$(grep '^round=' "$_new_stage_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+      _cur_round=$(echo "${_cr_val:-01}" | sed 's/^0*//')
+      _cur_round="${_cur_round:-1}"
     fi
     PHASE_NUM=$(basename "${PHASE_DIR%/}" | sed 's/^\([0-9]*\).*/\1/')
-    echo "archived=in-round-dir"
-    echo "round_file=$UAT_BASENAME"
-    echo "phase=$PHASE_NUM"
-    echo "layout=$_LAYOUT"
+    if [ "$_uat_round" = "$_cur_round" ]; then
+      # Current round's UAT has issues — advance to next round
+      bash "$_SCRIPT_DIR_PR/uat-remediation-state.sh" needs-round "${PHASE_DIR%/}" >/dev/null
+      rm -f "${PHASE_DIR}.uat-remediation-stage"
+      if git rev-parse --git-dir >/dev/null 2>&1; then
+        git add "${PHASE_DIR}remediation/.uat-remediation-stage" 2>/dev/null || true
+        git rm -f --quiet "${PHASE_DIR}.uat-remediation-stage" 2>/dev/null || true
+      fi
+      echo "archived=in-round-dir"
+      echo "round_file=$UAT_BASENAME"
+      echo "phase=$PHASE_NUM"
+      echo "layout=$_LAYOUT"
+    else
+      # Stale UAT from a previous round — current round has no UAT yet.
+      # Don't archive or advance rounds; move stage to verify so the
+      # orchestrator writes a fresh UAT for the current round.
+      if [ "$_REM_STAGE" = "done" ]; then
+        bash "$_SCRIPT_DIR_PR/uat-remediation-state.sh" advance "${PHASE_DIR%/}" >/dev/null
+      fi
+      echo "skipped=ready_for_verify"
+      echo "phase=$PHASE_NUM"
+      echo "layout=$_LAYOUT"
+    fi
     exit 0
     ;;
 esac

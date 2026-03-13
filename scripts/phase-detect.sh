@@ -296,11 +296,19 @@ if [ -d "$PHASES_DIR" ]; then
         # advanced (session crash/kill/compaction), auto-advance to "done" so the
         # orchestrator routes to re-verification instead of re-execution.
         # Also check round-dir summaries for the new layout.
+        # Scope to current round only — previous rounds' artifacts must not
+        # inflate totals and cause premature execute→done auto-advance.
         _total_plans="$NEXT_PHASE_PLANS"
         _total_summaries="$NEXT_PHASE_SUMMARIES"
-        # Count round-dir plans/summaries
-        _rd_plans=$(find "$TARGET_DIR" -path '*/remediation/round-*/R*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-        _rd_summaries=$(find "$TARGET_DIR" -path '*/remediation/round-*/R*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+        # Read current round for scoped counting
+        _cur_rr="01"
+        if [ -f "${TARGET_DIR}remediation/.uat-remediation-stage" ]; then
+          _cr_val=$(grep '^round=' "${TARGET_DIR}remediation/.uat-remediation-stage" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+          _cur_rr="${_cr_val:-01}"
+        fi
+        # Count round-dir plans/summaries for current round only
+        _rd_plans=$(find "$TARGET_DIR" -path "*/remediation/round-${_cur_rr}/R${_cur_rr}-PLAN.md" 2>/dev/null | wc -l | tr -d ' ')
+        _rd_summaries=$(find "$TARGET_DIR" -path "*/remediation/round-${_cur_rr}/R${_cur_rr}-SUMMARY.md" 2>/dev/null | wc -l | tr -d ' ')
         _total_plans=$(( _total_plans + _rd_plans ))
         _total_summaries=$(( _total_summaries + _rd_summaries ))
         if [ "$_rem_stage" = "execute" ] && [ "$_total_plans" -gt 0 ] && [ "$_total_summaries" -ge "$_total_plans" ]; then
