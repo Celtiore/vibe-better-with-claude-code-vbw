@@ -114,6 +114,8 @@ QA verification summary (pre-extracted from VERIFICATION.md):
 
 ### 4. Generate test scenarios from pre-computed verify context
 
+**Remediation re-verification scoping:** If the pre-computed verify context block starts with `verify_scope=remediation_round`, this is a re-verification after remediation — NOT a full-phase verification. The context is scoped to just the current remediation round's plan/summary. **Generate tests based on what the remediation plan says it fixed** — use the round plan's `must_haves`, `what_was_built`, and `files_modified` as the primary source for test scenarios. Each must_have truth should map to at least one human-verifiable test. If `prior_issue=` lines are present, use them as additional context about the original problem, but the plan is the authoritative source — it describes the actual fix. Do NOT re-test the entire phase — only test what the remediation round addressed.
+
 For each plan in the pre-computed verify context block:
 - Use the pre-computed `what_was_built`, `files_modified`, and `must_haves` data. Do NOT read SUMMARY.md or PLAN.md files.
 - Generate 1-3 test scenarios that require HUMAN judgment — things only a person can verify
@@ -149,7 +151,9 @@ If a plan only contains backend/test/script changes with no user-facing behavior
 
 If a plan's work is purely internal (refactor, test infrastructure, script changes) with no user-facing behavior, generate a single lightweight checkpoint asking the user to confirm the app still works as expected from their perspective, rather than asking them to run automated checks.
 
-Write the initial `{phase}-UAT.md` in the phase directory using the `templates/UAT.md` format:
+Write the UAT file using the `templates/UAT.md` format:
+- **Remediation re-verification** (`verify_scope=remediation_round` with `verify_round=RR`): write `R{RR}-UAT.md` in the round directory (`{phase-dir}/remediation/round-{RR}/R{RR}-UAT.md`). Include `round: {RR}` in frontmatter.
+- **Full-phase verification** (no `verify_scope`): write `{phase}-UAT.md` in the phase directory.
 - Populate YAML frontmatter: phase, plan_count, status=in_progress, started=today, total_tests
 - Write all test entries with Result fields empty
 
@@ -272,13 +276,13 @@ Discovered issue D{NN} recorded (severity: {level}).
 
 ### 8. After each response: persist immediately
 
-- Update `{phase}-UAT.md` with the result for this test
+- Update the UAT file with the result for this test
 - Write the file to disk (survives /clear)
 - Display progress: `✓ {completed}/{total} tests`
 
 ### 9. Session complete
 
-- Update `{phase}-UAT.md` frontmatter: status (complete or issues_found), completed date, final counts
+- Update the UAT file frontmatter: status (complete or issues_found), completed date, final counts
 - Display summary:
 
 ```text

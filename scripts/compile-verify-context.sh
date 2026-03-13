@@ -12,9 +12,22 @@
 #   files_modified: <file1>, <file2>, ...
 #   status: <complete|partial|failed|no_summary>
 #
+# Remediation awareness: when .uat-remediation-stage indicates a round-dir
+# layout and stage=done/verify, scopes to the current round's R{RR}-PLAN.md
+# and R{RR}-SUMMARY.md instead of phase-root plans. Also emits prior UAT
+# issues so the verifier knows what was supposed to be fixed.
+#
 # If no PLAN files exist, outputs: verify_context=empty
 
 set -euo pipefail
+
+_CVC_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source shared UAT helpers (needed for remediation round detection)
+if [ -f "$_CVC_SCRIPT_DIR/uat-utils.sh" ]; then
+  # shellcheck source=uat-utils.sh
+  source "$_CVC_SCRIPT_DIR/uat-utils.sh"
+fi
 
 PHASE_DIR="${1:?Usage: compile-verify-context.sh <phase-dir>}"
 
@@ -23,8 +36,72 @@ if [ ! -d "$PHASE_DIR" ]; then
   exit 0
 fi
 
-# Find all PLAN files sorted by plan number
-PLAN_FILES=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | sort)
+# --- Remediation round detection ---
+_REMEDIATION_ROUND=""
+_REMEDIATION_LAYOUT=""
+_REMEDIATION_STAGE=""
+_stage_file="${PHASE_DIR%/}/remediation/.uat-remediation-stage"
+if [ -f "$_stage_file" ]; then
+  _REMEDIATION_STAGE=$(grep '^stage=' "$_stage_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+  _REMEDIATION_ROUND=$(grep '^round=' "$_stage_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+  _REMEDIATION_LAYOUT=$(grep '^layout=' "$_stage_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+fi
+
+PLAN_FILES=""
+SEARCH_DIR=""
+
+if [ -n "$_REMEDIATION_ROUND" ] && [ "$_REMEDIATION_LAYOUT" = "round-dir" ] && \
+   { [ "$_REMEDIATION_STAGE" = "done" ] || [ "$_REMEDIATION_STAGE" = "verify" ]; }; then
+  # Remediation re-verification: scope to the current round's plan/summary
+  _round_padded=$(printf '%02d' "$_REMEDIATION_ROUND")
+  SEARCH_DIR="${PHASE_DIR%/}/remediation/round-${_round_padded}"
+  echo "verify_scope=remediation_round"
+  echo "verify_round=${_round_padded}"
+
+  if [ -d "$SEARCH_DIR" ]; then
+    PLAN_FILES=$(find "$SEARCH_DIR" -maxdepth 1 -name 'R*-PLAN.md' 2>/dev/null | sort)
+  fi
+
+  # Emit prior UAT issues so the verifier knows what was supposed to be fixed
+  _emit_prior_uat_issues() {
+    # Find the UAT that triggered this round (previous round's UAT, or phase-root current_uat)
+    local _prior_uat=""
+    if type current_uat &>/dev/null; then
+      _prior_uat=$(current_uat "${PHASE_DIR%/}")
+    fi
+    if [ -n "$_prior_uat" ] && [ -f "$_prior_uat" ]; then
+      echo "prior_uat_file=$(basename "$_prior_uat")"
+      # Extract issues (ID, status, description) from prior UAT
+      awk '
+        /^### (P[0-9]+-T[0-9]+|D[0-9]+):/ {
+          id = $2; sub(/:$/, "", id)
+          title = $0; sub(/^### [^ ]+ /, "", title)
+          next_is_result = 0
+          issue_desc = ""
+        }
+        /^- \*\*Result:\*\*/ {
+          result = $0; sub(/^- \*\*Result:\*\* */, "", result)
+          gsub(/[[:space:]]*$/, "", result)
+          if (result == "issue" || result == "fail") {
+            is_issue = 1
+          } else {
+            is_issue = 0
+          }
+        }
+        /^  - Description:/ && is_issue {
+          desc = $0; sub(/^  - Description: */, "", desc)
+          print "prior_issue=" id "|" desc
+        }
+      ' "$_prior_uat"
+    fi
+  }
+  _emit_prior_uat_issues
+  echo ""
+else
+  SEARCH_DIR="$PHASE_DIR"
+  # Find all PLAN files sorted by plan number (phase-root)
+  PLAN_FILES=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | sort)
+fi
 
 if [ -z "$PLAN_FILES" ]; then
   echo "verify_context=empty"
@@ -71,9 +148,10 @@ while IFS= read -r plan_file; do
     END { print items }
   ' "$plan_file" 2>/dev/null) || MUST_HAVES=""
 
-  # Find corresponding SUMMARY file
+  # Find corresponding SUMMARY file (in same directory as the plan)
   PLAN_BASE=$(basename "$plan_file" | sed 's/-PLAN\.md$//')
-  SUMMARY_FILE=$(find "$PHASE_DIR" -maxdepth 1 ! -name '.*' -name "${PLAN_BASE}-SUMMARY.md" 2>/dev/null | head -1)
+  _plan_dir=$(dirname "$plan_file")
+  SUMMARY_FILE=$(find "$_plan_dir" -maxdepth 1 ! -name '.*' -name "${PLAN_BASE}-SUMMARY.md" 2>/dev/null | head -1)
 
   STATUS="no_summary"
   WHAT_BUILT=""

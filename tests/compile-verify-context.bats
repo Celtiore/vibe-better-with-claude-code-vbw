@@ -234,3 +234,146 @@ EOF
   [[ "$output" == *"Invariant two holds"* ]]
   [[ "$output" == *"src/foo.ts"* ]]
 }
+
+@test "compile-verify-context: remediation round-dir scopes to round plan/summary" {
+  # Phase-root plans (should be EXCLUDED during remediation re-verification)
+  cat > "$PHASE_DIR/03-01-PLAN.md" <<'EOF'
+---
+plan: 01
+title: Original phase plan
+must_haves:
+  - Original feature works
+---
+EOF
+  cat > "$PHASE_DIR/03-01-SUMMARY.md" <<'EOF'
+---
+status: complete
+---
+## What Was Built
+Original feature implementation.
+## Files Modified
+- `src/original.ts` -- created
+EOF
+
+  # Remediation round-01 plan/summary (should be the ONLY output)
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  printf 'stage=done\nround=01\nlayout=round-dir\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+
+  cat > "$PHASE_DIR/remediation/round-01/R01-PLAN.md" <<'EOF'
+---
+phase: 03
+round: 01
+title: Fix P/L suppression bug
+type: remediation
+must_haves:
+  truths:
+    - "P/L displays for positionSync lots with cost basis"
+---
+EOF
+  cat > "$PHASE_DIR/remediation/round-01/R01-SUMMARY.md" <<'EOF'
+---
+status: complete
+---
+## What Was Built
+Fixed position-level P/L suppression.
+## Files Modified
+- `src/PositionRow.swift` -- fixed P/L gate
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  # Should emit remediation scope markers
+  [[ "$output" == *"verify_scope=remediation_round"* ]]
+  [[ "$output" == *"verify_round=01"* ]]
+  # Should include round plan content
+  [[ "$output" == *"Fix P/L suppression bug"* ]]
+  [[ "$output" == *"PositionRow.swift"* ]]
+  # Should NOT include phase-root plan content
+  [[ "$output" != *"Original phase plan"* ]]
+  [[ "$output" != *"src/original.ts"* ]]
+}
+
+@test "compile-verify-context: remediation emits prior UAT issues" {
+  mkdir -p "$PHASE_DIR/remediation/round-02"
+  printf 'stage=done\nround=02\nlayout=round-dir\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+
+  # Prior round UAT with issues
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  cat > "$PHASE_DIR/remediation/round-01/R01-UAT.md" <<'EOF'
+---
+phase: 03
+status: issues_found
+total_tests: 2
+passed: 1
+issues: 1
+---
+# UAT — Remediation Round 01
+
+## Tests
+
+### P01-T1: Check P/L display
+- **Result:** pass
+
+### P01-T2: Check badge placement
+- **Result:** issue
+- **Issue:**
+  - Description: Badge should be in the P/L slot not below share count
+  - Severity: major
+EOF
+
+  cat > "$PHASE_DIR/remediation/round-02/R02-PLAN.md" <<'EOF'
+---
+phase: 03
+round: 02
+title: Fix badge placement
+type: remediation
+must_haves:
+  - Badge renders in P/L slot
+---
+EOF
+  cat > "$PHASE_DIR/remediation/round-02/R02-SUMMARY.md" <<'EOF'
+---
+status: complete
+---
+## What Was Built
+Moved badge to P/L slot.
+## Files Modified
+- `src/PositionRow.swift` -- relocated badge
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"verify_scope=remediation_round"* ]]
+  [[ "$output" == *"verify_round=02"* ]]
+  # Should include round-02 plan
+  [[ "$output" == *"Fix badge placement"* ]]
+  # Should emit prior UAT issue
+  [[ "$output" == *"prior_issue=P01-T2|Badge should be in the P/L slot"* ]]
+  # Should NOT emit passing tests
+  [[ "$output" != *"prior_issue=P01-T1"* ]]
+}
+
+@test "compile-verify-context: non-remediation still uses phase-root plans" {
+  cat > "$PHASE_DIR/03-01-PLAN.md" <<'EOF'
+---
+plan: 01
+title: Normal plan
+must_haves:
+  - Thing works
+---
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  # No remediation scope markers
+  [[ "$output" != *"verify_scope="* ]]
+  [[ "$output" != *"verify_round="* ]]
+  # Phase-root plan is used
+  [[ "$output" == *"Normal plan"* ]]
+}
