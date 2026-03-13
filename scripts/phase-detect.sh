@@ -313,7 +313,7 @@ if [ -d "$PHASES_DIR" ]; then
           fi
           _rem_stage="done"
         fi
-        if [ "$_rem_stage" = "done" ] || [ "$_rem_stage" = "reverify" ]; then
+        if [ "$_rem_stage" = "done" ] || [ "$_rem_stage" = "verify" ]; then
           NEXT_PHASE_STATE="needs_reverification"
         else
           NEXT_PHASE_STATE="needs_uat_remediation"

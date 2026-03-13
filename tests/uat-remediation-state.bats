@@ -71,12 +71,23 @@ teardown() {
   [ "$output" = "done" ]
 }
 
-@test "advance from done stays done" {
+@test "advance from done transitions to verify" {
   mkdir -p "$PHASE_DIR/remediation"
-  printf 'stage=done\nround=01\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+  printf 'stage=done\nround=01\nlayout=round-dir\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
-  [ "$output" = "done" ]
+  [ "$output" = "verify" ]
+  grep -q "^stage=verify$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  # Round is preserved
+  grep -q "^round=01$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+}
+
+@test "advance from verify stays at verify" {
+  mkdir -p "$PHASE_DIR/remediation"
+  printf 'stage=verify\nround=01\nlayout=round-dir\n' > "$PHASE_DIR/remediation/.uat-remediation-stage"
+
+  run bash "$SCRIPTS_DIR/uat-remediation-state.sh" advance "$PHASE_DIR"
+  [ "$output" = "verify" ]
 }
 
 @test "advance preserves round number" {

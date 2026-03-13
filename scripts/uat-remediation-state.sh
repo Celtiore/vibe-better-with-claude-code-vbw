@@ -131,7 +131,8 @@ next_stage() {
   case "$current" in
     research|plan|execute) stages=("${MAJOR_STAGES[@]}") ;;
     fix)                  stages=("${MINOR_STAGES[@]}") ;;
-    done)                 echo "done"; return 0 ;;
+    done)                 echo "verify"; return 0 ;;
+    verify)               echo "verify"; return 0 ;;
     *)                    echo "done"; return 0 ;;
   esac
 
@@ -339,8 +340,8 @@ case "$CMD" in
 
   advance)
     current=$(get_stage)
-    if [ "$current" = "none" ] || [ "$current" = "done" ]; then
-      echo "done"
+    if [ "$current" = "none" ] || [ "$current" = "verify" ]; then
+      echo "$current"
     else
       new_stage=$(next_stage "$current")
       round=$(get_round)

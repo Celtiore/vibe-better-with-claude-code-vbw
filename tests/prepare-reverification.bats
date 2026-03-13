@@ -32,7 +32,7 @@ failed: 1
 EOF
 }
 
-@test "round-dir layout: archives UAT and sets stage=reverify without advancing round" {
+@test "round-dir layout: archives UAT and advances to verify without changing round" {
   create_issues_uat
 
   # Create round-dir remediation state with stage=done
@@ -51,8 +51,8 @@ EOF
   archived_file=$(find "$PHASE_DIR" -maxdepth 1 -name '03-UAT-round-*.md' | head -1)
   [ -n "$archived_file" ]
 
-  # Stage is reverify — NOT advanced to research/round-02
-  grep -q "^stage=reverify$" "$PHASE_DIR/remediation/.uat-remediation-stage"
+  # Stage is verify — NOT advanced to research/round-02
+  grep -q "^stage=verify$" "$PHASE_DIR/remediation/.uat-remediation-stage"
 
   # Round is still 01
   grep -q "^round=01$" "$PHASE_DIR/remediation/.uat-remediation-stage"

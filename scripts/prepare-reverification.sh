@@ -91,7 +91,7 @@ fi
 # Detect layout from remediation state file
 _LAYOUT="flat"
 if [ -f "$_new_stage_file" ]; then
-  _layout_val=$(grep '^layout=' "$_new_stage_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+  _layout_val=$(grep '^layout=' "$_new_stage_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]' || true)
   if [ "$_layout_val" = "round-dir" ]; then
     _LAYOUT="round-dir"
   fi
@@ -103,11 +103,9 @@ mv "$UAT_FILE" "${PHASE_DIR}${ROUND_FILE}"
 if [ "$_LAYOUT" = "round-dir" ]; then
   # Round-dir layout: do NOT advance to next round yet.
   # verify.md will write R{RR}-UAT.md into the current round dir, then
-  # advance only if re-verification finds issues. Update stage to
-  # "reverify" so phase-detect knows we're in re-verification.
-  _cur_round=$(grep '^round=' "$_new_stage_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
-  sed -i '' "s/^stage=done/stage=reverify/" "$_new_stage_file" 2>/dev/null || \
-    printf 'stage=reverify\nround=%s\nlayout=round-dir\n' "${_cur_round:-01}" > "$_new_stage_file"
+  # advance only if re-verification finds issues.
+  # Advance done → verify through the proper state machine.
+  bash "$_SCRIPT_DIR_PR/uat-remediation-state.sh" advance "${PHASE_DIR%/}" >/dev/null
 else
   # Flat/legacy layout: advance remediation to next round (original behavior)
   bash "$_SCRIPT_DIR_PR/uat-remediation-state.sh" needs-round "${PHASE_DIR%/}" >/dev/null
