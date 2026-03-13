@@ -171,7 +171,7 @@ For the FIRST test without a result, display a CHECKPOINT followed by AskUserQue
 {scenario description}
 ```
 
-Then immediately use AskUserQuestion:
+Then use AskUserQuestion:
 
 ```yaml
 question: "Expected: {expected result}"
