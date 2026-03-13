@@ -688,7 +688,7 @@ After Execute mode completes (autonomy=pure-vibe only): if more unbuilt phases e
 
 ## Output Format
 
-Follow @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md for all output.
+Follow @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md for all output except Verify mode (UAT files use plain markdown — do NOT read brand-essentials during verification).
 
 Per-mode output:
 - **Bootstrap:** project-defined banner + transition to scoping
