@@ -2,7 +2,20 @@
 # VBW Status Line — 4-line dashboard (L1: project, L2: context, L3: usage+cache, L4: model/cost)
 # Cache: {prefix}-fast (5s), {prefix}-slow (60s), {prefix}-cost (per-render), {prefix}-ok (permanent)
 
-input=$(cat)
+# Read stdin with timeout — CC may not pipe data on the first dsR() invocation
+# (no cost/model info yet), and bare `cat` would block until the 5s dsR timeout
+# kills us. Use a read loop: 1s timeout per line handles multi-line JSON while
+# bailing fast when CC sends nothing. Total budget: ~2s for read + ~1s for render
+# = 3s well within dsR's 5s timeout.
+input=""
+while IFS= read -t 1 -r _line; do
+  input="${input}${_line}"
+done 2>/dev/null
+# Capture trailing data after last newline (if no final \n)
+[ -n "${_line:-}" ] && input="${input}${_line}"
+# Replace stdin with /dev/null — prevents downstream commands (jq, curl, etc.)
+# from inheriting a hung pipe and blocking indefinitely.
+exec 0</dev/null
 
 # Colors
 C='\033[36m' G='\033[32m' Y='\033[33m' R='\033[31m'
