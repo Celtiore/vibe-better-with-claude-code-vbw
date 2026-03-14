@@ -252,6 +252,129 @@ else
   fail "UAT-round files excluded → falls through to QA: pass (got '$_FAST_QA')"
 fi
 
+# --- Structural: remediation-aware plan counting ---
+echo ""
+echo "--- Structural: remediation-aware plan counting ---"
+
+# Test 15: PD counting includes remediation round summaries
+if grep -q 'remediation/round-\*/' "$ROOT/scripts/vbw-statusline.sh" && \
+   grep -q 'count_complete_summaries.*_sl_rdir\|count_complete_summaries.*_rem_rdir' "$ROOT/scripts/vbw-statusline.sh"; then
+  pass "PD counting iterates remediation/round-*/ for summaries"
+else
+  fail "PD counting iterates remediation/round-*/ for summaries"
+fi
+
+# Test 16: statusline has PP_LABEL variable for dynamic parenthetical label
+if grep -q 'PP_LABEL' "$ROOT/scripts/vbw-statusline.sh"; then
+  pass "statusline uses PP_LABEL for dynamic parenthetical label"
+else
+  fail "statusline uses PP_LABEL for dynamic parenthetical label"
+fi
+
+# Test 17: statusline has REM_ACTIVE flag for remediation display control
+if grep -q 'REM_ACTIVE' "$ROOT/scripts/vbw-statusline.sh"; then
+  pass "statusline uses REM_ACTIVE for remediation display control"
+else
+  fail "statusline uses REM_ACTIVE for remediation display control"
+fi
+
+# Test 18: parenthetical shows during active remediation even when PD==PT
+if grep -qE 'REM_ACTIVE.*true' "$ROOT/scripts/vbw-statusline.sh"; then
+  pass "parenthetical shows during active remediation (REM_ACTIVE check)"
+else
+  fail "parenthetical shows during active remediation (REM_ACTIVE check)"
+fi
+
+# Test 19: PP_LABEL defaults to 'this phase' and switches to 'this remediation'
+if grep -q 'PP_LABEL="this phase"' "$ROOT/scripts/vbw-statusline.sh" && \
+   grep -q 'PP_LABEL="this remediation"' "$ROOT/scripts/vbw-statusline.sh"; then
+  pass "PP_LABEL defaults to 'this phase', switches to 'this remediation'"
+else
+  fail "PP_LABEL defaults to 'this phase', switches to 'this remediation'"
+fi
+
+# --- Functional: remediation plan counting ---
+echo ""
+echo "--- Functional: remediation plan counting ---"
+
+# Test 20: PD includes remediation round summaries
+T20="$TMPDIR_BASE/t20"
+mkdir -p "$T20/.vbw-planning/phases/01-test/remediation/round-01"
+echo '{}' > "$T20/.vbw-planning/config.json"
+printf 'Phase: 1 of 1 (test)\nStatus: active\n' > "$T20/.vbw-planning/STATE.md"
+printf '# Test\nContent\n' > "$T20/.vbw-planning/PROJECT.md"
+# Phase-root plan + summary (complete)
+printf '%s\n' '---' 'phase: "01"' 'plan: "01"' 'title: Test' 'wave: 1' '---' > "$T20/.vbw-planning/phases/01-test/01-01-PLAN.md"
+printf '%s\n' '---' 'status: complete' '---' 'Done' > "$T20/.vbw-planning/phases/01-test/01-01-SUMMARY.md"
+# Remediation round plan + summary (complete)
+printf '%s\n' '---' 'phase: 01' 'round: 01' 'title: Fix issues' '---' > "$T20/.vbw-planning/phases/01-test/remediation/round-01/R01-PLAN.md"
+printf '%s\n' '---' 'status: complete' '---' 'Fixed' > "$T20/.vbw-planning/phases/01-test/remediation/round-01/R01-SUMMARY.md"
+_PD_COUNT=$(cd "$T20" && {
+  . "$ROOT/scripts/summary-utils.sh"
+  PD=0
+  for _sl_pdir in .vbw-planning/phases/*/; do
+    [ -d "$_sl_pdir" ] || continue
+    PD=$((PD + $(count_complete_summaries "$_sl_pdir")))
+    for _sl_rdir in "$_sl_pdir"remediation/round-*/; do
+      [ -d "$_sl_rdir" ] || continue
+      PD=$((PD + $(count_complete_summaries "$_sl_rdir")))
+    done
+  done
+  echo "$PD"
+})
+if [ "$_PD_COUNT" = "2" ]; then
+  pass "PD counts both phase-root and remediation round summaries (got 2)"
+else
+  fail "PD counts both phase-root and remediation round summaries (expected 2, got '$_PD_COUNT')"
+fi
+
+# Test 21: PPT/PPD override during active remediation
+T21="$TMPDIR_BASE/t21"
+mkdir -p "$T21/.vbw-planning/phases/01-test/remediation/round-01"
+mkdir -p "$T21/.vbw-planning/phases/01-test/remediation/round-02"
+echo '{}' > "$T21/.vbw-planning/config.json"
+printf 'Phase: 1 of 1 (test)\nStatus: active\n' > "$T21/.vbw-planning/STATE.md"
+printf '# Test\nContent\n' > "$T21/.vbw-planning/PROJECT.md"
+# Phase-root plan (complete)
+printf '%s\n' '---' 'title: Test' '---' > "$T21/.vbw-planning/phases/01-test/01-01-PLAN.md"
+printf '%s\n' '---' 'status: complete' '---' 'Done' > "$T21/.vbw-planning/phases/01-test/01-01-SUMMARY.md"
+# Remediation state file (active)
+printf 'stage=research\nround=02\nlayout=round-dir\n' > "$T21/.vbw-planning/phases/01-test/remediation/.uat-remediation-stage"
+# Round 01: plan + complete summary
+printf '%s\n' '---' 'title: R01 fix' '---' > "$T21/.vbw-planning/phases/01-test/remediation/round-01/R01-PLAN.md"
+printf '%s\n' '---' 'status: complete' '---' 'Fixed' > "$T21/.vbw-planning/phases/01-test/remediation/round-01/R01-SUMMARY.md"
+# Round 02: plan only (no summary yet)
+printf '%s\n' '---' 'title: R02 fix' '---' > "$T21/.vbw-planning/phases/01-test/remediation/round-02/R02-PLAN.md"
+_REM_COUNTS=$(cd "$T21" && {
+  . "$ROOT/scripts/summary-utils.sh"
+  PDIR=".vbw-planning/phases/01-test"
+  REM_ACTIVE="false"; PP_LABEL="this phase"
+  PPT=0; PPD=0
+  if [ -f "$PDIR/remediation/.uat-remediation-stage" ]; then
+    REM_ACTIVE="true"
+    PP_LABEL="this remediation"
+    _rem_ppt=0; _rem_ppd=0
+    for _rem_rdir in "$PDIR"/remediation/round-*/; do
+      [ -d "$_rem_rdir" ] || continue
+      _rem_ppt=$((_rem_ppt + $(find "$_rem_rdir" -maxdepth 1 -name '*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')))
+      _rem_ppd=$((_rem_ppd + $(count_complete_summaries "$_rem_rdir")))
+    done
+    PPT="$_rem_ppt"
+    PPD="$_rem_ppd"
+  fi
+  echo "${REM_ACTIVE}|${PP_LABEL}|${PPT}|${PPD}"
+})
+_rem_act=$(echo "$_REM_COUNTS" | cut -d'|' -f1)
+_rem_lbl=$(echo "$_REM_COUNTS" | cut -d'|' -f2)
+_rem_ppt=$(echo "$_REM_COUNTS" | cut -d'|' -f3)
+_rem_ppd=$(echo "$_REM_COUNTS" | cut -d'|' -f4)
+if [ "$_rem_act" = "true" ] && [ "$_rem_lbl" = "this remediation" ] && \
+   [ "$_rem_ppt" = "2" ] && [ "$_rem_ppd" = "1" ]; then
+  pass "remediation override: REM_ACTIVE=true, PP_LABEL='this remediation', PPT=2, PPD=1"
+else
+  fail "remediation override: expected true|this remediation|2|1, got '${_REM_COUNTS}'"
+fi
+
 echo ""
 echo "==============================="
 echo "TOTAL: $PASS passed, $FAIL failed"
