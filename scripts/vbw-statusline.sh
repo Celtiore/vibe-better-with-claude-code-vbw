@@ -213,7 +213,7 @@ _ac_dec() { local v="${1#"${1%%[!0]*}"}"; echo "${v:-0}"; }
 if [ "$_AC_SKIP" = "false" ] && [ "${CTX_SIZE:-0}" -gt 0 ] 2>/dev/null; then
   # Apply AUTO_COMPACT_WINDOW cap (if set, use the smaller of window and cap)
   _AC_CTX="$CTX_SIZE"
-  if [ -n "$_AC_WINDOW_CAP" ] 2>/dev/null; then
+  if [ -n "$_AC_WINDOW_CAP" ]; then
     _WC="$(_ac_dec "${_AC_WINDOW_CAP%%.*}")"
     if [ "$_WC" -gt 0 ] 2>/dev/null && [ "$_WC" -lt "$_AC_CTX" ] 2>/dev/null; then
       _AC_CTX="$_WC"
@@ -222,7 +222,7 @@ if [ "$_AC_SKIP" = "false" ] && [ "${CTX_SIZE:-0}" -gt 0 ] 2>/dev/null; then
 
   # Output token deduction: min(max_output_tokens, 20000), default 20000
   _OUT_CAP=20000
-  if [ -n "$_AC_MAX_OUTPUT" ] 2>/dev/null; then
+  if [ -n "$_AC_MAX_OUTPUT" ]; then
     _MO="$(_ac_dec "${_AC_MAX_OUTPUT%%.*}")"
     if [ "$_MO" -gt 0 ] 2>/dev/null && [ "$_MO" -lt 20000 ] 2>/dev/null; then
       _OUT_CAP="$_MO"
@@ -242,7 +242,7 @@ if [ "$_AC_SKIP" = "false" ] && [ "${CTX_SIZE:-0}" -gt 0 ] 2>/dev/null; then
   # Override: floor(effective * pct / 100), then min with default
   # Fixed-point x10 to handle decimals like "95.5" without floating point.
   # "95.5" → whole=95 frac=5 → pct_x10=955 → effective * 955 / 1000
-  if [ -n "$_AC_OVERRIDE" ] 2>/dev/null; then
+  if [ -n "$_AC_OVERRIDE" ]; then
     _OV_WHOLE="$(_ac_dec "${_AC_OVERRIDE%%.*}")"
     _OV_FRAC="0"
     case "$_AC_OVERRIDE" in
