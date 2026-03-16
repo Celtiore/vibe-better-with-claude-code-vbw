@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # verify-statusline-429-backoff.sh — Contract tests for #249
-# Verifies: 429 → stale status, failure backoff (300s), DISABLE_NONESSENTIAL_TRAFFIC
+# Verifies: 429 → ratelimited status, failure backoff (300s), DISABLE_NONESSENTIAL_TRAFFIC
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SL="$ROOT/scripts/vbw-statusline.sh"
@@ -14,17 +14,17 @@ pass() { echo "PASS  $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL  $1"; FAIL=$((FAIL + 1)); }
 
 # --- Test 1: 429 handled distinctly from generic failure ---
-if grep -q 'HTTP_CODE.*=.*"429"' "$SL" && grep -q 'FETCH_OK="stale"' "$SL"; then
-  pass "429 maps to FETCH_OK=stale (not fail)"
+if grep -q 'HTTP_CODE.*=.*"429"' "$SL" && grep -q 'FETCH_OK="ratelimited"' "$SL"; then
+  pass "429 maps to FETCH_OK=ratelimited (not fail)"
 else
-  fail "429 maps to FETCH_OK=stale (not fail)"
+  fail "429 maps to FETCH_OK=ratelimited (not fail)"
 fi
 
-# --- Test 2: stale state renders actionable message ---
-if grep -q 'FETCH_OK.*=.*"stale"' "$SL" && grep -q 'rate limited.*re-login' "$SL"; then
-  pass "stale state renders actionable re-login message"
+# --- Test 2: ratelimited state renders actionable message ---
+if grep -q 'FETCH_OK.*=.*"ratelimited"' "$SL" && grep -q 'rate limited.*re-login' "$SL"; then
+  pass "ratelimited state renders actionable re-login message"
 else
-  fail "stale state renders actionable re-login message"
+  fail "ratelimited state renders actionable re-login message"
 fi
 
 # --- Test 3: backoff reads previous FETCH_OK from slow cache ---
@@ -34,13 +34,13 @@ else
   fail "backoff reads previous status from slow cache"
 fi
 
-# --- Test 4: backoff escalates TTL on fail or stale (not notraffic — user-intentional) ---
-if grep -q '_PREV_STATUS.*=.*"fail"\|_PREV_STATUS.*=.*"stale"' "$SL" \
+# --- Test 4: backoff escalates TTL on fail or ratelimited (not notraffic — user-intentional) ---
+if grep -q '_PREV_STATUS.*=.*"fail"\|_PREV_STATUS.*=.*"ratelimited"' "$SL" \
    && ! grep -q '_PREV_STATUS.*=.*"notraffic".*_SLOW_TTL' "$SL" \
    && grep -q '_SLOW_TTL=300' "$SL"; then
-  pass "backoff escalates TTL to 300s on persistent failure/stale only"
+  pass "backoff escalates TTL to 300s on persistent failure/ratelimited only"
 else
-  fail "backoff escalates TTL to 300s on persistent failure/stale only"
+  fail "backoff escalates TTL to 300s on persistent failure/ratelimited only"
 fi
 
 # --- Test 5: default slow TTL is 60s ---
@@ -100,6 +100,30 @@ if [ -n "$_TOKEN_P1_LINE" ] && [ -n "$_NOTRAFFIC_ELSE_LINE" ] \
   pass "notraffic guard covers token lookups"
 else
   fail "notraffic guard covers token lookups"
+fi
+
+# --- Test 12: notraffic env var bypasses backoff TTL (#249 QA R3 F2) ---
+if grep -q 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC' "$SL" \
+   && grep -q '_SLOW_TTL=60 ;;' "$SL"; then
+  pass "notraffic env var resets backoff TTL to 60s"
+else
+  fail "notraffic env var resets backoff TTL to 60s"
+fi
+
+# --- Test 13: unknown FETCH_OK values get catch-all rendering (#249 QA R3 F3) ---
+# The final else in the rendering chain must NOT assume API key;
+# it should render a neutral fallback for unknown/corrupt values.
+if grep -q 'Limits: unavailable' "$SL"; then
+  pass "unknown FETCH_OK values render neutral catch-all"
+else
+  fail "unknown FETCH_OK values render neutral catch-all"
+fi
+
+# --- Test 14: noauth state explicitly handled before catch-all ---
+if grep -q 'FETCH_OK.*=.*"noauth"' "$SL" && grep -q 'using API key' "$SL"; then
+  pass "noauth state renders API-key message before catch-all"
+else
+  fail "noauth state renders API-key message before catch-all"
 fi
 
 echo ""

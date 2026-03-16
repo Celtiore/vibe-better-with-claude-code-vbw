@@ -492,7 +492,13 @@ SLOW_CF="${_CACHE}-slow"
 _SLOW_TTL=60
 if [ -O "$SLOW_CF" ]; then
   _PREV_STATUS=$(awk -F'|' '{print $10}' "$SLOW_CF" 2>/dev/null)
-  [ "$_PREV_STATUS" = "fail" ] || [ "$_PREV_STATUS" = "stale" ] && _SLOW_TTL=300
+  [ "$_PREV_STATUS" = "fail" ] || [ "$_PREV_STATUS" = "ratelimited" ] && _SLOW_TTL=300
+fi
+# If notraffic flag just became active, skip backoff so it takes effect promptly (#249 QA R3)
+if [ "$_SLOW_TTL" -gt 60 ] 2>/dev/null; then
+  case "${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-}" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]) _SLOW_TTL=60 ;;
+  esac
 fi
 
 if ! cache_fresh "$SLOW_CF" "$_SLOW_TTL"; then
@@ -611,7 +617,7 @@ if ! cache_fresh "$SLOW_CF" "$_SLOW_TTL"; then
       if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
         FETCH_OK="auth"
       elif [ "$HTTP_CODE" = "429" ]; then
-        FETCH_OK="stale"
+        FETCH_OK="ratelimited"
       else
         FETCH_OK="fail"
       fi
@@ -707,7 +713,7 @@ if [ "$FETCH_OK" = "ok" ]; then
   fi
 elif [ "$FETCH_OK" = "auth" ]; then
   USAGE_LINE="${D}Limits: auth expired (run /login)${X}"
-elif [ "$FETCH_OK" = "stale" ]; then
+elif [ "$FETCH_OK" = "ratelimited" ]; then
   USAGE_LINE="${D}Limits: rate limited (retry in 5m — re-login if persistent)${X}"
 elif [ "$FETCH_OK" = "fail" ]; then
   USAGE_LINE="${D}Limits: fetch failed (retry in 5m)${X}"
@@ -715,8 +721,10 @@ elif [ "$FETCH_OK" = "notraffic" ]; then
   USAGE_LINE="${D}Limits: skipped (nonessential traffic disabled)${X}"
 elif [ "$AUTH_METHOD" = "claude.ai" ]; then
   USAGE_LINE="${D}Limits: keychain access denied (allow Terminal in Keychain Access.app or set VBW_OAUTH_TOKEN)${X}"
-else
+elif [ "$FETCH_OK" = "noauth" ]; then
   USAGE_LINE="${D}Limits: N/A (using API key)${X}"
+else
+  USAGE_LINE="${D}Limits: unavailable${X}"
 fi
 
 # --- Hide-limits suppression ---
