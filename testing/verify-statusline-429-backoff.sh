@@ -71,11 +71,11 @@ else
   fail "notraffic state renders informational message"
 fi
 
-# --- Test 9: stale retry message says 5m (not 60s) ---
+# --- Test 9: ratelimited/fail retry message says 5m (not 60s) ---
 if grep -q 'retry in 5m' "$SL" && ! grep -q 'retry in 60s' "$SL"; then
-  pass "retry message says 5m (not 60s) for both fail and stale"
+  pass "retry message says 5m (not 60s) for both fail and ratelimited"
 else
-  fail "retry message says 5m (not 60s) for both fail and stale"
+  fail "retry message says 5m (not 60s) for both fail and ratelimited"
 fi
 
 # --- Test 10: notraffic guard covers version check curl (QA round 1 F1) ---
@@ -102,12 +102,15 @@ else
   fail "notraffic guard covers token lookups"
 fi
 
-# --- Test 12: notraffic env var bypasses backoff TTL (#249 QA R3 F2) ---
-if grep -q 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC' "$SL" \
-   && grep -q '_SLOW_TTL=60 ;;' "$SL"; then
-  pass "notraffic env var resets backoff TTL to 60s"
+# --- Test 12: notraffic flag bypasses backoff TTL via shared helper (#249 QA R3/R4) ---
+# The helper must check both env var AND settings.json, and the pre-backoff
+# block must call it (not just inline the env var check).
+if grep -q '_resolve_notraffic' "$SL" \
+   && grep -q '_NOTRAFFIC_ACTIVE.*_SLOW_TTL=60' "$SL" \
+   && grep -q 'settings.json' "$SL"; then
+  pass "notraffic helper resolves env var + settings.json before backoff"
 else
-  fail "notraffic env var resets backoff TTL to 60s"
+  fail "notraffic helper resolves env var + settings.json before backoff"
 fi
 
 # --- Test 13: unknown FETCH_OK values get catch-all rendering (#249 QA R3 F3) ---

@@ -67,6 +67,25 @@ cache_fresh() {
   [ $((NOW - mt)) -le "$ttl" ]
 }
 
+# Resolve CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC from env var or settings.json.
+# Sets _NOTRAFFIC_ACTIVE=1 if the flag is truthy, empty otherwise.
+_resolve_notraffic() {
+  _NOTRAFFIC_ACTIVE=""
+  local _val="${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-}"
+  if [ -z "$_val" ]; then
+    local _sdir
+    for _sdir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do
+      [ -z "$_sdir" ] && continue
+      [ -f "$_sdir/settings.json" ] || continue
+      _val=$(jq -r '.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC // ""' "$_sdir/settings.json" 2>/dev/null)
+      [ -n "$_val" ] && break
+    done
+  fi
+  case "$_val" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]) _NOTRAFFIC_ACTIVE=1 ;;
+  esac
+}
+
 progress_bar() {
   local pct="$1" width="$2"
   local filled=$((pct * width / 100))
@@ -494,11 +513,10 @@ if [ -O "$SLOW_CF" ]; then
   _PREV_STATUS=$(awk -F'|' '{print $10}' "$SLOW_CF" 2>/dev/null)
   [ "$_PREV_STATUS" = "fail" ] || [ "$_PREV_STATUS" = "ratelimited" ] && _SLOW_TTL=300
 fi
-# If notraffic flag just became active, skip backoff so it takes effect promptly (#249 QA R3)
+# If notraffic flag just became active, skip backoff so it takes effect promptly (#249 QA R3/R4)
 if [ "$_SLOW_TTL" -gt 60 ] 2>/dev/null; then
-  case "${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-}" in
-    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]) _SLOW_TTL=60 ;;
-  esac
+  _resolve_notraffic
+  [ -n "$_NOTRAFFIC_ACTIVE" ] && _SLOW_TTL=60
 fi
 
 if ! cache_fresh "$SLOW_CF" "$_SLOW_TTL"; then
@@ -510,19 +528,8 @@ if ! cache_fresh "$SLOW_CF" "$_SLOW_TTL"; then
   HIDE_LIMITS_API=$(jq -r '.statusline_hide_limits_for_api_key // false' .vbw-planning/config.json 2>/dev/null)
 
   # Respect CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC — skip ALL outbound requests (#249)
-  # Check real env var first, then settings.json env block.
-  _SKIP_TRAFFIC="${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-}"
-  if [ -z "$_SKIP_TRAFFIC" ]; then
-    for _sdir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do
-      [ -z "$_sdir" ] && continue
-      [ -f "$_sdir/settings.json" ] || continue
-      _SKIP_TRAFFIC=$(jq -r '.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC // ""' "$_sdir/settings.json" 2>/dev/null)
-      [ -n "$_SKIP_TRAFFIC" ] && break
-    done
-  fi
-  case "$_SKIP_TRAFFIC" in
-    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]) FETCH_OK="notraffic" ;;
-  esac
+  _resolve_notraffic
+  [ -n "$_NOTRAFFIC_ACTIVE" ] && FETCH_OK="notraffic"
 
   if [ "$FETCH_OK" = "notraffic" ]; then
     : # skip token lookup, usage fetch, and version check entirely
