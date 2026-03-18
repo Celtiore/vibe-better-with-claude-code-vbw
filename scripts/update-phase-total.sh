@@ -12,9 +12,21 @@ if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
   source "$SCRIPT_DIR/summary-utils.sh"
 else
   # F-06: inline minimal terminal summary parser instead of always returning 0
+  count_complete_summaries() {
+    local dir="$1" count=0
+    for f in "$dir"/*-SUMMARY.md "$dir"/SUMMARY.md; do
+      [ -f "$f" ] || continue
+      local status
+      status=$(tr -d '\r' < "$f" 2>/dev/null | sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' | head -1 | tr -d '[:space:]')
+      case "$status" in
+        complete|completed) count=$((count + 1)) ;;
+      esac
+    done
+    echo "$count"
+  }
   count_terminal_summaries() {
     local dir="$1" count=0
-    for f in "$dir"/*-SUMMARY.md; do
+    for f in "$dir"/*-SUMMARY.md "$dir"/SUMMARY.md; do
       [ -f "$f" ] || continue
       local status
       status=$(tr -d '\r' < "$f" 2>/dev/null | sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' | head -1 | tr -d '[:space:]')
@@ -23,6 +35,48 @@ else
       esac
     done
     echo "$count"
+  }
+fi
+if [ -f "$SCRIPT_DIR/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  source "$SCRIPT_DIR/phase-state-utils.sh"
+else
+  list_canonical_phase_dirs() {
+    local parent="$1"
+    [ -d "$parent" ] || return 0
+    find "$parent" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
+      while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        base=$(basename "$dir")
+        case "$base" in [0-9]*-*) echo "$dir" ;; esac
+      done |
+      (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-)
+  }
+  count_phase_plans() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 ! -name '.*' \( -name '[0-9]*-PLAN.md' -o -name 'PLAN.md' \) 2>/dev/null | wc -l | tr -d ' '
+  }
+  phase_dir_display_name() {
+    local dir="$1"
+    basename "$dir" | sed 's/^[0-9]*-//' | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1'
+  }
+  phase_status_label() {
+    local dir="$1" phase_idx="$2"
+    local plans complete terminal
+    plans=$(count_phase_plans "$dir")
+    complete=$(count_complete_summaries "$dir")
+    terminal=$(count_terminal_summaries "$dir")
+    if [ "$plans" -gt 0 ] && [ "$complete" -ge "$plans" ]; then
+      echo "Complete"
+    elif [ "$terminal" -gt 0 ]; then
+      echo "In progress"
+    elif [ "$plans" -gt 0 ]; then
+      echo "Planned"
+    elif [ "$phase_idx" -eq 1 ]; then
+      echo "Pending planning"
+    else
+      echo "Pending"
+    fi
   }
 fi
 
@@ -60,20 +114,24 @@ if [ -n "$action" ] && ! echo "$position" | grep -qE '^[1-9][0-9]*$'; then
   exit 0
 fi
 
-# F-04: List only canonical phase dirs (basenames matching ^[0-9]+-), sorted
 sorted_dirs_file="${state_md}.dirs.$$"
-find "$phases_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
-  while IFS= read -r d; do
-    base=$(basename "$d")
-    case "$base" in [0-9]*-*) echo "$d" ;; esac
-  done |
-  (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-) \
-  > "$sorted_dirs_file"
+list_canonical_phase_dirs "$phases_dir" > "$sorted_dirs_file"
 
 total=$(wc -l < "$sorted_dirs_file" | tr -d ' ')
 
-# F-02: handle zero-phase state — clear stale Phase Status bullets
+# F-02: handle zero-phase state — remove stale current-phase section and clear
+# stale Phase Status bullets so STATE.md no longer claims an active phase.
 if [ "$total" -eq 0 ]; then
+  if grep -q '^## Current Phase' "$state_md" 2>/dev/null; then
+    tmp_current_zero="${state_md}.tmpcurrent.$$"
+    awk '
+      /^## Current Phase$/ { skip = 1; next }
+      skip && /^##/ { skip = 0; print; next }
+      skip { next }
+      { print }
+    ' "$state_md" > "$tmp_current_zero" 2>/dev/null && \
+      mv "$tmp_current_zero" "$state_md" 2>/dev/null || rm -f "$tmp_current_zero" 2>/dev/null
+  fi
   if grep -q '^## Phase Status' "$state_md" 2>/dev/null; then
     tmp_zero="${state_md}.tmp.$$"
     awk '
@@ -148,21 +206,8 @@ phase_idx=0
 while IFS= read -r dir; do
   [ -z "$dir" ] && continue
   phase_idx=$((phase_idx + 1))
-  local_name=$(basename "$dir" | sed 's/^[0-9]*-//' | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
-  # F-09: detect both canonical (NN-PLAN.md) and legacy (PLAN.md) plan files
-  local_plans=$(find "$dir" -maxdepth 1 \( -name '[0-9]*-PLAN.md' -o -name 'PLAN.md' \) 2>/dev/null | wc -l | tr -d ' ')
-  local_summaries=$(count_terminal_summaries "$dir")
-  if [ "$local_plans" -gt 0 ] && [ "$local_summaries" -ge "$local_plans" ]; then
-    status_text="Complete"
-  elif [ "$local_summaries" -gt 0 ]; then
-    status_text="In progress"
-  elif [ "$local_plans" -gt 0 ]; then
-    status_text="Planned"
-  elif [ "$phase_idx" -eq 1 ]; then
-    status_text="Pending planning"
-  else
-    status_text="Pending"
-  fi
+  local_name=$(phase_dir_display_name "$dir")
+  status_text=$(phase_status_label "$dir" "$phase_idx")
   echo "- **Phase ${phase_idx} (${local_name}):** ${status_text}" >> "$new_status_file"
 done < "$sorted_dirs_file"
 

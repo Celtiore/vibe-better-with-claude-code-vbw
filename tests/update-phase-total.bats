@@ -367,9 +367,9 @@ EOF
   ! grep -q '## Phase Status' .vbw-planning/STATE.md
 }
 
-# --- F-02: zero-phase clears stale Phase Status ---
+# --- F-02: zero-phase removes stale current phase state ---
 
-@test "update-phase-total: clears Phase Status bullets when zero canonical dirs remain" {
+@test "update-phase-total: removes Current Phase and clears Phase Status when zero canonical dirs remain" {
   cd "$TEST_TEMP_DIR"
   cat > .vbw-planning/STATE.md <<'EOF'
 # State
@@ -392,11 +392,42 @@ EOF
   mkdir -p "$TEST_TEMP_DIR/.vbw-planning/phases"
   run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
   [ "$status" -eq 0 ]
+  # Current phase section should be removed entirely — there is no active phase.
+  ! grep -q '^## Current Phase$' .vbw-planning/STATE.md
+  ! grep -q '^Phase: ' .vbw-planning/STATE.md
   # Bullets should be cleared
   ! grep -q '^- \*\*Phase' .vbw-planning/STATE.md
   # Section heading and other content preserved
   grep -q '## Phase Status' .vbw-planning/STATE.md
   grep -q '## Decisions' .vbw-planning/STATE.md
+}
+
+# --- F-04: failed/partial summaries are not complete ---
+
+@test "update-phase-total: failed summaries keep phase status in progress" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 2 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1:** Pending
+- **Phase 2:** Pending
+EOF
+  mkdir -p .vbw-planning/phases/01-setup
+  mkdir -p .vbw-planning/phases/02-build
+  touch .vbw-planning/phases/01-setup/01-PLAN.md
+  printf -- '---\nstatus: failed\n---\n' > .vbw-planning/phases/01-setup/01-SUMMARY.md
+
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  grep -q 'Phase 1.*In progress' .vbw-planning/STATE.md
+  ! grep -q 'Phase 1.*Complete' .vbw-planning/STATE.md
 }
 
 # --- F-04: non-canonical dirs are excluded ---

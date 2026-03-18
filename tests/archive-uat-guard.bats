@@ -293,6 +293,28 @@ EOF
   echo "$output" | grep -q "milestone_uat_slug=legacy-archive"
 }
 
+@test "phase-detect milestone recovery derives phase number from archived artifacts when dir is non-canonical" {
+  mkdir -p .vbw-planning/phases
+  mkdir -p .vbw-planning/milestones/legacy-archive/phases/payments/
+
+  touch .vbw-planning/milestones/legacy-archive/phases/payments/08-01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/milestones/legacy-archive/phases/payments/08-01-SUMMARY.md
+  cat > .vbw-planning/milestones/legacy-archive/phases/payments/08-UAT.md <<'EOF'
+---
+phase: 08
+status: issues_found
+---
+  - Severity: major
+EOF
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "milestone_uat_issues=true"
+  echo "$output" | grep -q "milestone_uat_slug=legacy-archive"
+  echo "$output" | grep -q "milestone_uat_phase=08"
+  echo "$output" | grep -q "milestone_uat_phase_dir=.vbw-planning/milestones/legacy-archive/phases/payments"
+}
+
 @test "archive-uat-guard blocks on active unresolved UAT" {
   echo "# Project" > .vbw-planning/PROJECT.md
   mkdir -p .vbw-planning/phases/01-core/

@@ -286,6 +286,91 @@ EOF
   grep -q '^Status: complete$' .vbw-planning/STATE.md
 }
 
+@test "summary with failed status does not advance phase or mark roadmap complete" {
+  cd "$TEST_TEMP_DIR"
+
+  mkdir -p .vbw-planning/phases/01-setup
+  mkdir -p .vbw-planning/phases/02-core
+
+  cat > .vbw-planning/STATE.md <<'EOF'
+Phase: 1 of 2 (Setup)
+Plans: 0/1
+Progress: 0%
+Status: active
+EOF
+
+  cat > .vbw-planning/ROADMAP.md <<'EOF'
+- [ ] Phase 1: Setup
+- [ ] Phase 2: Core
+
+| Phase | Progress | Status | Completed |
+|------|----------|--------|-----------|
+| 1 - Setup | 0/1 | pending | - |
+| 2 - Core | 0/0 | pending | - |
+EOF
+
+  echo "# plan" > .vbw-planning/phases/01-setup/01-01-PLAN.md
+  cat > .vbw-planning/phases/01-setup/01-01-SUMMARY.md <<'SUMMARY'
+---
+status: failed
+---
+# summary
+SUMMARY
+
+  local summary_path input
+  summary_path="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup/01-01-SUMMARY.md"
+  input=$(jq -nc --arg p "$summary_path" '{tool_input:{file_path:$p}}')
+
+  run bash -c "cd '$TEST_TEMP_DIR' && printf '%s' '$input' | bash '$SCRIPTS_DIR/state-updater.sh'"
+  [ "$status" -eq 0 ]
+
+  # Execution happened, so progress is complete — but the phase itself is not.
+  grep -q '^Plans: 1/1$' .vbw-planning/STATE.md
+  grep -q '^Progress: 100%$' .vbw-planning/STATE.md
+  grep -q '^Phase: 1 of 2 (Setup)$' .vbw-planning/STATE.md
+  grep -q '^Status: active$' .vbw-planning/STATE.md
+  grep -q '^- \[ \] Phase 1: Setup$' .vbw-planning/ROADMAP.md
+  grep -q '^| 1 - Setup | 1/1 | in progress | - |$' .vbw-planning/ROADMAP.md
+}
+
+@test "advance_phase ignores non-canonical phase dirs when recalculating total" {
+  cd "$TEST_TEMP_DIR"
+
+  mkdir -p .vbw-planning/phases/01-setup
+  mkdir -p .vbw-planning/phases/02-core
+  mkdir -p .vbw-planning/phases/misc-notes
+
+  cat > .vbw-planning/STATE.md <<'EOF'
+Phase: 1 of 2 (Setup)
+Plans: 0/1
+Progress: 0%
+Status: active
+EOF
+
+  cat > .vbw-planning/ROADMAP.md <<'EOF'
+- [ ] Phase 1: Setup
+- [ ] Phase 2: Core
+
+| Phase | Progress | Status | Completed |
+|------|----------|--------|-----------|
+| 1 - Setup | 0/1 | pending | - |
+| 2 - Core | 0/1 | pending | - |
+EOF
+
+  echo "# plan" > .vbw-planning/phases/01-setup/01-01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-setup/01-01-SUMMARY.md
+  echo "# plan" > .vbw-planning/phases/02-core/02-01-PLAN.md
+
+  local summary_path input
+  summary_path="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup/01-01-SUMMARY.md"
+  input=$(jq -nc --arg p "$summary_path" '{tool_input:{file_path:$p}}')
+
+  run bash -c "cd '$TEST_TEMP_DIR' && printf '%s' '$input' | bash '$SCRIPTS_DIR/state-updater.sh'"
+  [ "$status" -eq 0 ]
+
+  grep -q '^Phase: 2 of 2 (Core)$' .vbw-planning/STATE.md
+}
+
 @test "advance_phase skips SOURCE-UAT files via shared uat-utils" {
   cd "$TEST_TEMP_DIR"
 

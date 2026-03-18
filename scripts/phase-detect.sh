@@ -12,6 +12,10 @@ _SCRIPT_DIR_PD="$(cd "$(dirname "$0")" && pwd)"
 . "$_SCRIPT_DIR_PD/uat-utils.sh"
 # shellcheck source=summary-utils.sh
 . "$_SCRIPT_DIR_PD/summary-utils.sh"
+if [ -f "$_SCRIPT_DIR_PD/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  . "$_SCRIPT_DIR_PD/phase-state-utils.sh"
+fi
 
 list_child_dirs_sorted() {
   local parent="$1"
@@ -536,9 +540,9 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
     for _ms_phase_dir in "${MS_PHASE_DIRS[@]}"; do
       [ -d "$_ms_phase_dir" ] || continue
       _ms_dirname=$(basename "$_ms_phase_dir")
-      _ms_num=$(echo "$_ms_dirname" | sed 's/^\([0-9]*\).*/\1/')
+      _ms_num=$(resolve_phase_number_from_phase_dir "$_ms_phase_dir")
 
-      # Skip non-canonical dirs whose basename doesn't start with digits
+      # Skip dirs with no recoverable phase identity from basename or artifacts.
       if [ -z "$_ms_num" ] || ! echo "$_ms_num" | grep -qE '^[0-9]+$'; then
         continue
       fi
@@ -553,7 +557,7 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
       fi
 
       # Skip phases without execution artifacts
-      _ms_plans=$(find "$_ms_phase_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+      _ms_plans=$(count_phase_plans "$_ms_phase_dir")
       _ms_summaries=$(count_complete_summaries "$_ms_phase_dir")
       if [ "$_ms_plans" -eq 0 ] || [ "$_ms_summaries" -lt "$_ms_plans" ]; then
         continue
