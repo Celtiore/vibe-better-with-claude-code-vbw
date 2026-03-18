@@ -31,6 +31,41 @@ phase_dir_display_name() {
   printf '%s' "$base" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1'
 }
 
+phase_dir_position() {
+  local phase_dir="$1"
+  local phases_parent="${2:-$(dirname "$phase_dir")}"
+  local idx=0 dir
+
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    idx=$((idx + 1))
+    if [ "${dir%/}" = "${phase_dir%/}" ]; then
+      echo "$idx"
+      return 0
+    fi
+  done < <(list_canonical_phase_dirs "$phases_parent")
+
+  echo ""
+}
+
+find_phase_dir_by_ref() {
+  local planning_dir="$1"
+  local phase_ref="$2"
+  local prefix_match
+
+  [ -d "$planning_dir/phases" ] || return 0
+  [ -n "$phase_ref" ] || return 0
+  echo "$phase_ref" | grep -qE '^[0-9]+$' || return 0
+
+  prefix_match=$(ls -d "$planning_dir/phases/$(printf '%02d' "$phase_ref")"-*/ 2>/dev/null | head -1)
+  if [ -n "$prefix_match" ]; then
+    echo "$prefix_match"
+    return 0
+  fi
+
+  list_canonical_phase_dirs "$planning_dir/phases" | sed -n "${phase_ref}p"
+}
+
 phase_status_label() {
   local dir="$1"
   local phase_idx="$2"

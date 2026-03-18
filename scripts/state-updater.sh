@@ -103,9 +103,13 @@ update_roadmap() {
 
   [ -f "$roadmap" ] || return 0
 
-  local dirname phase_num plan_count summary_count status date_str
+  local dirname phase_num prefix_phase_num plan_count summary_count status date_str
   dirname=$(basename "$phase_dir")
-  phase_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
+  prefix_phase_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
+  phase_num=$(phase_dir_position "$phase_dir")
+  if [ -z "$phase_num" ]; then
+    phase_num="$prefix_phase_num"
+  fi
   [ -z "$phase_num" ] && return 0
 
   plan_count=$(count_phase_plans "$phase_dir")
@@ -137,6 +141,10 @@ update_roadmap() {
   # Update extended progress table row (| num - name | done | status | date |)
   local existing_name
   existing_name=$(grep -E "^\| *${phase_num} - " "$roadmap" | head -1 | sed 's/^| *[0-9]* - //' | sed 's/ *|.*//')
+  if [ -z "$existing_name" ] && [ -n "$prefix_phase_num" ] && [ "$prefix_phase_num" != "$phase_num" ]; then
+    phase_num="$prefix_phase_num"
+    existing_name=$(grep -E "^\| *${phase_num} - " "$roadmap" | head -1 | sed 's/^| *[0-9]* - //' | sed 's/ *|.*//')
+  fi
   if [ -n "$existing_name" ]; then
     local tmp_ext="${roadmap}.tmp_ext.$$"
     sed "s/^| *${phase_num} - .*/| ${phase_num} - ${existing_name} | ${summary_count}\/${plan_count} | ${status} | ${date_str} |/" "$tmp" > "$tmp_ext" 2>/dev/null && \
@@ -225,7 +233,7 @@ advance_phase() {
   [ "$plan_count" -gt 0 ] && [ "$summary_count" -eq "$plan_count" ] || return 0
 
   # Scan all phase dirs to find next incomplete
-  local phases_dir total next_num next_name next_has_uat all_done sorted_dirs_file
+  local phases_dir total next_num next_name next_has_uat all_done sorted_dirs_file phase_idx
   phases_dir=$(dirname "$phase_dir")
   sorted_dirs_file="${state_md}.phases.$$"
   list_canonical_phase_dirs "$phases_dir" > "$sorted_dirs_file"
@@ -234,17 +242,18 @@ advance_phase() {
   next_name=""
   next_has_uat=false
   all_done=true
+  phase_idx=0
 
   while IFS= read -r dir; do
     local dirname p s
     dirname=$(basename "$dir")
+    phase_idx=$((phase_idx + 1))
     p=$(count_phase_plans "$dir")
     s=$(count_complete_summaries "$dir")
 
     if [ "$p" -eq 0 ] || [ "$s" -lt "$p" ]; then
       if [ -z "$next_num" ]; then
-        next_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
-        [ -z "$next_num" ] && next_num=0
+        next_num="$phase_idx"
         next_name=$(phase_dir_display_name "$dir")
       fi
       all_done=false
@@ -253,8 +262,7 @@ advance_phase() {
     # Also not done if phase has unresolved UAT issues
     if phase_has_uat_issues "$dir"; then
       if [ -z "$next_num" ]; then
-        next_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
-        [ -z "$next_num" ] && next_num=0
+        next_num="$phase_idx"
         next_name=$(phase_dir_display_name "$dir")
         next_has_uat=true
       fi

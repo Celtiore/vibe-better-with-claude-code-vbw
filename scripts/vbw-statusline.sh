@@ -53,6 +53,36 @@ else
   count_complete_summaries() { echo "0"; }
   count_done_summaries() { echo "0"; }
 fi
+if [ -f "$_SL_SCRIPT_DIR/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  . "$_SL_SCRIPT_DIR/phase-state-utils.sh"
+else
+  count_phase_plans() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 ! -name '.*' \( -name '[0-9]*-PLAN.md' -o -name 'PLAN.md' \) 2>/dev/null | wc -l | tr -d ' '
+  }
+  list_canonical_phase_dirs() {
+    local parent="$1"
+    [ -d "$parent" ] || return 0
+    find "$parent" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null |
+      while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        base=$(basename "$dir")
+        case "$base" in [0-9]*-*) echo "$dir" ;; esac
+      done |
+      (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-)
+  }
+  find_phase_dir_by_ref() {
+    local planning_dir="$1" phase_ref="$2"
+    local prefix_match
+    [ -d "$planning_dir/phases" ] || return 0
+    [ -n "$phase_ref" ] || return 0
+    echo "$phase_ref" | grep -qE '^[0-9]+$' || return 0
+    prefix_match=$(ls -d "$planning_dir/phases/$(printf '%02d' "$phase_ref")"-*/ 2>/dev/null | head -1)
+    [ -n "$prefix_match" ] && { echo "$prefix_match"; return 0; }
+    list_canonical_phase_dirs "$planning_dir/phases" | sed -n "${phase_ref}p"
+  }
+fi
 
 cache_fresh() {
   local cf="$1" ttl="$2"
@@ -360,21 +390,22 @@ if ! cache_fresh "$FAST_CF" 5; then
     GIT_AHEAD=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
   fi
   if [ -d ".vbw-planning/phases" ]; then
-    PT=$(find .vbw-planning/phases -name '*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+    PT=0
     PD=0
-    for _sl_pdir in .vbw-planning/phases/*/; do
+    while IFS= read -r _sl_pdir; do
       [ -d "$_sl_pdir" ] || continue
+      PT=$((PT + $(count_phase_plans "$_sl_pdir")))
       PD=$((PD + $(count_complete_summaries "$_sl_pdir")))
       # Count remediation round summaries (round-dir layout)
       for _sl_rdir in "$_sl_pdir"remediation/round-*/; do
         [ -d "$_sl_rdir" ] || continue
         PD=$((PD + $(count_complete_summaries "$_sl_rdir")))
       done
-    done
+    done < <(list_canonical_phase_dirs ".vbw-planning/phases")
     if [ -n "$PH" ] && [ "$PH" != "0" ]; then
-      PDIR=$(find .vbw-planning/phases -maxdepth 1 -type d -name "$(printf '%02d' "$PH")-*" 2>/dev/null | head -1)
+      PDIR=$(find_phase_dir_by_ref ".vbw-planning" "$PH")
       [ -n "$PDIR" ] && PPD=$(count_complete_summaries "$PDIR")
-      [ -n "$PDIR" ] && PPT=$(find "$PDIR" -maxdepth 1 -name '*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+      [ -n "$PDIR" ] && PPT=$(count_phase_plans "$PDIR")
       # Remediation-aware plan counts: override PPT/PPD with remediation round totals
       if [ -n "$PDIR" ] && [ -f "$PDIR/remediation/.uat-remediation-stage" ]; then
         REM_ACTIVE="true"
@@ -444,7 +475,7 @@ if ! cache_fresh "$FAST_CF" 5; then
     if [ "$EXEC_STATUS" = "running" ] && [ "${EXEC_DONE:-0}" -gt 0 ] 2>/dev/null; then
       _exec_phase=$(jq -r '.phase // ""' .vbw-planning/.execution-state.json 2>/dev/null)
       if [ -n "$_exec_phase" ]; then
-        _exec_pdir=$(find .vbw-planning/phases -maxdepth 1 -type d -name "$(printf '%02d' "$_exec_phase")-*" 2>/dev/null | head -1)
+        _exec_pdir=$(find_phase_dir_by_ref ".vbw-planning" "$_exec_phase")
         if [ -n "$_exec_pdir" ] && [ -d "$_exec_pdir" ]; then
           _actual_done=$(count_done_summaries "$_exec_pdir")
           if [ "${_actual_done:-0}" -lt "${EXEC_DONE:-0}" ] 2>/dev/null; then

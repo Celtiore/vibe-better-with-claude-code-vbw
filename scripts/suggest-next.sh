@@ -40,6 +40,15 @@ else
   # Safe default: report zero completions when helpers unavailable
   count_complete_summaries() { echo "0"; }
 fi
+if [ -f "$SCRIPT_DIR/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  . "$SCRIPT_DIR/phase-state-utils.sh"
+else
+  count_phase_plans() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 ! -name '.*' \( -name '[0-9]*-PLAN.md' -o -name 'PLAN.md' \) 2>/dev/null | wc -l | tr -d ' '
+  }
+fi
 
 list_child_dirs_sorted() {
   local parent="$1"
@@ -219,7 +228,7 @@ if [ -d "$PLANNING_DIR" ]; then
       phase_count=$((phase_count + 1))
       phase_slug=$(basename "$dir" | sed 's/^[0-9]*-//')
 
-      plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+      plans=$(count_phase_plans "$dir")
       summaries=$(count_complete_summaries "$dir")
 
       if [ "$plans" -eq 0 ] && [ -z "$next_unplanned" ]; then
@@ -292,7 +301,7 @@ if [ -d "$PLANNING_DIR" ]; then
 
     # Count deviations and find failing plans in active phase
     if [ -n "$active_phase_dir" ] && [ -d "$active_phase_dir" ]; then
-      for sf in "$active_phase_dir"/*-SUMMARY.md; do
+      for sf in "$active_phase_dir"/*-SUMMARY.md "$active_phase_dir"/SUMMARY.md; do
         [ -f "$sf" ] || continue
         # Extract deviations count from frontmatter
         d=$(read_deviations_field "$sf")
@@ -389,7 +398,7 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
     for dir in ${SN_VERIFY_DIRS[@]+"${SN_VERIFY_DIRS[@]}"}; do
       [ -d "$dir" ] || continue
       # Guard: skip phases without execution artifacts (matching phase-detect.sh)
-      _plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+      _plans=$(count_phase_plans "$dir")
       _summaries=$(count_complete_summaries "$dir")
       if [ "$_plans" -eq 0 ] || [ "$_summaries" -lt "$_plans" ]; then
         continue
