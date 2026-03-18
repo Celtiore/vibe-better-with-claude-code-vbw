@@ -366,3 +366,162 @@ EOF
   grep -q '^Phase: 1 of 4' .vbw-planning/STATE.md
   ! grep -q '## Phase Status' .vbw-planning/STATE.md
 }
+
+# --- F-02: zero-phase clears stale Phase Status ---
+
+@test "update-phase-total: clears Phase Status bullets when zero canonical dirs remain" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 2 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1 (Setup):** Pending planning
+- **Phase 2 (Build):** Pending
+
+## Decisions
+- Decision A
+EOF
+  # Remove all phase dirs
+  rm -rf "$TEST_TEMP_DIR/.vbw-planning/phases"
+  mkdir -p "$TEST_TEMP_DIR/.vbw-planning/phases"
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  # Bullets should be cleared
+  ! grep -q '^- \*\*Phase' .vbw-planning/STATE.md
+  # Section heading and other content preserved
+  grep -q '## Phase Status' .vbw-planning/STATE.md
+  grep -q '## Decisions' .vbw-planning/STATE.md
+}
+
+# --- F-04: non-canonical dirs are excluded ---
+
+@test "update-phase-total: ignores dirs without numeric prefix" {
+  cd "$TEST_TEMP_DIR"
+  create_state_with_phase 1 2 "Setup"
+  mkdir -p .vbw-planning/phases/01-setup
+  mkdir -p .vbw-planning/phases/02-build
+  mkdir -p .vbw-planning/phases/misc-notes   # non-canonical
+  mkdir -p .vbw-planning/phases/templates    # non-canonical
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  grep -q '^Phase: 1 of 2' .vbw-planning/STATE.md
+}
+
+# --- F-06: summary-utils fallback parses terminal status ---
+
+@test "update-phase-total: inline fallback detects completed summaries" {
+  cd "$TEST_TEMP_DIR"
+  # Temporarily hide summary-utils.sh to force fallback
+  local saved_utils=""
+  if [ -f "$SCRIPTS_DIR/summary-utils.sh" ]; then
+    saved_utils="$SCRIPTS_DIR/summary-utils.sh"
+    mv "$saved_utils" "${saved_utils}.bak"
+  fi
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 1 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1 (Setup):** Pending
+EOF
+  mkdir -p .vbw-planning/phases/01-setup
+  touch .vbw-planning/phases/01-setup/01-PLAN.md
+  printf -- '---\nstatus: complete\n---\n' > .vbw-planning/phases/01-setup/01-SUMMARY.md
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  # Restore summary-utils.sh
+  if [ -n "$saved_utils" ]; then
+    mv "${saved_utils}.bak" "$saved_utils"
+  fi
+  [ "$status" -eq 0 ]
+  grep -q 'Phase 1.*Complete' .vbw-planning/STATE.md
+}
+
+# --- F-09: legacy PLAN.md (no numeric prefix) is counted ---
+
+@test "update-phase-total: counts PLAN.md without numeric prefix" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 1 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1 (Setup):** Pending
+EOF
+  mkdir -p .vbw-planning/phases/01-setup
+  touch .vbw-planning/phases/01-setup/PLAN.md
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  grep -q 'Phase 1.*Planned' .vbw-planning/STATE.md
+}
+
+# --- F-11: gapped dir numbering uses sorted position ---
+
+@test "update-phase-total: Phase: line and bullets agree with non-contiguous dir numbers" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 2 of 3 (Build)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1:** Pending
+- **Phase 2:** Pending
+- **Phase 3:** Pending
+EOF
+  # Create dirs with a gap: 01, 03, 04 (no 02)
+  mkdir -p .vbw-planning/phases/01-setup
+  mkdir -p .vbw-planning/phases/03-build
+  mkdir -p .vbw-planning/phases/04-deploy
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  # Phase 2 in sorted order is 03-build
+  grep -q '^Phase: 2 of 3 (Build)' .vbw-planning/STATE.md
+  # Bullet 2 should also say Build
+  grep -q '^\- \*\*Phase 2 (Build):\*\*' .vbw-planning/STATE.md
+}
+
+# --- F-12: blank line before next heading after empty Phase Status ---
+
+@test "update-phase-total: emits blank line before next heading after Phase Status" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 1 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+## Decisions
+- Decision A
+EOF
+  mkdir -p .vbw-planning/phases/01-setup
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  # Should have a blank line between Phase Status bullets and ## Decisions
+  local result
+  result=$(awk '/^- \*\*Phase 1/{found=1; next} found && /^$/{blank=1; next} found && blank && /^## Decisions/{print "ok"; exit}' .vbw-planning/STATE.md)
+  [ "$result" = "ok" ]
+}

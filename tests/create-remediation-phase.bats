@@ -446,3 +446,82 @@ EOF
   # CONTEXT.md should note no UAT report found
   grep -q 'No UAT report found' .vbw-planning/phases/02-*/02-CONTEXT.md
 }
+
+# --- F-01: slug-match guard prevents duplicate remediation phases ---
+
+@test "create-remediation-phase reuses existing dir when marker is missing (F-01 race guard)" {
+  mkdir -p .vbw-planning/milestones/01-arch/phases/03-api
+
+  cat > .vbw-planning/milestones/01-arch/phases/03-api/03-UAT.md <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  # First invocation creates the remediation phase
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  first_phase_dir=$(echo "$output" | grep '^phase_dir=' | sed 's/^phase_dir=//')
+
+  # Remove the .remediated marker to simulate race window
+  rm -f .vbw-planning/milestones/01-arch/phases/03-api/.remediated
+
+  # Second invocation should reuse existing dir, not create a duplicate
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  second_phase_dir=$(echo "$output" | grep '^phase_dir=' | sed 's/^phase_dir=//')
+
+  [ "$first_phase_dir" = "$second_phase_dir" ]
+  # Ensure no second numbered remediation phase directory was created
+  local dir_count
+  dir_count=$(find .vbw-planning/phases -mindepth 1 -maxdepth 1 -type d -name '*-remediate-*' | wc -l | tr -d ' ')
+  [ "$dir_count" -eq 1 ]
+}
+
+# --- F-10: archive-stripped STATE.md triggers re-bootstrap ---
+
+@test "create-remediation-phase re-bootstraps when archive strips Phase: line (F-10)" {
+  mkdir -p .vbw-planning/milestones/01-arch/phases/03-api
+  cat > .vbw-planning/PROJECT.md <<'EOF'
+# Test Project
+EOF
+
+  cat > .vbw-planning/milestones/01-arch/phases/03-api/03-UAT.md <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  # First invocation creates remediation
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  [ -f .vbw-planning/STATE.md ]
+  grep -q '^Phase: ' .vbw-planning/STATE.md
+
+  # Simulate archive stripping ## Current Phase but keeping milestone line
+  cat > .vbw-planning/STATE.md <<'EOF'
+# VBW State
+
+**Project:** Test Project
+**Milestone:** UAT Remediation
+
+## Decisions
+- Decision A
+EOF
+
+  # Re-entry should re-bootstrap (not silently no-op)
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  grep -q '^Phase: ' .vbw-planning/STATE.md
+  grep -q '## Phase Status' .vbw-planning/STATE.md
+}

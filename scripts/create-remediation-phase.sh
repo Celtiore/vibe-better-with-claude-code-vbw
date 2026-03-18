@@ -276,7 +276,8 @@ seed_remediation_roadmap_and_state() {
     # Sync STATE.md with current phase directories.
     # update-phase-total.sh owns the Phase: total and ## Phase Status section —
     # it derives status from filesystem (PLAN/SUMMARY presence).
-    if [ -f "$state_file" ] && grep -q '^\*\*Milestone:\*\* UAT Remediation$' "$state_file" 2>/dev/null; then
+    # F-10: also require Phase: line; if archive stripped it, re-bootstrap.
+    if [ -f "$state_file" ] && grep -q '^\*\*Milestone:\*\* UAT Remediation$' "$state_file" 2>/dev/null && grep -q '^Phase: ' "$state_file" 2>/dev/null; then
       bash "$SCRIPT_DIR/update-phase-total.sh" "$PLANNING_DIR"
     else
       bash "$SCRIPT_DIR/bootstrap/bootstrap-state.sh" "$state_file" "$project_name" "UAT Remediation" "$phase_count"
@@ -343,6 +344,16 @@ if [ ${#PHASE_SLUG} -gt 60 ]; then
 fi
 
 TARGET_PHASE_DIR="$PHASES_DIR/${NEXT_PHASE_PADDED}-${PHASE_SLUG}"
+
+# F-01 guard: detect an existing dir with the same slug (race window between
+# mkdir and .remediated write). Reuse if found instead of creating a duplicate.
+EXISTING_SLUG_DIR=$(find "$PHASES_DIR" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*-${PHASE_SLUG}" 2>/dev/null | head -1)
+if [[ -n "$EXISTING_SLUG_DIR" && -d "$EXISTING_SLUG_DIR" ]]; then
+  TARGET_PHASE_DIR="$EXISTING_SLUG_DIR"
+  NEXT_PHASE_PADDED=$(basename "$EXISTING_SLUG_DIR" | sed 's/[^0-9].*//')
+  NEXT_PHASE=$((10#$NEXT_PHASE_PADDED))
+fi
+
 mkdir -p "$TARGET_PHASE_DIR"
 
 SOURCE_UAT=$(latest_non_source_uat "$MILESTONE_PHASE_DIR")
