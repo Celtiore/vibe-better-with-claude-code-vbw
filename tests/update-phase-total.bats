@@ -343,3 +343,26 @@ EOF
   grep -q 'Phase 2.*Planned' .vbw-planning/STATE.md
   grep -q 'Phase 3.*Pending' .vbw-planning/STATE.md
 }
+
+# --- F-18: absent Phase Status heading ---
+
+@test "update-phase-total: does not inject Phase Status when heading absent" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 3 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Decisions
+- Decision A
+EOF
+  create_phase_dirs 4
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  grep -q '^Phase: 1 of 4' .vbw-planning/STATE.md
+  ! grep -q '## Phase Status' .vbw-planning/STATE.md
+}

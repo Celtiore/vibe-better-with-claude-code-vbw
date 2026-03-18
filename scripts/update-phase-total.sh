@@ -128,7 +128,7 @@ if [ -s "$new_status_file" ] && grep -q '^## Phase Status' "$state_md" 2>/dev/nu
     skip && /^- \*\*Phase [0-9]/ { next }
     skip && /^$/ { skip = 0; print; next }
     skip && /^##/ { skip = 0; print; next }
-    skip { skip = 0; print; next }
+    skip { next }
     { print }
   ' "$state_md" > "$tmp2" 2>/dev/null && \
     mv "$tmp2" "$state_md" 2>/dev/null || rm -f "$tmp2" 2>/dev/null
