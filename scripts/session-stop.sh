@@ -66,7 +66,7 @@ rm -rf "$PLANNING_DIR/.compacting" 2>/dev/null || true
 
 # Clean up stale worktrees (>2 hours) — fail-silent
 SCRIPT_DIR_STOP="$(cd "$(dirname "$0")" && pwd)"
-WORKTREES_DIR="$(pwd)/.vbw-worktrees"
+WORKTREES_DIR="$VBW_CONFIG_ROOT/.vbw-worktrees"
 if [ -d "$WORKTREES_DIR" ] && [ -f "$SCRIPT_DIR_STOP/worktree-cleanup.sh" ]; then
   NOW_STOP=$(date +%s)
   STALE_SECS=7200

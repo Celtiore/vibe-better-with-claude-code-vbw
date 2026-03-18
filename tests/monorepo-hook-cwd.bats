@@ -171,5 +171,5 @@ JSON
   echo "$output" | grep -qi "bal"
   # The hardcoded default "quality" must NOT appear as the model profile
   # (use a pattern that matches the profile display, not any word)
-  ! echo "$output" | grep -qi "^.*model.*qual\|qual.*model\|profile.*qual"
+  ! echo "$output" | grep -qiE "model.*qual|qual.*model|profile.*qual"
 }
