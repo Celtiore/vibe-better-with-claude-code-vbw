@@ -84,6 +84,11 @@ else
   }
 fi
 
+# Resolve VBW workspace root (issue #258: bare .vbw-planning/ fails in monorepo submodules)
+# shellcheck source=lib/vbw-config-root.sh
+. "$_SL_SCRIPT_DIR/lib/vbw-config-root.sh"
+find_vbw_root
+
 cache_fresh() {
   local cf="$1" ttl="$2"
   [ ! -f "$cf" ] && return 1
@@ -339,8 +344,8 @@ CTX_SIZE_FMT=$(fmt_tok "$CTX_SIZE")
 
 # Cache context usage for pre-flight guard (suggest-compact.sh).
 # Include session ID so suggest-compact.sh can detect stale cross-session data (#238).
-if [ -d ".vbw-planning" ]; then
-  printf '%s\n' "${CLAUDE_SESSION_ID:-unknown}|${PCT}|${CTX_SIZE}" > .vbw-planning/.context-usage 2>/dev/null || true
+if [ -d "$VBW_PLANNING_DIR" ]; then
+  printf '%s\n' "${CLAUDE_SESSION_ID:-unknown}|${PCT}|${CTX_SIZE}" > "$VBW_PLANNING_DIR/.context-usage" 2>/dev/null || true
 fi
 IN_TOK_FMT=$(fmt_tok "$IN_TOK")
 OUT_TOK_FMT=$(fmt_tok "$OUT_TOK")
@@ -363,23 +368,23 @@ if ! cache_fresh "$FAST_CF" 5; then
   PH=""; TT=""; EF="balanced"; MP="quality"; BR=""
   PD=0; PT=0; PPD=0; PPT=0; QA="--"; QA_COLOR="D"; GH_URL=""
   PP_LABEL="this phase"; REM_ACTIVE="false"
-  if [ -f ".vbw-planning/STATE.md" ]; then
+  if [ -f "$VBW_PLANNING_DIR/STATE.md" ]; then
     # Parse "Phase: N of M (slug)" — extract N and M before parenthetical
     # to avoid picking up numbers from phase name slugs like "01-context-diet"
-    _phase_line=$(grep -m1 "^Phase:" .vbw-planning/STATE.md 2>/dev/null)
+    _phase_line=$(grep -m1 "^Phase:" "$VBW_PLANNING_DIR/STATE.md" 2>/dev/null)
     PH=$(echo "$_phase_line" | sed -n 's/^Phase:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
     TT=$(echo "$_phase_line" | sed -n 's/.*[[:space:]]of[[:space:]]*\([0-9][0-9]*\).*/\1/p')
   fi
-  if [ -f ".vbw-planning/config.json" ]; then
+  if [ -f "$VBW_PLANNING_DIR/config.json" ]; then
     # Auto-migrate: add model_profile if missing
-    if ! jq -e '.model_profile' .vbw-planning/config.json >/dev/null 2>&1; then
+    if ! jq -e '.model_profile' "$VBW_PLANNING_DIR/config.json" >/dev/null 2>&1; then
       TMP=$(mktemp)
-      jq '. + {model_profile: "quality", model_overrides: {}}' .vbw-planning/config.json > "$TMP" && mv "$TMP" .vbw-planning/config.json
+      jq '. + {model_profile: "quality", model_overrides: {}}' "$VBW_PLANNING_DIR/config.json" > "$TMP" && mv "$TMP" "$VBW_PLANNING_DIR/config.json"
     fi
-    EF=$(jq -r '.effort // "balanced"' .vbw-planning/config.json 2>/dev/null)
-    MP=$(jq -r '.model_profile // "quality"' .vbw-planning/config.json 2>/dev/null)
-    HIDE_AGENT_TMUX=$(jq -r '.statusline_hide_agent_in_tmux // false' .vbw-planning/config.json 2>/dev/null)
-    COLLAPSE_AGENT_TMUX=$(jq -r '.statusline_collapse_agent_in_tmux // false' .vbw-planning/config.json 2>/dev/null)
+    EF=$(jq -r '.effort // "balanced"' "$VBW_PLANNING_DIR/config.json" 2>/dev/null)
+    MP=$(jq -r '.model_profile // "quality"' "$VBW_PLANNING_DIR/config.json" 2>/dev/null)
+    HIDE_AGENT_TMUX=$(jq -r '.statusline_hide_agent_in_tmux // false' "$VBW_PLANNING_DIR/config.json" 2>/dev/null)
+    COLLAPSE_AGENT_TMUX=$(jq -r '.statusline_collapse_agent_in_tmux // false' "$VBW_PLANNING_DIR/config.json" 2>/dev/null)
   fi
   if git rev-parse --git-dir >/dev/null 2>&1; then
     BR=$(git branch --show-current 2>/dev/null)
@@ -389,7 +394,7 @@ if ! cache_fresh "$FAST_CF" 5; then
     # shellcheck disable=SC1083
     GIT_AHEAD=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
   fi
-  if [ -d ".vbw-planning/phases" ]; then
+  if [ -d "$VBW_PLANNING_DIR/phases" ]; then
     PT=0
     PD=0
     while IFS= read -r _sl_pdir; do
@@ -401,9 +406,9 @@ if ! cache_fresh "$FAST_CF" 5; then
         [ -d "$_sl_rdir" ] || continue
         PD=$((PD + $(count_complete_summaries "$_sl_rdir")))
       done
-    done < <(list_canonical_phase_dirs ".vbw-planning/phases")
+    done < <(list_canonical_phase_dirs "$VBW_PLANNING_DIR/phases")
     if [ -n "$PH" ] && [ "$PH" != "0" ]; then
-      PDIR=$(find_phase_dir_by_ref ".vbw-planning" "$PH")
+      PDIR=$(find_phase_dir_by_ref "$VBW_PLANNING_DIR" "$PH")
       [ -n "$PDIR" ] && PPD=$(count_complete_summaries "$PDIR")
       [ -n "$PDIR" ] && PPT=$(count_phase_plans "$PDIR")
       # Remediation-aware plan counts: override PPT/PPD with remediation round totals
@@ -459,7 +464,7 @@ if ! cache_fresh "$FAST_CF" 5; then
   fi
 
   EXEC_STATUS=""; EXEC_WAVE=0; EXEC_TWAVES=0; EXEC_DONE=0; EXEC_TOTAL=0; EXEC_CURRENT=""
-  if [ -f ".vbw-planning/.execution-state.json" ]; then
+  if [ -f "$VBW_PLANNING_DIR/.execution-state.json" ]; then
     IFS='|' read -r EXEC_STATUS EXEC_WAVE EXEC_TWAVES EXEC_DONE EXEC_TOTAL EXEC_CURRENT <<< \
       "$(jq -r '[
         (.status // ""),
@@ -468,14 +473,14 @@ if ! cache_fresh "$FAST_CF" 5; then
         ([.plans[] | select(.status == "complete" or .status == "partial")] | length),
         (.plans | length),
         ([.plans[] | select(.status == "running")][0].title // "")
-      ] | join("|")' .vbw-planning/.execution-state.json 2>/dev/null)"
+      ] | join("|")' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)"
     # Reconcile EXEC_DONE against actual SUMMARY.md files on disk.
     # After a reset/undo, .execution-state.json retains stale "complete"
     # statuses but SUMMARY.md files may no longer exist.
     if [ "$EXEC_STATUS" = "running" ] && [ "${EXEC_DONE:-0}" -gt 0 ] 2>/dev/null; then
-      _exec_phase=$(jq -r '.phase // ""' .vbw-planning/.execution-state.json 2>/dev/null)
+      _exec_phase=$(jq -r '.phase // ""' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)
       if [ -n "$_exec_phase" ]; then
-        _exec_pdir=$(find_phase_dir_by_ref ".vbw-planning" "$_exec_phase")
+        _exec_pdir=$(find_phase_dir_by_ref "$VBW_PLANNING_DIR" "$_exec_phase")
         if [ -n "$_exec_pdir" ] && [ -d "$_exec_pdir" ]; then
           _actual_done=$(count_done_summaries "$_exec_pdir")
           if [ "${_actual_done:-0}" -lt "${EXEC_DONE:-0}" ] 2>/dev/null; then
@@ -508,7 +513,7 @@ fi
 
 # Badge color: live check (not cached) so transitions are immediate.
 # [ -f ] is a single stat() syscall — negligible cost vs cache TTL staleness.
-VBW_CTX=0; [ -f ".vbw-planning/.vbw-context" ] && VBW_CTX=1
+VBW_CTX=0; [ -f "$VBW_PLANNING_DIR/.vbw-context" ] && VBW_CTX=1
 if [ "$VBW_CTX" = "1" ]; then
   VC="${C}${B}"
 else
@@ -555,8 +560,8 @@ if ! cache_fresh "$SLOW_CF" "$_SLOW_TTL"; then
   EXTRA_ENABLED=0; EXTRA_PCT=-1; EXTRA_USED_C=0; EXTRA_LIMIT_C=0; FETCH_OK="noauth"
   OAUTH_TOKEN=""
   AUTH_METHOD=""
-  HIDE_LIMITS=$(jq -r '.statusline_hide_limits // false' .vbw-planning/config.json 2>/dev/null)
-  HIDE_LIMITS_API=$(jq -r '.statusline_hide_limits_for_api_key // false' .vbw-planning/config.json 2>/dev/null)
+  HIDE_LIMITS=$(jq -r '.statusline_hide_limits // false' "$VBW_PLANNING_DIR/config.json" 2>/dev/null)
+  HIDE_LIMITS_API=$(jq -r '.statusline_hide_limits_for_api_key // false' "$VBW_PLANNING_DIR/config.json" 2>/dev/null)
 
   # Respect CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC — skip ALL outbound requests (#249)
   _resolve_notraffic
@@ -686,8 +691,8 @@ PREV_COST=""
 [ -O "$COST_CF" ] && PREV_COST=$(cat "$COST_CF" 2>/dev/null)
 printf '%s\n' "${COST}" > "$COST_CF" 2>/dev/null
 
-LEDGER_FILE=".vbw-planning/.cost-ledger.json"
-if [ -n "$PREV_COST" ] && [ -d ".vbw-planning" ]; then
+LEDGER_FILE="$VBW_PLANNING_DIR/.cost-ledger.json"
+if [ -n "$PREV_COST" ] && [ -d "$VBW_PLANNING_DIR" ]; then
   _to_cents() {
     local val="$1" w f
     w="${val%%.*}"
@@ -700,7 +705,7 @@ if [ -n "$PREV_COST" ] && [ -d ".vbw-planning" ]; then
 
   if [ "$DELTA_CENTS" -gt 0 ]; then
     ACTIVE_AGENT="other"
-    [ -f ".vbw-planning/.active-agent" ] && ACTIVE_AGENT=$(cat .vbw-planning/.active-agent 2>/dev/null)
+    [ -f "$VBW_PLANNING_DIR/.active-agent" ] && ACTIVE_AGENT=$(cat "$VBW_PLANNING_DIR/.active-agent" 2>/dev/null)
     [ -z "$ACTIVE_AGENT" ] && ACTIVE_AGENT="other"
 
     if [ -f "$LEDGER_FILE" ] && jq empty "$LEDGER_FILE" 2>/dev/null; then
@@ -805,7 +810,7 @@ if [ "$_HIDE_EXEC_TMUX" != "true" ] && [ "$EXEC_STATUS" = "running" ] && [ "${EX
   [ "${EXEC_TWAVES:-0}" -gt 1 ] 2>/dev/null && L1="$L1 ${D}│${X} Wave ${EXEC_WAVE}/${EXEC_TWAVES}"
   [ -n "$EXEC_CURRENT" ] && L1="$L1 ${D}│${X} ${C}◆${X} ${EXEC_CURRENT}"
 elif [ "$EXEC_STATUS" = "complete" ]; then
-  rm -f .vbw-planning/.execution-state.json "$FAST_CF" 2>/dev/null
+  rm -f "$VBW_PLANNING_DIR/.execution-state.json" "$FAST_CF" 2>/dev/null
   EXEC_STATUS=""
   L1="${VC}[VBW]${X}"
   [ "$TT" -gt 0 ] 2>/dev/null && L1="$L1 Phase ${PH}/${TT}" || L1="$L1 Phase ${PH:-?}"
@@ -820,7 +825,7 @@ elif [ "$EXEC_STATUS" = "complete" ]; then
   L1="$L1 ${D}│${X} Effort: $EF ${D}│${X} Model: $MP"
   _qc="$D"; case "${QA_COLOR:-D}" in G) _qc="$G";; Y) _qc="$Y";; R) _qc="$R";; esac
   L1="$L1 ${D}│${X} ${_qc}${QA}${X}"
-elif [ -d ".vbw-planning" ]; then
+elif [ -d "$VBW_PLANNING_DIR" ]; then
   L1="${VC}[VBW]${X}"
   [ "$TT" -gt 0 ] 2>/dev/null && L1="$L1 Phase ${PH}/${TT}" || L1="$L1 Phase ${PH:-?}"
   if [ "$PT" -gt 0 ] 2>/dev/null; then
