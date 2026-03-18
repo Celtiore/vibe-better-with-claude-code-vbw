@@ -273,55 +273,11 @@ seed_remediation_roadmap_and_state() {
 
     project_name=$(extract_project_name)
 
-    # Preserve existing STATE.md phase statuses when the remediation milestone
-    # is already seeded (avoid resetting progress on re-entry or phase addition).
+    # Sync STATE.md with current phase directories.
+    # update-phase-total.sh owns the Phase: total and ## Phase Status section —
+    # it derives status from filesystem (PLAN/SUMMARY presence).
     if [ -f "$state_file" ] && grep -q '^\*\*Milestone:\*\* UAT Remediation$' "$state_file" 2>/dev/null; then
-      existing_phase_lines=$(awk '
-        BEGIN { count = 0 }
-        /^- \*\*Phase [0-9]+/ { count++ }
-        END { print count + 0 }
-      ' "$state_file" 2>/dev/null)
-      existing_phase_lines="${existing_phase_lines:-0}"
-      if [ "$phase_count" -gt "$existing_phase_lines" ]; then
-        # Append/repair phase entries after the last existing "- **Phase N:**"
-        # line, or directly after "## Phase Status" when bullet lines are
-        # missing in brownfield STATE.md files.
-        awk -v start="$((existing_phase_lines + 1))" -v end="$phase_count" '
-          /^## Phase Status$/ { phase_status_header = NR }
-          /^- \*\*Phase [0-9]+/ { last_phase_line = NR }
-          { lines[NR] = $0; count = NR }
-          END {
-            inserted = 0
-            for (i = 1; i <= count; i++) {
-              print lines[i]
-              if (last_phase_line > 0 && i == last_phase_line) {
-                for (p = start; p <= end; p++) {
-                  print "- **Phase " p ":** Pending"
-                }
-                inserted = 1
-              } else if (last_phase_line == 0 && phase_status_header > 0 && i == phase_status_header) {
-                for (p = start; p <= end; p++) {
-                  print "- **Phase " p ":** Pending"
-                }
-                inserted = 1
-              }
-            }
-
-            if (!inserted && start <= end) {
-              if (count > 0 && lines[count] !~ /^$/) {
-                print ""
-              }
-              print "## Phase Status"
-              for (p = start; p <= end; p++) {
-                print "- **Phase " p ":** Pending"
-              }
-            }
-          }
-        ' "$state_file" > "${state_file}.tmp" && mv "${state_file}.tmp" "$state_file"
-        # Sync Phase: total with actual phase count (--total-only
-        # preserves existing Phase Status bullets managed by awk above)
-        bash "$SCRIPT_DIR/update-phase-total.sh" "$PLANNING_DIR" --total-only
-      fi
+      bash "$SCRIPT_DIR/update-phase-total.sh" "$PLANNING_DIR"
     else
       bash "$SCRIPT_DIR/bootstrap/bootstrap-state.sh" "$state_file" "$project_name" "UAT Remediation" "$phase_count"
     fi

@@ -21,11 +21,10 @@ phases_dir="${planning_root}/phases"
 [ -f "$state_md" ] || exit 0
 [ -d "$phases_dir" ] || exit 0
 
-# Parse optional flag
+# Parse optional flags
 shift || true
 action=""
 position=0
-total_only=false
 while [ $# -gt 0 ]; do
   case "${1:-}" in
     --inserted)
@@ -37,10 +36,6 @@ while [ $# -gt 0 ]; do
       action="removed"
       position="${2:-0}"
       shift 2 || break
-      ;;
-    --total-only)
-      total_only=true
-      shift
       ;;
     *)
       shift
@@ -104,11 +99,6 @@ fi
 tmp="${state_md}.tmp.$$"
 sed "s/^Phase: .*/${replacement}/" "$state_md" > "$tmp" 2>/dev/null && \
   mv "$tmp" "$state_md" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-
-# Skip Phase Status rebuild if --total-only
-if [ "$total_only" = true ]; then
-  exit 0
-fi
 
 # Rebuild ## Phase Status section to match current phase directories
 new_status_file="${state_md}.newstatus.$$"

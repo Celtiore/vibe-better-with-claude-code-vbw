@@ -232,7 +232,8 @@ EOF
   [ "$(grep -Ec '^## Phase [0-9]+:' .vbw-planning/ROADMAP.md | tr -d ' ')" -eq 2 ]
   grep -q '^| 1 | Pending | 0 | 0 | 0 |$' .vbw-planning/ROADMAP.md
   grep -q '^| 2 | Pending | 0 | 0 | 0 |$' .vbw-planning/ROADMAP.md
-  grep -q '^- \*\*Phase 2:\*\* Pending$' .vbw-planning/STATE.md
+  # Phase Status bullets now include directory-derived names (Option A)
+  grep -qE '^- \*\*Phase 2 \([^)]+\):\*\* Pending$' .vbw-planning/STATE.md
 }
 
 @test "create-remediation-phase preserves existing ROADMAP.md progress on re-entry" {
@@ -297,8 +298,9 @@ EOF
 
   # Simulate progress on phase 1
   sed -i.bak 's/| 1 | Pending | 0 | 0 | 0 |/| 1 | Complete | 3 | 8 | 5 |/' .vbw-planning/ROADMAP.md && rm -f .vbw-planning/ROADMAP.md.bak
-  # Simulate state progress
-  sed -i.bak 's/Phase 1:\*\* Pending planning/Phase 1:** Complete/' .vbw-planning/STATE.md && rm -f .vbw-planning/STATE.md.bak
+  # Simulate completed phase 1 via filesystem artifacts (update-phase-total.sh derives status)
+  touch .vbw-planning/phases/01-remediate-01-arch-api/01-PLAN.md
+  printf -- '---\nstatus: complete\n---\n' > .vbw-planning/phases/01-remediate-01-arch-api/01-SUMMARY.md
 
   # Create phase 2 — should NOT clobber phase 1 progress
   run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
@@ -310,10 +312,10 @@ EOF
   grep -q '^| 1 | Complete | 3 | 8 | 5 |$' .vbw-planning/ROADMAP.md
   # Phase 2 added as Pending
   grep -q '^| 2 | Pending | 0 | 0 | 0 |$' .vbw-planning/ROADMAP.md
-  # Phase 1 status preserved in STATE.md
-  grep -q '^- \*\*Phase 1:\*\* Complete$' .vbw-planning/STATE.md
+  # Phase 1 status derived as Complete from filesystem artifacts
+  grep -qE '^- \*\*Phase 1 \([^)]+\):\*\* Complete$' .vbw-planning/STATE.md
   # Phase 2 added as Pending in STATE.md
-  grep -q '^- \*\*Phase 2:\*\* Pending$' .vbw-planning/STATE.md
+  grep -qE '^- \*\*Phase 2 \([^)]+\):\*\* Pending$' .vbw-planning/STATE.md
 }
 
 @test "create-remediation-phase preserves non-canonical ROADMAP progress row formats" {
@@ -358,12 +360,19 @@ EOF
     .vbw-planning/milestones/01-arch/phases/03-api
   [ "$status" -eq 0 ]
 
-  # Simulate malformed/brownfield STATE.md: remediation milestone, no phase bullets.
+  # Simulate malformed/brownfield STATE.md: remediation milestone, phase header
+  # present but bullets missing (update-phase-total.sh needs Phase: line to operate).
   cat > .vbw-planning/STATE.md <<'EOF'
 # VBW State
 
 **Project:** Test Project
 **Milestone:** UAT Remediation
+
+## Current Phase
+Phase: 1 of 1 (Remediate 01 Arch Api)
+Plans: 0/0
+Progress: 0%
+Status: active
 
 ## Phase Status
 
@@ -379,7 +388,8 @@ EOF
 
   [ "$status" -eq 0 ]
   [[ "$output" != *"integer expression expected"* ]]
-  grep -q '^- \*\*Phase 1:\*\* Pending$' .vbw-planning/STATE.md
+  # Phase Status rebuilt from filesystem with directory-derived name
+  grep -qE '^- \*\*Phase 1 \([^)]+\):\*\* Pending planning$' .vbw-planning/STATE.md
 }
 
 @test "create-remediation-phase prefers canonical UAT over SOURCE-UAT" {
