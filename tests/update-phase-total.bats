@@ -198,3 +198,114 @@ EOF
   # Current clamped to 3
   grep -q '^Phase: 3 of 3' .vbw-planning/STATE.md
 }
+
+# --- F-09: nameless Phase: format (bootstrap output) ---
+
+@test "update-phase-total: handles nameless Phase: line from bootstrap" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 3
+Plans: 0/0
+Progress: 0%
+Status: ready
+EOF
+  create_phase_dirs 4
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  grep -q '^Phase: 1 of 4' .vbw-planning/STATE.md
+}
+
+# --- F-08: Phase Status section rebuild ---
+
+@test "update-phase-total: rebuilds Phase Status after add" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 3 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1:** Pending planning
+- **Phase 2:** Pending
+- **Phase 3:** Pending
+
+## Decisions
+- Decision A
+EOF
+  create_phase_dirs 4  # added 4th phase
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  # Phase Status should now have 4 entries
+  local count
+  count=$(grep -c '^\- \*\*Phase [0-9]' .vbw-planning/STATE.md)
+  [ "$count" -eq 4 ]
+}
+
+@test "update-phase-total: rebuilds Phase Status after remove" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 4 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1:** Pending planning
+- **Phase 2:** Pending
+- **Phase 3:** Pending
+- **Phase 4:** Pending
+EOF
+  create_phase_dirs 3  # removed one
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning --removed 4
+  [ "$status" -eq 0 ]
+  local count
+  count=$(grep -c '^\- \*\*Phase [0-9]' .vbw-planning/STATE.md)
+  [ "$count" -eq 3 ]
+}
+
+@test "update-phase-total: Phase Status preserves Decisions section below" {
+  cd "$TEST_TEMP_DIR"
+  cat > .vbw-planning/STATE.md <<'EOF'
+# State
+
+## Current Phase
+Phase: 1 of 2 (Setup)
+Plans: 0/0
+Progress: 0%
+Status: active
+
+## Phase Status
+- **Phase 1:** Pending planning
+- **Phase 2:** Pending
+
+## Decisions
+- Important decision
+EOF
+  create_phase_dirs 3
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning
+  [ "$status" -eq 0 ]
+  grep -q '## Decisions' .vbw-planning/STATE.md
+  grep -q 'Important decision' .vbw-planning/STATE.md
+}
+
+# --- F-11: position validation ---
+
+@test "update-phase-total: non-numeric position is no-op" {
+  cd "$TEST_TEMP_DIR"
+  create_state_with_phase 2 3 "Build"
+  create_phase_dirs 3
+  run bash "$SCRIPTS_DIR/update-phase-total.sh" .vbw-planning --inserted abc
+  [ "$status" -eq 0 ]
+  # Should exit early without changes
+  grep -q '^Phase: 2 of 3' .vbw-planning/STATE.md
+}

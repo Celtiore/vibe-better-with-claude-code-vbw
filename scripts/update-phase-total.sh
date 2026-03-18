@@ -25,6 +25,11 @@ elif [ "${1:-}" = "--removed" ] && [ -n "${2:-}" ]; then
   position="$2"
 fi
 
+# Validate position is a positive integer when provided
+if [ -n "$action" ] && ! echo "$position" | grep -qE '^[1-9][0-9]*$'; then
+  exit 0
+fi
+
 # Recalculate total from filesystem
 total=$(find "$phases_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
 [ "$total" -eq 0 ] && exit 0
@@ -72,7 +77,52 @@ else
   replacement="Phase: ${current} of ${total}"
 fi
 
-# Update STATE.md
+# Update STATE.md Phase: line
 tmp="${state_md}.tmp.$$"
 sed "s/^Phase: .*/${replacement}/" "$state_md" > "$tmp" 2>/dev/null && \
   mv "$tmp" "$state_md" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+
+# Rebuild ## Phase Status section to match current phase directories
+new_status_file="${state_md}.newstatus.$$"
+phase_idx=0
+: > "$new_status_file"
+while IFS= read -r dir; do
+  [ -z "$dir" ] && continue
+  phase_idx=$((phase_idx + 1))
+  local_name=$(basename "$dir" | sed 's/^[0-9]*-//' | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
+  # Check for existing plans/summaries to infer status
+  local_plans=$(find "$dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+  local_summaries=$(find "$dir" -maxdepth 1 -name '*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$local_plans" -gt 0 ] && [ "$local_summaries" -ge "$local_plans" ]; then
+    status_text="Complete"
+  elif [ "$local_summaries" -gt 0 ]; then
+    status_text="In progress"
+  elif [ "$local_plans" -gt 0 ]; then
+    status_text="Planned"
+  elif [ "$phase_idx" -eq 1 ]; then
+    status_text="Pending planning"
+  else
+    status_text="Pending"
+  fi
+  echo "- **Phase ${phase_idx} (${local_name}):** ${status_text}" >> "$new_status_file"
+done < <(find "$phases_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+
+# Replace existing ## Phase Status section if present
+if [ -s "$new_status_file" ] && grep -q '^## Phase Status' "$state_md" 2>/dev/null; then
+  tmp2="${state_md}.tmp2.$$"
+  NSF="$new_status_file" awk '
+    /^## Phase Status$/ {
+      print
+      while ((getline line < ENVIRON["NSF"]) > 0) print line
+      skip = 1
+      next
+    }
+    skip && /^- \*\*Phase [0-9]/ { next }
+    skip && /^$/ { skip = 0; print; next }
+    skip && /^##/ { skip = 0; print; next }
+    skip { skip = 0; print; next }
+    { print }
+  ' "$state_md" > "$tmp2" 2>/dev/null && \
+    mv "$tmp2" "$state_md" 2>/dev/null || rm -f "$tmp2" 2>/dev/null
+fi
+rm -f "$new_status_file" 2>/dev/null
