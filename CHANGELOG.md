@@ -2,6 +2,21 @@
 
 All notable changes to VBW will be documented in this file.
 
+## [1.33.1] - 2026-03-17
+
+### Added
+
+- **`statusline`** -- Normalize context percentages and X/Y totals to Claude Code's usable autocompact window, including override-aware calculations for larger context windows. (PR #250)
+
+### Changed
+
+- **`docs`** -- Clarify the v1.33.0 release wording across the changelog, Discord draft, and published GitHub release notes. (PR #245)
+- **`docs`** -- Remove the temporary v1.33.0 Discord draft file from the repository. (PR #247)
+
+### Fixed
+
+- **`statusline`** -- Treat HTTP 429 usage responses as stale OAuth tokens, back off retries to 5 minutes, and skip usage fetches when nonessential traffic is disabled. (PR #251)
+
 ## [1.33.0] - 2026-03-14
 
 ### Added
