@@ -19,7 +19,7 @@ SCRIPT="$1"; shift
 # Cleanup orphaned agents on unexpected terminal termination.
 # This is a backup for tmux watchdog — handles direct terminal force-close.
 cleanup_on_sighup() {
-  PLANNING_DIR=".vbw-planning"
+  PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
   if [ ! -d "$PLANNING_DIR" ]; then
     exit 1
   fi
@@ -61,14 +61,19 @@ cleanup_on_sighup() {
 
 trap cleanup_on_sighup SIGHUP
 
+# Resolve VBW workspace root (issue #258: bare .vbw-planning/ fails in monorepo submodules)
+# shellcheck source=lib/vbw-config-root.sh
+. "$(dirname "$0")/lib/vbw-config-root.sh"
+find_vbw_root
+
 # Debug mode: VBW_DEBUG=1 enables verbose hook tracing to stderr
 VBW_DEBUG="${VBW_DEBUG:-0}"
 
 # Resolve debug_logging from config.json (shared flag for all hook diagnostics)
 _DBG_ENABLED=0
 [ "$VBW_DEBUG" = "1" ] && _DBG_ENABLED=1
-if [ "$_DBG_ENABLED" != "1" ] && [ -f ".vbw-planning/config.json" ] && command -v jq &>/dev/null; then
-  _DBG_VAL=$(jq -r '.debug_logging // false' ".vbw-planning/config.json" 2>/dev/null || echo "false")
+if [ "$_DBG_ENABLED" != "1" ] && [ -f "$VBW_PLANNING_DIR/config.json" ] && command -v jq &>/dev/null; then
+  _DBG_VAL=$(jq -r '.debug_logging // false' "$VBW_PLANNING_DIR/config.json" 2>/dev/null || echo "false")
   case "$_DBG_VAL" in true|1) _DBG_ENABLED=1 ;; esac
 fi
 
@@ -95,8 +100,8 @@ fi
 
 # Execute — stdin flows through to the target script
 # When debug logging is enabled, capture stdout for the debug log while still passing it through
-if [ "$_DBG_ENABLED" = "1" ] && [ -d ".vbw-planning" ]; then
-  _DBG_LOG=".vbw-planning/.hook-debug.log"
+if [ "$_DBG_ENABLED" = "1" ] && [ -d "$VBW_PLANNING_DIR" ]; then
+  _DBG_LOG="$VBW_PLANNING_DIR/.hook-debug.log"
   _DBG_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%s")
   _DBG_TMP=$(mktemp 2>/dev/null || echo "/tmp/.vbw-hook-dbg-$$")
   bash "$TARGET" "$@" | tee "$_DBG_TMP"
@@ -127,8 +132,8 @@ fi
 [ "$RC" -eq 2 ] && exit 2
 
 # --- Failure: log and exit 0 ---
-if [ -d ".vbw-planning" ]; then
-  LOG=".vbw-planning/.hook-errors.log"
+if [ -d "$VBW_PLANNING_DIR" ]; then
+  LOG="$VBW_PLANNING_DIR/.hook-errors.log"
   TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%s")
   printf '%s %s exit=%d\n' "$TS" "$SCRIPT" "$RC" >> "$LOG" 2>/dev/null
   # Trim to last 50 entries to prevent unbounded growth

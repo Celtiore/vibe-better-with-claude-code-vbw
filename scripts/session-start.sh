@@ -8,10 +8,15 @@ if ! command -v jq &>/dev/null; then
   exit 0
 fi
 
-PLANNING_DIR=".vbw-planning"
 # shellcheck source=resolve-claude-dir.sh
 . "$(dirname "$0")/resolve-claude-dir.sh"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Resolve VBW workspace root (issue #258: bare .vbw-planning/ fails in monorepo submodules)
+# shellcheck source=lib/vbw-config-root.sh
+. "$SCRIPT_DIR/lib/vbw-config-root.sh"
+find_vbw_root
+PLANNING_DIR="$VBW_PLANNING_DIR"
 
 # Source shared summary-status helpers for status-aware SUMMARY detection
 if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
