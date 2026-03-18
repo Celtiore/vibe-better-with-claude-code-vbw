@@ -12,7 +12,32 @@ if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
   source "$SCRIPT_DIR/summary-utils.sh"
 else
   # Safe default: report zero completions when helpers unavailable
+  count_complete_summaries() { echo "0"; }
   count_terminal_summaries() { echo "0"; }
+fi
+if [ -f "$SCRIPT_DIR/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  source "$SCRIPT_DIR/phase-state-utils.sh"
+else
+  list_canonical_phase_dirs() {
+    local parent="$1"
+    [ -d "$parent" ] || return 0
+    find "$parent" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
+      while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        base=$(basename "$dir")
+        case "$base" in [0-9]*-*) echo "$dir" ;; esac
+      done |
+      (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-)
+  }
+  count_phase_plans() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 ! -name '.*' \( -name '[0-9]*-PLAN.md' -o -name 'PLAN.md' \) 2>/dev/null | wc -l | tr -d ' '
+  }
+  phase_dir_display_name() {
+    local dir="$1"
+    basename "$dir" | sed 's/^[0-9]*-//' | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1'
+  }
 fi
 
 planning_root_from_phase_dir() {
@@ -39,7 +64,7 @@ update_state_md() {
   [ -f "$state_md" ] || return 0
 
   local plan_count summary_count pct
-  plan_count=$(find "$phase_dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+  plan_count=$(count_phase_plans "$phase_dir")
   summary_count=$(count_terminal_summaries "$phase_dir")
 
   if [ "$plan_count" -gt 0 ]; then
@@ -78,17 +103,22 @@ update_roadmap() {
 
   [ -f "$roadmap" ] || return 0
 
-  local dirname phase_num plan_count summary_count status date_str
+  local dirname phase_num prefix_phase_num plan_count summary_count status date_str
   dirname=$(basename "$phase_dir")
-  phase_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
+  prefix_phase_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
+  phase_num=$(phase_dir_position "$phase_dir")
+  if [ -z "$phase_num" ]; then
+    phase_num="$prefix_phase_num"
+  fi
   [ -z "$phase_num" ] && return 0
 
-  plan_count=$(find "$phase_dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
+  plan_count=$(count_phase_plans "$phase_dir")
   summary_count=$(count_terminal_summaries "$phase_dir")
+  complete_count=$(count_complete_summaries "$phase_dir")
 
   [ "$plan_count" -eq 0 ] && return 0
 
-  if [ "$summary_count" -eq "$plan_count" ]; then
+  if [ "$complete_count" -eq "$plan_count" ]; then
     if phase_has_uat_issues "$phase_dir"; then
       status="uat issues"
       date_str="-"
@@ -111,6 +141,10 @@ update_roadmap() {
   # Update extended progress table row (| num - name | done | status | date |)
   local existing_name
   existing_name=$(grep -E "^\| *${phase_num} - " "$roadmap" | head -1 | sed 's/^| *[0-9]* - //' | sed 's/ *|.*//')
+  if [ -z "$existing_name" ] && [ -n "$prefix_phase_num" ] && [ "$prefix_phase_num" != "$phase_num" ]; then
+    phase_num="$prefix_phase_num"
+    existing_name=$(grep -E "^\| *${phase_num} - " "$roadmap" | head -1 | sed 's/^| *[0-9]* - //' | sed 's/ *|.*//')
+  fi
   if [ -n "$existing_name" ]; then
     local tmp_ext="${roadmap}.tmp_ext.$$"
     sed "s/^| *${phase_num} - .*/| ${phase_num} - ${existing_name} | ${summary_count}\/${plan_count} | ${status} | ${date_str} |/" "$tmp" > "$tmp_ext" 2>/dev/null && \
@@ -194,30 +228,33 @@ advance_phase() {
 
   # Check if triggering phase is complete (terminal status, not just existence)
   local plan_count summary_count
-  plan_count=$(find "$phase_dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-  summary_count=$(count_terminal_summaries "$phase_dir")
+  plan_count=$(count_phase_plans "$phase_dir")
+  summary_count=$(count_complete_summaries "$phase_dir")
   [ "$plan_count" -gt 0 ] && [ "$summary_count" -eq "$plan_count" ] || return 0
 
   # Scan all phase dirs to find next incomplete
-  local phases_dir total next_num next_name next_has_uat all_done
+  local phases_dir total next_num next_name next_has_uat all_done sorted_dirs_file phase_idx
   phases_dir=$(dirname "$phase_dir")
-  total=$(ls -d "$phases_dir"/*/ 2>/dev/null | wc -l | tr -d ' ')
+  sorted_dirs_file="${state_md}.phases.$$"
+  list_canonical_phase_dirs "$phases_dir" > "$sorted_dirs_file"
+  total=$(wc -l < "$sorted_dirs_file" | tr -d ' ')
   next_num=""
   next_name=""
   next_has_uat=false
   all_done=true
+  phase_idx=0
 
   while IFS= read -r dir; do
     local dirname p s
     dirname=$(basename "$dir")
-    p=$(find "$dir" -maxdepth 1 -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-    s=$(count_terminal_summaries "$dir")
+    phase_idx=$((phase_idx + 1))
+    p=$(count_phase_plans "$dir")
+    s=$(count_complete_summaries "$dir")
 
     if [ "$p" -eq 0 ] || [ "$s" -lt "$p" ]; then
       if [ -z "$next_num" ]; then
-        next_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
-        [ -z "$next_num" ] && next_num=0
-        next_name=$(slug_to_name "$dirname")
+        next_num="$phase_idx"
+        next_name=$(phase_dir_display_name "$dir")
       fi
       all_done=false
       break
@@ -225,15 +262,16 @@ advance_phase() {
     # Also not done if phase has unresolved UAT issues
     if phase_has_uat_issues "$dir"; then
       if [ -z "$next_num" ]; then
-        next_num=$(echo "$dirname" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
-        [ -z "$next_num" ] && next_num=0
-        next_name=$(slug_to_name "$dirname")
+        next_num="$phase_idx"
+        next_name=$(phase_dir_display_name "$dir")
         next_has_uat=true
       fi
       all_done=false
       break
     fi
-  done < <(ls -d "$phases_dir"/*/ 2>/dev/null | (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-))
+  done < "$sorted_dirs_file"
+
+  rm -f "$sorted_dirs_file" 2>/dev/null
 
   [ "$total" -eq 0 ] && return 0
 
@@ -254,7 +292,7 @@ INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
 
 # PLAN.md trigger: update plan count + activate status
-if echo "$FILE_PATH" | grep -qE 'phases/[^/]+/[0-9]+(-[0-9]+)?-PLAN\.md$'; then
+if echo "$FILE_PATH" | grep -qE 'phases/[^/]+/([0-9]+(-[0-9]+)?-PLAN|PLAN)\.md$'; then
   update_state_md "$(dirname "$FILE_PATH")"
   update_roadmap "$(dirname "$FILE_PATH")"
   # Status: ready → active when a plan is written
@@ -275,7 +313,7 @@ if echo "$FILE_PATH" | grep -qE 'phases/[^/]+/[0-9]+(-[0-9]+)?-UAT\.md$'; then
 fi
 
 # SUMMARY.md trigger: update execution state + progress
-if ! echo "$FILE_PATH" | grep -qE 'phases/.*-SUMMARY\.md$'; then
+if ! echo "$FILE_PATH" | grep -qE 'phases/[^/]+/([0-9]+(-[0-9]+)?-SUMMARY|SUMMARY)\.md$'; then
   exit 0
 fi
 
@@ -284,7 +322,10 @@ fi
 PHASE_DIR="$(dirname "$FILE_PATH")"
 PLANNING_ROOT="$(planning_root_from_phase_dir "$PHASE_DIR")"
 STATE_FILE="${PLANNING_ROOT}/.execution-state.json"
-SUMMARY_ID="$(basename "$FILE_PATH" | sed 's/-SUMMARY\.md$//')"
+case "$(basename "$FILE_PATH")" in
+  SUMMARY.md) SUMMARY_ID="" ;;
+  *) SUMMARY_ID="$(basename "$FILE_PATH" | sed 's/-SUMMARY\.md$//')" ;;
+esac
 
 # Parse SUMMARY.md YAML frontmatter for phase, plan, status
 PHASE=""

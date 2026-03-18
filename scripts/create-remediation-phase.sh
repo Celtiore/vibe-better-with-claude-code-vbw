@@ -32,6 +32,55 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/uat-utils.sh"
 
+LOCK_DIR="$PLANNING_DIR/.create-remediation-phase.lock"
+
+lock_dir_mtime() {
+  local path="$1"
+  if [ "$(uname)" = "Darwin" ]; then
+    stat -f %m "$path" 2>/dev/null || echo 0
+  else
+    stat -c %Y "$path" 2>/dev/null || echo 0
+  fi
+}
+
+acquire_phase_allocation_lock() {
+  local wait_count=0
+  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    if [ -d "$LOCK_DIR" ] && [ ! -f "$LOCK_DIR/pid" ]; then
+      local now_ts lock_ts lock_age
+      now_ts=$(date +%s 2>/dev/null || echo 0)
+      lock_ts=$(lock_dir_mtime "$LOCK_DIR")
+      lock_age=$((now_ts - lock_ts))
+      if [ "$lock_age" -ge 5 ] 2>/dev/null; then
+        rm -rf "$LOCK_DIR" 2>/dev/null || true
+        continue
+      fi
+    fi
+    if [ -f "$LOCK_DIR/pid" ]; then
+      local owner_pid
+      owner_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+      if [ -n "$owner_pid" ] && echo "$owner_pid" | grep -qE '^[0-9]+$' && ! kill -0 "$owner_pid" 2>/dev/null; then
+        rm -rf "$LOCK_DIR" 2>/dev/null || true
+        continue
+      fi
+    fi
+    wait_count=$((wait_count + 1))
+    if [ "$wait_count" -ge 300 ]; then
+      echo "Error: timed out waiting for remediation phase allocation lock" >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+  printf '%s\n' "$$" > "$LOCK_DIR/pid"
+}
+
+release_phase_allocation_lock() {
+  rm -rf "$LOCK_DIR" 2>/dev/null || true
+}
+
+acquire_phase_allocation_lock
+trap 'release_phase_allocation_lock' EXIT
+
 list_child_dirs_sorted() {
   local parent="$1"
   [ -d "$parent" ] || return 0
@@ -68,6 +117,21 @@ humanize_slug() {
   text=$(printf '%s' "$text" | tr '-' ' ')
   text=$(printf '%s' "$text" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')
   printf '%s' "$text"
+}
+
+remediation_dir_matches_source() {
+  local dir="$1"
+  local expected_milestone="$2"
+  local expected_phase="$3"
+  local ctx_file actual_milestone actual_phase
+
+  ctx_file=$(ls -1 "$dir"/[0-9]*-CONTEXT.md 2>/dev/null | sort | head -1 || true)
+  [ -f "$ctx_file" ] || return 1
+
+  actual_milestone=$(extract_frontmatter_value "$ctx_file" "source_milestone")
+  actual_phase=$(extract_frontmatter_value "$ctx_file" "source_phase")
+
+  [ "$actual_milestone" = "$expected_milestone" ] && [ "$actual_phase" = "$expected_phase" ]
 }
 
 find_progress_row_for_phase() {
@@ -273,52 +337,12 @@ seed_remediation_roadmap_and_state() {
 
     project_name=$(extract_project_name)
 
-    # Preserve existing STATE.md phase statuses when the remediation milestone
-    # is already seeded (avoid resetting progress on re-entry or phase addition).
-    if [ -f "$state_file" ] && grep -q '^\*\*Milestone:\*\* UAT Remediation$' "$state_file" 2>/dev/null; then
-      existing_phase_lines=$(awk '
-        BEGIN { count = 0 }
-        /^- \*\*Phase [0-9]+:\*\*/ { count++ }
-        END { print count + 0 }
-      ' "$state_file" 2>/dev/null)
-      existing_phase_lines="${existing_phase_lines:-0}"
-      if [ "$phase_count" -gt "$existing_phase_lines" ]; then
-        # Append/repair phase entries after the last existing "- **Phase N:**"
-        # line, or directly after "## Phase Status" when bullet lines are
-        # missing in brownfield STATE.md files.
-        awk -v start="$((existing_phase_lines + 1))" -v end="$phase_count" '
-          /^## Phase Status$/ { phase_status_header = NR }
-          /^- \*\*Phase [0-9]+:\*\*/ { last_phase_line = NR }
-          { lines[NR] = $0; count = NR }
-          END {
-            inserted = 0
-            for (i = 1; i <= count; i++) {
-              print lines[i]
-              if (last_phase_line > 0 && i == last_phase_line) {
-                for (p = start; p <= end; p++) {
-                  print "- **Phase " p ":** Pending"
-                }
-                inserted = 1
-              } else if (last_phase_line == 0 && phase_status_header > 0 && i == phase_status_header) {
-                for (p = start; p <= end; p++) {
-                  print "- **Phase " p ":** Pending"
-                }
-                inserted = 1
-              }
-            }
-
-            if (!inserted && start <= end) {
-              if (count > 0 && lines[count] !~ /^$/) {
-                print ""
-              }
-              print "## Phase Status"
-              for (p = start; p <= end; p++) {
-                print "- **Phase " p ":** Pending"
-              }
-            }
-          }
-        ' "$state_file" > "${state_file}.tmp" && mv "${state_file}.tmp" "$state_file"
-      fi
+    # Sync STATE.md with current phase directories.
+    # update-phase-total.sh owns the Phase: total and ## Phase Status section —
+    # it derives status from filesystem (PLAN/SUMMARY presence).
+    # F-10: also require Phase: line; if archive stripped it, re-bootstrap.
+    if [ -f "$state_file" ] && grep -q '^\*\*Milestone:\*\* UAT Remediation$' "$state_file" 2>/dev/null && grep -q '^Phase: ' "$state_file" 2>/dev/null; then
+      bash "$SCRIPT_DIR/update-phase-total.sh" "$PLANNING_DIR"
     else
       bash "$SCRIPT_DIR/bootstrap/bootstrap-state.sh" "$state_file" "$project_name" "UAT Remediation" "$phase_count"
     fi
@@ -370,6 +394,7 @@ NEXT_PHASE_PADDED=$(printf "%02d" "$NEXT_PHASE")
 
 SOURCE_PHASE_SLUG=$(basename "$MILESTONE_PHASE_DIR" | sed 's/^[0-9]*-//')
 SOURCE_MILESTONE_SLUG=$(basename "$(dirname "$(dirname "$MILESTONE_PHASE_DIR")")")
+SOURCE_PHASE_BASENAME=$(basename "$MILESTONE_PHASE_DIR")
 RAW_SLUG="remediate-${SOURCE_MILESTONE_SLUG}-${SOURCE_PHASE_SLUG}"
 PHASE_SLUG=$(echo "$RAW_SLUG" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')
 
@@ -384,6 +409,25 @@ if [ ${#PHASE_SLUG} -gt 60 ]; then
 fi
 
 TARGET_PHASE_DIR="$PHASES_DIR/${NEXT_PHASE_PADDED}-${PHASE_SLUG}"
+
+# F-01 guard: detect an existing dir with the same slug (race window between
+# mkdir and .remediated write). Reuse only when the existing dir provenance
+# matches this exact archived milestone phase; slug collisions must allocate a
+# new numeric phase instead of silently aliasing a different source phase.
+EXISTING_SLUG_DIR=""
+while IFS= read -r _slug_dir; do
+  [ -d "$_slug_dir" ] || continue
+  if remediation_dir_matches_source "$_slug_dir" "$SOURCE_MILESTONE_SLUG" "$SOURCE_PHASE_BASENAME"; then
+    EXISTING_SLUG_DIR="$_slug_dir"
+    break
+  fi
+done < <(find "$PHASES_DIR" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*-${PHASE_SLUG}" 2>/dev/null | sort -V)
+if [[ -n "$EXISTING_SLUG_DIR" && -d "$EXISTING_SLUG_DIR" ]]; then
+  TARGET_PHASE_DIR="$EXISTING_SLUG_DIR"
+  NEXT_PHASE_PADDED=$(basename "$EXISTING_SLUG_DIR" | sed 's/[^0-9].*//')
+  NEXT_PHASE=$((10#$NEXT_PHASE_PADDED))
+fi
+
 mkdir -p "$TARGET_PHASE_DIR"
 
 SOURCE_UAT=$(latest_non_source_uat "$MILESTONE_PHASE_DIR")
@@ -393,8 +437,6 @@ UAT_CONTENT=""
 if [[ -n "$SOURCE_UAT" && -f "$SOURCE_UAT" ]]; then
   UAT_CONTENT=$(cat "$SOURCE_UAT")
 fi
-
-SOURCE_PHASE_BASENAME=$(basename "$MILESTONE_PHASE_DIR")
 
 CONTEXT_FILE="$TARGET_PHASE_DIR/${NEXT_PHASE_PADDED}-CONTEXT.md"
 

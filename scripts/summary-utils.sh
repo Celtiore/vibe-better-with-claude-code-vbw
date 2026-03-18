@@ -37,7 +37,7 @@ count_complete_summaries() {
   local dir="$1"
   local count=0
   local f
-  for f in "$dir"/*-SUMMARY.md; do
+  for f in "$dir"/*-SUMMARY.md "$dir"/SUMMARY.md; do
     [ -f "$f" ] || continue
     if is_summary_complete "$f"; then
       count=$((count + 1))
@@ -53,7 +53,7 @@ count_done_summaries() {
   local dir="$1"
   local count=0
   local f st
-  for f in "$dir"/*-SUMMARY.md; do
+  for f in "$dir"/*-SUMMARY.md "$dir"/SUMMARY.md; do
     [ -f "$f" ] || continue
     st=$(tr -d '\r' < "$f" 2>/dev/null | sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' | head -1 | tr -d '[:space:]')
     case "$st" in complete|completed|partial) count=$((count + 1)) ;; esac
@@ -67,7 +67,7 @@ count_terminal_summaries() {
   local dir="$1"
   local count=0
   local f
-  for f in "$dir"/*-SUMMARY.md; do
+  for f in "$dir"/*-SUMMARY.md "$dir"/SUMMARY.md; do
     [ -f "$f" ] || continue
     if is_summary_terminal "$f"; then
       count=$((count + 1))

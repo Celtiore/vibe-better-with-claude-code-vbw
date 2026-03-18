@@ -232,7 +232,8 @@ EOF
   [ "$(grep -Ec '^## Phase [0-9]+:' .vbw-planning/ROADMAP.md | tr -d ' ')" -eq 2 ]
   grep -q '^| 1 | Pending | 0 | 0 | 0 |$' .vbw-planning/ROADMAP.md
   grep -q '^| 2 | Pending | 0 | 0 | 0 |$' .vbw-planning/ROADMAP.md
-  grep -q '^- \*\*Phase 2:\*\* Pending$' .vbw-planning/STATE.md
+  # Phase Status bullets now include directory-derived names (Option A)
+  grep -qE '^- \*\*Phase 2 \([^)]+\):\*\* Pending$' .vbw-planning/STATE.md
 }
 
 @test "create-remediation-phase preserves existing ROADMAP.md progress on re-entry" {
@@ -297,8 +298,9 @@ EOF
 
   # Simulate progress on phase 1
   sed -i.bak 's/| 1 | Pending | 0 | 0 | 0 |/| 1 | Complete | 3 | 8 | 5 |/' .vbw-planning/ROADMAP.md && rm -f .vbw-planning/ROADMAP.md.bak
-  # Simulate state progress
-  sed -i.bak 's/Phase 1:\*\* Pending planning/Phase 1:** Complete/' .vbw-planning/STATE.md && rm -f .vbw-planning/STATE.md.bak
+  # Simulate completed phase 1 via filesystem artifacts (update-phase-total.sh derives status)
+  touch .vbw-planning/phases/01-remediate-01-arch-api/01-PLAN.md
+  printf -- '---\nstatus: complete\n---\n' > .vbw-planning/phases/01-remediate-01-arch-api/01-SUMMARY.md
 
   # Create phase 2 — should NOT clobber phase 1 progress
   run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
@@ -310,10 +312,10 @@ EOF
   grep -q '^| 1 | Complete | 3 | 8 | 5 |$' .vbw-planning/ROADMAP.md
   # Phase 2 added as Pending
   grep -q '^| 2 | Pending | 0 | 0 | 0 |$' .vbw-planning/ROADMAP.md
-  # Phase 1 status preserved in STATE.md
-  grep -q '^- \*\*Phase 1:\*\* Complete$' .vbw-planning/STATE.md
+  # Phase 1 status derived as Complete from filesystem artifacts
+  grep -qE '^- \*\*Phase 1 \([^)]+\):\*\* Complete$' .vbw-planning/STATE.md
   # Phase 2 added as Pending in STATE.md
-  grep -q '^- \*\*Phase 2:\*\* Pending$' .vbw-planning/STATE.md
+  grep -qE '^- \*\*Phase 2 \([^)]+\):\*\* Pending$' .vbw-planning/STATE.md
 }
 
 @test "create-remediation-phase preserves non-canonical ROADMAP progress row formats" {
@@ -358,12 +360,19 @@ EOF
     .vbw-planning/milestones/01-arch/phases/03-api
   [ "$status" -eq 0 ]
 
-  # Simulate malformed/brownfield STATE.md: remediation milestone, no phase bullets.
+  # Simulate malformed/brownfield STATE.md: remediation milestone, phase header
+  # present but bullets missing (update-phase-total.sh needs Phase: line to operate).
   cat > .vbw-planning/STATE.md <<'EOF'
 # VBW State
 
 **Project:** Test Project
 **Milestone:** UAT Remediation
+
+## Current Phase
+Phase: 1 of 1 (Remediate 01 Arch Api)
+Plans: 0/0
+Progress: 0%
+Status: active
 
 ## Phase Status
 
@@ -379,7 +388,8 @@ EOF
 
   [ "$status" -eq 0 ]
   [[ "$output" != *"integer expression expected"* ]]
-  grep -q '^- \*\*Phase 1:\*\* Pending$' .vbw-planning/STATE.md
+  # Phase Status rebuilt from filesystem with directory-derived name
+  grep -qE '^- \*\*Phase 1 \([^)]+\):\*\* Pending planning$' .vbw-planning/STATE.md
 }
 
 @test "create-remediation-phase prefers canonical UAT over SOURCE-UAT" {
@@ -435,4 +445,168 @@ EOF
   echo "$output" | grep -q '^source_uat=none$'
   # CONTEXT.md should note no UAT report found
   grep -q 'No UAT report found' .vbw-planning/phases/02-*/02-CONTEXT.md
+}
+
+# --- F-01: slug-match guard prevents duplicate remediation phases ---
+
+@test "create-remediation-phase reuses existing dir when marker is missing (F-01 race guard)" {
+  mkdir -p .vbw-planning/milestones/01-arch/phases/03-api
+
+  cat > .vbw-planning/milestones/01-arch/phases/03-api/03-UAT.md <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  # First invocation creates the remediation phase
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  first_phase_dir=$(echo "$output" | grep '^phase_dir=' | sed 's/^phase_dir=//')
+
+  # Remove the .remediated marker to simulate race window
+  rm -f .vbw-planning/milestones/01-arch/phases/03-api/.remediated
+
+  # Second invocation should reuse existing dir, not create a duplicate
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  second_phase_dir=$(echo "$output" | grep '^phase_dir=' | sed 's/^phase_dir=//')
+
+  [ "$first_phase_dir" = "$second_phase_dir" ]
+  # Ensure no second numbered remediation phase directory was created
+  local dir_count
+  dir_count=$(find .vbw-planning/phases -mindepth 1 -maxdepth 1 -type d -name '*-remediate-*' | wc -l | tr -d ' ')
+  [ "$dir_count" -eq 1 ]
+}
+
+@test "create-remediation-phase waits for allocation lock before creating a new phase" {
+  mkdir -p .vbw-planning/milestones/01-arch/phases/03-api
+
+  cat > .vbw-planning/milestones/01-arch/phases/03-api/03-UAT.md <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  mkdir -p .vbw-planning/.create-remediation-phase.lock
+  local output_file="$TEST_TEMP_DIR/locked-create-remediation.out"
+
+  bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api \
+    > "$output_file" 2>&1 &
+  local bg_pid=$!
+
+  sleep 1
+  kill -0 "$bg_pid"
+
+  rmdir .vbw-planning/.create-remediation-phase.lock
+  wait "$bg_pid"
+
+  grep -q '^phase=01$' "$output_file"
+  grep -q '^phase_dir=.vbw-planning/phases/01-remediate-01-arch-api$' "$output_file"
+}
+
+@test "create-remediation-phase reaps stale pid-less allocation lock" {
+  mkdir -p .vbw-planning/milestones/01-arch/phases/03-api
+
+  cat > .vbw-planning/milestones/01-arch/phases/03-api/03-UAT.md <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  mkdir -p .vbw-planning/.create-remediation-phase.lock
+  touch -t 202001010101 .vbw-planning/.create-remediation-phase.lock
+
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^phase=01$'
+}
+
+@test "create-remediation-phase does not alias different sources that sanitize to the same slug" {
+  mkdir -p '.vbw-planning/milestones/01-arch/phases/03-api legacy'
+  mkdir -p '.vbw-planning/milestones/01-arch/phases/04-api-legacy'
+
+  cat > '.vbw-planning/milestones/01-arch/phases/03-api legacy/03-UAT.md' <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  cat > '.vbw-planning/milestones/01-arch/phases/04-api-legacy/04-UAT.md' <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    '.vbw-planning/milestones/01-arch/phases/03-api legacy'
+  [ "$status" -eq 0 ]
+  first_phase_dir=$(echo "$output" | grep '^phase_dir=' | sed 's/^phase_dir=//')
+
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    '.vbw-planning/milestones/01-arch/phases/04-api-legacy'
+  [ "$status" -eq 0 ]
+  second_phase_dir=$(echo "$output" | grep '^phase_dir=' | sed 's/^phase_dir=//')
+
+  [ "$first_phase_dir" != "$second_phase_dir" ]
+  grep -q "$first_phase_dir" '.vbw-planning/milestones/01-arch/phases/03-api legacy/.remediated'
+  grep -q "$second_phase_dir" '.vbw-planning/milestones/01-arch/phases/04-api-legacy/.remediated'
+}
+
+# --- F-10: archive-stripped STATE.md triggers re-bootstrap ---
+
+@test "create-remediation-phase re-bootstraps when archive strips Phase: line (F-10)" {
+  mkdir -p .vbw-planning/milestones/01-arch/phases/03-api
+  cat > .vbw-planning/PROJECT.md <<'EOF'
+# Test Project
+EOF
+
+  cat > .vbw-planning/milestones/01-arch/phases/03-api/03-UAT.md <<'EOF'
+---
+status: issues_found
+---
+Severity: major
+EOF
+
+  # First invocation creates remediation
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  [ -f .vbw-planning/STATE.md ]
+  grep -q '^Phase: ' .vbw-planning/STATE.md
+
+  # Simulate archive stripping ## Current Phase but keeping milestone line
+  cat > .vbw-planning/STATE.md <<'EOF'
+# VBW State
+
+**Project:** Test Project
+**Milestone:** UAT Remediation
+
+## Decisions
+- Decision A
+EOF
+
+  # Re-entry should re-bootstrap (not silently no-op)
+  run bash "$SCRIPTS_DIR/create-remediation-phase.sh" \
+    .vbw-planning \
+    .vbw-planning/milestones/01-arch/phases/03-api
+  [ "$status" -eq 0 ]
+  grep -q '^Phase: ' .vbw-planning/STATE.md
+  grep -q '## Phase Status' .vbw-planning/STATE.md
 }

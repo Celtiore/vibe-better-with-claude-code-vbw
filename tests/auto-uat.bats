@@ -136,6 +136,19 @@ EOF
   [ "$(grep -cF '/vbw:verify' <<< "$output")" -eq 0 ]
 }
 
+@test "suggest-next qa pass honors legacy PLAN.md and SUMMARY.md artifacts" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  rm -f "$dir/01-01-PLAN.md" "$dir/01-01-SUMMARY.md" "$dir/01-VERIFICATION.md"
+  printf -- '---\nphase: 01\nplan: 01-legacy\ntitle: Setup\n---\n' > "$dir/PLAN.md"
+  printf -- '---\nstatus: complete\ndeviations: 0\n---\nDone.\n' > "$dir/SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/suggest-next.sh" qa pass
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/vbw:verify"* ]]
+}
+
 # --- phase-detect auto_uat + has_unverified_phases tests ---
 
 @test "phase-detect outputs config_auto_uat=true when set" {

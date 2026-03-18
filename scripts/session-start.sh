@@ -22,6 +22,36 @@ else
   count_complete_summaries() { echo "0"; }
   count_done_summaries() { echo "0"; }
 fi
+if [ -f "$SCRIPT_DIR/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  . "$SCRIPT_DIR/phase-state-utils.sh"
+else
+  count_phase_plans() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 ! -name '.*' \( -name '[0-9]*-PLAN.md' -o -name 'PLAN.md' \) 2>/dev/null | wc -l | tr -d ' '
+  }
+  list_canonical_phase_dirs() {
+    local parent="$1"
+    [ -d "$parent" ] || return 0
+    find "$parent" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null |
+      while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        base=$(basename "$dir")
+        case "$base" in [0-9]*-*) echo "$dir" ;; esac
+      done |
+      (sort -V 2>/dev/null || awk -F/ '{n=$NF; gsub(/[^0-9].*/,"",n); if (n == "") n=0; print (n+0)"\t"$0}' | sort -n -k1,1 -k2,2 | cut -f2-)
+  }
+  find_phase_dir_by_ref() {
+    local planning_dir="$1" phase_ref="$2"
+    local prefix_match
+    [ -d "$planning_dir/phases" ] || return 0
+    [ -n "$phase_ref" ] || return 0
+    echo "$phase_ref" | grep -qE '^[0-9]+$' || return 0
+    prefix_match=$(ls -d "$planning_dir/phases/$(printf '%02d' "$phase_ref")"-*/ 2>/dev/null | head -1)
+    [ -n "$prefix_match" ] && { echo "$prefix_match"; return 0; }
+    list_canonical_phase_dirs "$planning_dir/phases" | sed -n "${phase_ref}p"
+  }
+fi
 
 # --- Capture session_id from hook stdin JSON ---
 # Claude Code passes a JSON object on stdin to SessionStart hooks containing
@@ -60,12 +90,12 @@ fi
 find_phase_dir_by_num() {
   _planning_dir="$1"
   _phase_num="$2"
-  ls -d "$_planning_dir/phases/$(printf '%02d' "$_phase_num")"-*/ 2>/dev/null | head -1
+  find_phase_dir_by_ref "$_planning_dir" "$_phase_num"
 }
 
 phase_dir_has_plans() {
   _phase_dir="$1"
-  [ -n "$_phase_dir" ] && [ -d "$_phase_dir" ] && ls "$_phase_dir"*-PLAN.md >/dev/null 2>&1
+  [ -n "$_phase_dir" ] && [ -d "$_phase_dir" ] && [ "$(count_phase_plans "$_phase_dir")" -gt 0 ] 2>/dev/null
 }
 
 # Choose a recovery phase deterministically when STATE.md/execution-state phase is unusable.
@@ -103,7 +133,7 @@ EOF
   _last_complete=""
   _first_with_plan=""
 
-  for _pd in "$_planning_dir"/phases/*/; do
+  while IFS= read -r _pd; do
     [ -d "$_pd" ] || continue
     _pd_base=$(basename "$_pd")
     _pd_num=$(echo "$_pd_base" | sed 's/^\([0-9]*\).*/\1/' | sed 's/^0*//')
@@ -119,11 +149,7 @@ EOF
       _first_with_plan="$_pd_num"
     fi
 
-    _plan_count=0
-    for _plan_file in "$_pd"*-PLAN.md; do
-      [ -f "$_plan_file" ] || continue
-      _plan_count=$((_plan_count + 1))
-    done
+    _plan_count=$(count_phase_plans "$_pd")
 
     _summary_count=$(count_complete_summaries "$_pd")
 
@@ -136,7 +162,7 @@ EOF
         _last_complete="$_pd_num"
       fi
     fi
-  done
+  done < <(list_canonical_phase_dirs "$_planning_dir/phases")
 
   if [ -n "$_first_incomplete" ] && [ "$_first_incomplete" -gt 0 ] 2>/dev/null; then
     echo "$_first_incomplete"
@@ -326,7 +352,7 @@ _bf_bad_summary_count=0
 if [ -d "$PLANNING_DIR/phases" ]; then
   for _bf_phase_dir in "$PLANNING_DIR"/phases/*/; do
     [ -d "$_bf_phase_dir" ] || continue
-    for _bf_sf in "$_bf_phase_dir"*-SUMMARY.md; do
+    for _bf_sf in "$_bf_phase_dir"*-SUMMARY.md "$_bf_phase_dir"SUMMARY.md; do
       [ -f "$_bf_sf" ] || continue
       if ! is_summary_complete "$_bf_sf"; then
         _bf_bad_summary_count=$((_bf_bad_summary_count + 1))
@@ -659,7 +685,7 @@ if [ "$_auto_recovered" = false ] && [ -f "$EXEC_STATE" ]; then
       # shellcheck disable=SC2010
       SUMMARY_COUNT=0
       STRICT_COMPLETE=0
-      for _ss_sf in "$PHASE_DIR"/*-SUMMARY.md; do
+      for _ss_sf in "$PHASE_DIR"/*-SUMMARY.md "$PHASE_DIR"/SUMMARY.md; do
         [ -f "$_ss_sf" ] || continue
         _ss_st=$(sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$_ss_sf" 2>/dev/null | head -1 | tr -d '[:space:]')
         case "$_ss_st" in
@@ -675,7 +701,7 @@ if [ "$_auto_recovered" = false ] && [ -f "$EXEC_STATE" ]; then
       if [ "${_json_done:-0}" -gt "${SUMMARY_COUNT:-0}" ] 2>/dev/null; then
         # Build JSON array of plan IDs that actually have completed SUMMARY.md
         _completed_json="[]"
-        for _sf in "$PHASE_DIR"/*-SUMMARY.md; do
+        for _sf in "$PHASE_DIR"/*-SUMMARY.md "$PHASE_DIR"/SUMMARY.md; do
           [ -f "$_sf" ] || continue
           _sf_st=$(sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$_sf" 2>/dev/null | head -1 | tr -d '[:space:]')
           case "$_sf_st" in
