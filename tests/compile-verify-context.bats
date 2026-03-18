@@ -565,3 +565,59 @@ EOF
   [[ "$output" == *"Round 1 fix"* ]]
   [[ "$output" != *"Round 2 fix"* ]]
 }
+
+@test "compile-verify-context: --remediation-only accepts partial status as terminal" {
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  cat > "$PHASE_DIR/remediation/round-01/R01-PLAN.md" <<'EOF'
+---
+plan: R01
+title: Partial round
+must_haves:
+  - Partial fix
+---
+EOF
+  cat > "$PHASE_DIR/remediation/round-01/R01-SUMMARY.md" <<'EOF'
+---
+status: partial
+tasks_completed: 2
+tasks_total: 3
+---
+## What Was Built
+- Partial work
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" --remediation-only "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"verify_scope=remediation round=01"* ]]
+  [[ "$output" == *"Partial round"* ]]
+}
+
+@test "compile-verify-context: --remediation-only accepts failed status as terminal" {
+  mkdir -p "$PHASE_DIR/remediation/round-01"
+  cat > "$PHASE_DIR/remediation/round-01/R01-PLAN.md" <<'EOF'
+---
+plan: R01
+title: Failed round
+must_haves:
+  - Failed fix
+---
+EOF
+  cat > "$PHASE_DIR/remediation/round-01/R01-SUMMARY.md" <<'EOF'
+---
+status: failed
+tasks_completed: 0
+tasks_total: 3
+---
+## What Was Built
+- Nothing
+EOF
+
+  cd "$TEST_TEMP_DIR"
+  run bash "$SCRIPTS_DIR/compile-verify-context.sh" --remediation-only "$PHASE_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"verify_scope=remediation round=01"* ]]
+  [[ "$output" == *"Failed round"* ]]
+}
