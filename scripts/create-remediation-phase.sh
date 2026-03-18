@@ -318,8 +318,9 @@ seed_remediation_roadmap_and_state() {
             }
           }
         ' "$state_file" > "${state_file}.tmp" && mv "${state_file}.tmp" "$state_file"
-        # Sync Phase: total with actual phase count
-        bash "$SCRIPT_DIR/update-phase-total.sh" "$PLANNING_DIR"
+        # Sync Phase: total with actual phase count (--total-only
+        # preserves existing Phase Status bullets managed by awk above)
+        bash "$SCRIPT_DIR/update-phase-total.sh" "$PLANNING_DIR" --total-only
       fi
     else
       bash "$SCRIPT_DIR/bootstrap/bootstrap-state.sh" "$state_file" "$project_name" "UAT Remediation" "$phase_count"

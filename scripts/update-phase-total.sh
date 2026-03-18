@@ -25,13 +25,28 @@ phases_dir="${planning_root}/phases"
 shift || true
 action=""
 position=0
-if [ "${1:-}" = "--inserted" ] && [ -n "${2:-}" ]; then
-  action="inserted"
-  position="$2"
-elif [ "${1:-}" = "--removed" ] && [ -n "${2:-}" ]; then
-  action="removed"
-  position="$2"
-fi
+total_only=false
+while [ $# -gt 0 ]; do
+  case "${1:-}" in
+    --inserted)
+      action="inserted"
+      position="${2:-0}"
+      shift 2 || break
+      ;;
+    --removed)
+      action="removed"
+      position="${2:-0}"
+      shift 2 || break
+      ;;
+    --total-only)
+      total_only=true
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
 
 # Validate position is a positive integer when provided
 if [ -n "$action" ] && ! echo "$position" | grep -qE '^[1-9][0-9]*$'; then
@@ -89,6 +104,11 @@ fi
 tmp="${state_md}.tmp.$$"
 sed "s/^Phase: .*/${replacement}/" "$state_md" > "$tmp" 2>/dev/null && \
   mv "$tmp" "$state_md" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+
+# Skip Phase Status rebuild if --total-only
+if [ "$total_only" = true ]; then
+  exit 0
+fi
 
 # Rebuild ## Phase Status section to match current phase directories
 new_status_file="${state_md}.newstatus.$$"
