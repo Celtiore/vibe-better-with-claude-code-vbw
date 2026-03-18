@@ -250,7 +250,7 @@ If `planning_dir_exists=false`: display "Run /vbw:init first to set up your proj
 2. If $ARGUMENTS (excl. flags) provided, use as scope. Else ask: "What do you want to build?" Show uncovered requirements as suggestions.
 3. Decompose into 3-5 phases (name, goal, success criteria). Each independently plannable. Map REQ-IDs.
 4. Write ROADMAP.md. Create `.vbw-planning/phases/{NN}-{slug}/` dirs.
-5. Update STATE.md by calling bootstrap-state.sh (preserves existing project-level sections like Todos, Decisions, Blockers, Codebase Profile while restoring the `## Current Phase` section):
+5. Update STATE.md by calling bootstrap-state.sh. Extract `PROJECT_NAME` from PROJECT.md, derive `MILESTONE_NAME` from the scope description (step 2), and use the phase count from step 3. The script preserves existing project-level sections (Todos, Decisions, Blockers, Codebase Profile) while restoring the `## Current Phase` section:
    ```
    bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/bootstrap/bootstrap-state.sh .vbw-planning/STATE.md "$PROJECT_NAME" "$MILESTONE_NAME" "$PHASE_COUNT"
    ```
