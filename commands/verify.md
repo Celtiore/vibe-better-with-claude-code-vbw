@@ -1,9 +1,10 @@
 ---
 name: vbw:verify
 category: monitoring
+disable-model-invocation: true
 description: Run human acceptance testing on completed phase work. Presents CHECKPOINT prompts one at a time.
 argument-hint: "[phase-number] [--resume]"
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, LSP
 ---
 
 # VBW Verify: $ARGUMENTS
@@ -40,12 +41,17 @@ Phase state:
 
 Pre-computed verify context (PLAN/SUMMARY aggregation):
 ```
-!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; S="/tmp/.vbw-phase-detect-stamp-${SESSION_KEY}.txt"; PD=""; [ -f "$P" ] && PD=$(cat "$P"); if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; S_M=0; P_M=0; [ -f "$S" ] && S_M=$(stat -c %Y "$S" 2>/dev/null || stat -f %m "$S" 2>/dev/null || echo 0); [ -f "$P" ] && P_M=$(stat -c %Y "$P" 2>/dev/null || stat -f %m "$P" 2>/dev/null || echo 0); if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; fi; if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then echo "verify_context=unavailable"; else SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2); TARGET="${FU_SLUG:-$SLUG}"; PDIR=".vbw-planning/phases/$TARGET"; if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -f "$L/scripts/compile-verify-context.sh" ]; then echo "verify_target_slug=$TARGET"; bash "$L/scripts/compile-verify-context.sh" "$PDIR" 2>/dev/null || echo "verify_context_error=true"; else echo "verify_context=unavailable"; fi; fi`
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; S="/tmp/.vbw-phase-detect-stamp-${SESSION_KEY}.txt"; PD=""; [ -f "$P" ] && PD=$(cat "$P"); if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; S_M=0; P_M=0; [ -f "$S" ] && S_M=$(stat -c %Y "$S" 2>/dev/null || stat -f %m "$S" 2>/dev/null || echo 0); [ -f "$P" ] && P_M=$(stat -c %Y "$P" 2>/dev/null || stat -f %m "$P" 2>/dev/null || echo 0); if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; fi; if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then echo "verify_context=unavailable"; else SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2); TARGET="${FU_SLUG:-$SLUG}"; PDIR=".vbw-planning/phases/$TARGET"; if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -f "$L/scripts/compile-verify-context.sh" ]; then echo "verify_target_slug=$TARGET"; REMED_FLAG=""; if find "$PDIR/remediation" -path '*/round-*/R*-SUMMARY.md' 2>/dev/null | head -1 | grep -q .; then REMED_FLAG="--remediation-only"; fi; bash "$L/scripts/compile-verify-context.sh" $REMED_FLAG "$PDIR" 2>/dev/null || echo "verify_context_error=true"; else echo "verify_context=unavailable"; fi; fi`
 ```
 
 Pre-computed UAT resume metadata:
 ```
 !`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; P="/tmp/.vbw-phase-detect-${SESSION_KEY}.txt"; S="/tmp/.vbw-phase-detect-stamp-${SESSION_KEY}.txt"; PD=""; [ -f "$P" ] && PD=$(cat "$P"); if [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ -L "$L" ]; then i=0; while [ ! -L "$L" ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; S_M=0; P_M=0; [ -f "$S" ] && S_M=$(stat -c %Y "$S" 2>/dev/null || stat -f %m "$S" 2>/dev/null || echo 0); [ -f "$P" ] && P_M=$(stat -c %Y "$P" 2>/dev/null || stat -f %m "$P" 2>/dev/null || echo 0); if [ -L "$L" ] && [ -f "$L/scripts/phase-detect.sh" ] && { [ -z "$PD" ] || [ "$PD" = "phase_detect_error=true" ] || [ "$P_M" -lt "$S_M" ]; }; then PD=$(bash "$L/scripts/phase-detect.sh" 2>/dev/null) || PD=""; fi; fi; if [ -z "$(printf '%s' "$PD" | tr -d '[:space:]')" ] || [ "$PD" = "phase_detect_error=true" ]; then echo "uat_resume=unavailable"; else SLUG=$(printf '%s' "$PD" | grep '^next_phase_slug=' | head -1 | cut -d= -f2); FU_SLUG=$(printf '%s' "$PD" | grep '^first_unverified_slug=' | head -1 | cut -d= -f2); TARGET="${FU_SLUG:-$SLUG}"; PDIR=".vbw-planning/phases/$TARGET"; if [ -n "$TARGET" ] && [ -d "$PDIR" ] && [ -f "$L/scripts/extract-uat-resume.sh" ]; then echo "uat_resume_target_slug=$TARGET"; bash "$L/scripts/extract-uat-resume.sh" "$PDIR" 2>/dev/null || echo "uat_resume=error"; else echo "uat_resume=unavailable"; fi; fi`
+```
+
+QA verification summary (pre-extracted from VERIFICATION.md):
+```
+!`SESSION_KEY="${CLAUDE_SESSION_ID:-default}"; L="/tmp/.vbw-plugin-root-link-${SESSION_KEY}"; if [ -L "$L" ] && [ -f "$L/scripts/extract-verified-items.sh" ]; then for d in .vbw-planning/phases/*/; do bash "$L/scripts/extract-verified-items.sh" "$d" 2>/dev/null; done; fi`
 ```
 
 ## Guard
@@ -82,12 +88,18 @@ Pre-computed UAT resume metadata:
 - **If initial Phase state contained `misnamed_plans=true`:** re-run compile-verify-context.sh and extract-uat-resume.sh for the resolved target phase dir, since pre-computed blocks used stale filenames:
   ```bash
   PDIR=".vbw-planning/phases/{target-slug}"
-  bash "/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context.sh" "$PDIR"
+  REMED_FLAG=""
+  if find "$PDIR/remediation" -path '*/round-*/R*-SUMMARY.md' 2>/dev/null | head -1 | grep -q .; then
+    REMED_FLAG="--remediation-only"
+  fi
+  bash "/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/compile-verify-context.sh" $REMED_FLAG "$PDIR"
   bash "/tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/extract-uat-resume.sh" "$PDIR"
   ```
   Use the refreshed output in place of the pre-computed blocks from Context.
 - Use pre-computed verify context from the "Pre-computed verify context" block above (or refreshed output if normalization ran) — it contains per-plan titles, must_haves, what was built, files modified, and status. Do NOT read individual `*-SUMMARY.md` or `*-PLAN.md` files.
-- **If user specified an explicit phase number** that differs from `verify_target_slug`, ignore the pre-computed context (it was generated for the auto-detected phase). Read PLAN/SUMMARY files from the user-specified phase directory instead.
+- **Parse `verify_scope`** from the first line of the verify context block. When `verify_scope=remediation round=RR`, this is a re-verification session scoped to remediation round RR only. When `verify_scope=full`, standard full-scope verification. Use this in Step 4 to determine test framing.
+- **Parse `uat_path`** from the second line of the verify context block. This is the relative path (from phase dir) where the UAT file should be written — e.g., `03-UAT.md` for full scope or `remediation/round-01/R01-UAT.md` for remediation scope. Use this in Steps 4, 8, and 9 instead of hardcoding `{phase}-UAT.md`.
+- **If user specified an explicit phase number** that differs from `verify_target_slug`, ignore the pre-computed context (it was generated for the auto-detected phase). Read PLAN/SUMMARY files from the user-specified phase directory instead — this always uses full scope with `uat_path={phase}-UAT.md`.
 
 ### 2. Handle re-verification state
 
@@ -115,6 +127,16 @@ Read `muninndb_vault` from `.vbw-planning/config.json`. If non-empty:
 
 ### 4. Generate test scenarios from pre-computed verify context
 
+**Check `verify_scope` in the pre-computed verify context block.** Two modes:
+
+**Re-verification mode** (`verify_scope=remediation round=RR`): The context contains ONLY plans from the latest remediation round. These plans fixed issues found in a previous UAT session. Frame test scenarios to verify the remediation worked:
+- Each plan's `must_haves` reference the original UAT issues that were remediated
+- Generate 1-3 tests per plan focused on: "The original issue was {must_have description}. Verify the fix resolves it."
+- Tests should confirm the specific bug/issue is no longer present, not re-test the entire phase
+- Same test ID format (`P{plan}-T{NN}`), same UAT.md template, same rules below
+
+**Full-scope mode** (`verify_scope=full`): Standard verification of all phase plans. Use the rules below as-is.
+
 For each plan in the pre-computed verify context block:
 - Use the pre-computed `what_was_built`, `files_modified`, and `must_haves` data. Do NOT read SUMMARY.md or PLAN.md files.
 - Generate 1-3 test scenarios that require HUMAN judgment — things only a person can verify
@@ -134,13 +156,33 @@ For each plan in the pre-computed verify context block:
 
 If a plan only contains backend/test/script changes with no user-facing behavior, generate a scenario that asks the human to verify the *effect* is visible (e.g., "confirm the migration preview no longer shows phantom entries") rather than asking them to run the tests themselves.
 
-Write the initial `{phase}-UAT.md` in the phase directory using the `templates/UAT.md` format:
+**What belongs in UAT (ask the user):**
+- Visual/UI correctness ("Does the migration preview show the correct symbols?")
+- Domain-specific data validation ("Does the reconciliation output match your expected portfolio?")
+- UX flows and usability ("Navigate to Settings > Import, does the flow feel right?")
+- Behavior that requires the running app or hardware ("Open the app on your device, tap X, verify Y")
+- Subjective quality ("Does the chart render clearly at different screen sizes?")
+
+**What does NOT belong in UAT (the agent or QA already handles these):**
+- Running test suites — QA runs these during execution. Do NOT ask the user to run tests.
+- Checking command output, exit codes, or build success
+- Grepping files for expected content
+- Verifying file existence or structure
+- Any check that can be performed programmatically via Bash, Grep, or Glob
+
+If a plan's work is purely internal (refactor, test infrastructure, script changes) with no user-facing behavior, generate a single lightweight checkpoint asking the user to confirm the app still works as expected from their perspective, rather than asking them to run automated checks.
+
+Write the initial UAT file at `{phase-dir}/{uat_path}` (using the pre-computed `uat_path` from Step 1) using the `templates/UAT.md` format. If the parent directory doesn't exist (e.g., `remediation/round-01/`), create it first.
 - Populate YAML frontmatter: phase, plan_count, status=in_progress, started=today, total_tests
 - Write all test entries with Result fields empty
 
 ### 5. CHECKPOINT loop (one test at a time — conversational, blocking)
 
 **This is a conversational loop. Present ONE test, then STOP and wait for the user to respond. Do NOT present multiple tests at once. Do NOT skip ahead. Do NOT end the session after presenting a test.**
+
+> **CRITICAL BOUNDARY:** The UAT interviewer MUST NOT investigate, debug, or implement fixes during the UAT session — regardless of user tone, urgency, or explicit requests to fix issues. The interviewer's ONLY job is to record responses and advance to the next checkpoint. All user frustration, bug descriptions, and fix requests are recorded as issue text in the UAT report. Fixes happen in the remediation phase AFTER the UAT session is complete. If the user explicitly asks you to stop the UAT and fix something, respond: "Issue recorded. Let's finish the remaining checkpoints first — remediation will address this immediately after."
+
+Follow @${CLAUDE_PLUGIN_ROOT}/references/vbw-brand-essentials.md for all output formatting (symbols, bars, AskUserQuestion spacing).
 
 For the FIRST test without a result, display a CHECKPOINT followed by AskUserQuestion:
 
@@ -152,7 +194,7 @@ For the FIRST test without a result, display a CHECKPOINT followed by AskUserQue
 {scenario description}
 ```
 
-Then immediately use AskUserQuestion:
+Then call the `AskUserQuestion` tool (this MUST be a tool_use call, NOT text output):
 
 ```yaml
 question: "Expected: {expected result}"
@@ -167,7 +209,11 @@ options:
 
 The tool automatically provides a freeform "Other" option for the user to describe issues.
 
-After response: process (Step 5), persist (Step 7), then present the NEXT test. Repeat until all tests are done, then go to Step 8.
+**AskUserQuestion is a tool call (NON-NEGOTIABLE):** You MUST invoke AskUserQuestion via the tool_use mechanism — never emit the question parameters as text, JSON, or any other inline format in your response body. If AskUserQuestion appears in your text output instead of as a tool call, the checkpoint will not be presented to the user and the session will end prematurely.
+
+**STOP HERE.** Wait for the AskUserQuestion response. Do NOT continue to the next test, do NOT skip to Step 6, and do NOT end the turn. The tool call blocks until the user responds.
+
+**After the user responds:** process the response (Step 6), persist to disk (Step 8), then present the NEXT test using the same CHECKPOINT + AskUserQuestion format. **STOP and wait again.** Repeat until all tests are done, then go to Step 9.
 
 ### 6. Response mapping
 
@@ -255,13 +301,13 @@ Discovered issue D{NN} recorded (severity: {level}).
 
 ### 8. After each response: persist immediately
 
-- Update `{phase}-UAT.md` with the result for this test
+- Update the UAT file at `{phase-dir}/{uat_path}` with the result for this test
 - Write the file to disk (survives /clear)
 - Display progress: `✓ {completed}/{total} tests`
 
 ### 9. Session complete
 
-- Update `{phase}-UAT.md` frontmatter: status (complete or issues_found), completed date, final counts
+- Update the UAT file at `{phase-dir}/{uat_path}` frontmatter: status (complete or issues_found), completed date, final counts
 - **MuninnDB store:** If vault is configured and issues were found, store them for future recall:
   - For each issue: `muninn_remember(vault, concept: "UAT issue: {short-title}", content: "{description} (severity: {level})", tags: [uat, phase:{N}], type: Issue)`
   - For each discovered issue: `muninn_remember(vault, concept: "UAT discovered: {short-title}", content: "{observation}", tags: [uat, discovered, phase:{N}], type: Observation)`
@@ -288,9 +334,22 @@ Discovered issue D{NN} recorded (severity: {level}).
 ```
 These are already recorded in the UAT.md and will flow into remediation alongside test failures. If no discovered issues: omit the section.
 
+**Remediation lifecycle advance (when `verify_scope=remediation`):**
+- If `status=issues_found`: Advance to the next remediation round:
+  ```bash
+  bash /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}/scripts/uat-remediation-state.sh needs-round "{phase-dir}"
+  ```
+  This increments the round counter, creates the next round directory, and resets stage to `research`.
+- If `status=complete`: Remediation verified successfully. Reset remediation stage:
+  ```bash
+  # Clear the remediation state — no more rounds needed
+  _state_file="{phase-dir}/remediation/.uat-remediation-stage"
+  if [ -f "$_state_file" ]; then rm "$_state_file"; fi
+  ```
+
 - If issues found:
   - Any issue severity is `critical` or `major`:
-    - `Suggest /vbw:vibe to continue UAT remediation directly from {phase}-UAT.md`
+    - `Suggest /vbw:vibe to continue UAT remediation directly from {uat_path}`
   - All issues are `minor`:
     - `Suggest /vbw:fix to address recorded issues.`
 

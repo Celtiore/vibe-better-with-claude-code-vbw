@@ -4,12 +4,18 @@ trap 'exit 0' EXIT
 # Pre-compute all project state for implement.md and other commands.
 # Output: key=value pairs on stdout, one per line. Exit 0 always.
 
-PLANNING_DIR=".vbw-planning"
+PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
 
 # Source shared UAT helpers (extract_status_value, latest_non_source_uat)
 _SCRIPT_DIR_PD="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=uat-utils.sh
 . "$_SCRIPT_DIR_PD/uat-utils.sh"
+# shellcheck source=summary-utils.sh
+. "$_SCRIPT_DIR_PD/summary-utils.sh"
+if [ -f "$_SCRIPT_DIR_PD/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  . "$_SCRIPT_DIR_PD/phase-state-utils.sh"
+fi
 
 list_child_dirs_sorted() {
   local parent="$1"
@@ -44,6 +50,7 @@ else
   echo "uat_issues_major_or_higher=false"
   echo "uat_issues_phases="
   echo "uat_issues_count=0"
+  echo "uat_round_count=0"
   echo "has_shipped_milestones=false"
   echo "needs_milestone_rename=false"
   echo "milestone_uat_issues=false"
@@ -59,7 +66,7 @@ else
   echo "config_planning_tracking=manual"
   echo "config_auto_push=never"
   echo "config_verification_tier=standard"
-  echo "config_prefer_teams=always"
+  echo "config_prefer_teams=auto"
   echo "config_max_tasks_per_plan=5"
   echo "config_context_compiler=true"
   echo "config_require_phase_discussion=false"
@@ -150,6 +157,7 @@ UAT_ISSUES_SLUG="none"
 UAT_ISSUES_MAJOR_OR_HIGHER=false
 UAT_ISSUES_PHASES=""
 UAT_ISSUES_COUNT=0
+UAT_ROUND_COUNT=0
 
 if [ -d "$PHASES_DIR" ]; then
   # Collect phase directories in numeric order (prevents 100 sorting before 11)
@@ -186,13 +194,13 @@ if [ -d "$PHASES_DIR" ]; then
 
       # Skip phases without execution artifacts — a UAT file in a never-executed phase is orphaned/stale.
       # Also skip mid-execution phases (SUMMARY < PLAN) — UAT from a prior run is stale until re-execution completes.
-      DIR_PLANS=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-      DIR_SUMMARIES=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+      DIR_PLANS=$(count_phase_plans "$DIR")
+      DIR_SUMMARIES=$(count_complete_summaries "$DIR")
       if [ "$DIR_PLANS" -eq 0 ] || [ "$DIR_SUMMARIES" -lt "$DIR_PLANS" ]; then
         continue
       fi
 
-      UAT_FILE=$(latest_non_source_uat "$DIR")
+      UAT_FILE=$(current_uat "$DIR")
       if [ -f "$UAT_FILE" ]; then
         UAT_STATUS=$(extract_status_value "$UAT_FILE")
         if [ "$UAT_STATUS" = "issues_found" ]; then
@@ -234,8 +242,8 @@ if [ -d "$PHASES_DIR" ]; then
         if [ "$_ei_num" -ge "$UAT_ISSUES_PHASE" ] 2>/dev/null; then
           break
         fi
-        _ei_plans=$(find "$_ei_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-        _ei_summaries=$(find "$_ei_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+        _ei_plans=$(count_phase_plans "$_ei_dir")
+        _ei_summaries=$(count_complete_summaries "$_ei_dir")
         if [ "$_ei_plans" -eq 0 ]; then
           # Mirror the discussion gate from the normal scan
           if [ "$CFG_REQUIRE_PHASE_DISCUSSION" = true ]; then
@@ -272,18 +280,63 @@ if [ -d "$PHASES_DIR" ]; then
         TARGET_DIR="$PHASES_DIR/$UAT_ISSUES_SLUG/"
         NEXT_PHASE="$UAT_ISSUES_PHASE"
         NEXT_PHASE_SLUG="$UAT_ISSUES_SLUG"
+        # Compute UAT round count for display
+        UAT_ROUND_COUNT=$(count_uat_rounds "$TARGET_DIR" "$UAT_ISSUES_PHASE")
         # Check if remediation is complete (stage=done) → needs re-verification
         _rem_stage="none"
-        if [ -f "${TARGET_DIR}.uat-remediation-stage" ]; then
+        if [ -f "${TARGET_DIR}remediation/.uat-remediation-stage" ]; then
+          # New round-dir state file (key=value format)
+          _rem_stage=$(grep '^stage=' "${TARGET_DIR}remediation/.uat-remediation-stage" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+          _rem_stage="${_rem_stage:-none}"
+        elif [ -f "${TARGET_DIR}.uat-remediation-stage" ]; then
+          # Legacy state file (single word)
           _rem_stage=$(tr -d '[:space:]' < "${TARGET_DIR}.uat-remediation-stage")
         fi
-        if [ "$_rem_stage" = "done" ]; then
+        # Pre-compute plan/summary counts (needed for state routing AND stale-stage reconciliation)
+        NEXT_PHASE_PLANS=$(count_phase_plans "$TARGET_DIR")
+        NEXT_PHASE_SUMMARIES=$(count_complete_summaries "$TARGET_DIR")
+        # Reconcile stale remediation stage: if execution already completed
+        # (all plans have SUMMARY with status:complete) but the stage was never
+        # advanced (session crash/kill/compaction), auto-advance to "done" so the
+        # orchestrator routes to re-verification instead of re-execution.
+        # Also check round-dir summaries for the new layout.
+        # Scope to current round only — previous rounds' artifacts must not
+        # inflate totals and cause premature execute→done auto-advance.
+        _total_plans="$NEXT_PHASE_PLANS"
+        _total_summaries="$NEXT_PHASE_SUMMARIES"
+        # Read current round for scoped counting
+        _cur_rr="01"
+        if [ -f "${TARGET_DIR}remediation/.uat-remediation-stage" ]; then
+          _cr_val=$(grep '^round=' "${TARGET_DIR}remediation/.uat-remediation-stage" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+          _cur_rr="${_cr_val:-01}"
+        fi
+        # Count round-dir plans/summaries for current round only
+        # Summary must have terminal status (complete|partial|failed) to count —
+        # remediation summaries use an incremental lifecycle (in-progress → terminal).
+        _rd_plans=$(find "$TARGET_DIR" -path "*/remediation/round-${_cur_rr}/R${_cur_rr}-PLAN.md" 2>/dev/null | wc -l | tr -d ' ')
+        _rd_summary_file=$(find "$TARGET_DIR" -path "*/remediation/round-${_cur_rr}/R${_cur_rr}-SUMMARY.md" 2>/dev/null | head -1)
+        _rd_summaries=0
+        if [ -n "$_rd_summary_file" ] && is_summary_terminal "$_rd_summary_file"; then
+          _rd_summaries=1
+        fi
+        _total_plans=$(( _total_plans + _rd_plans ))
+        _total_summaries=$(( _total_summaries + _rd_summaries ))
+        if [ "$_rem_stage" = "execute" ] && [ "$_total_plans" -gt 0 ] && [ "$_total_summaries" -ge "$_total_plans" ]; then
+          # Write to whichever state file location exists
+          if [ -f "${TARGET_DIR}remediation/.uat-remediation-stage" ]; then
+            _cur_round=$(grep '^round=' "${TARGET_DIR}remediation/.uat-remediation-stage" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+            _cur_layout=$(grep '^layout=' "${TARGET_DIR}remediation/.uat-remediation-stage" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+            printf 'stage=done\nround=%s\nlayout=%s\n' "${_cur_round:-01}" "${_cur_layout:-round-dir}" > "${TARGET_DIR}remediation/.uat-remediation-stage"
+          else
+            echo "done" > "${TARGET_DIR}.uat-remediation-stage"
+          fi
+          _rem_stage="done"
+        fi
+        if [ "$_rem_stage" = "done" ] || [ "$_rem_stage" = "verify" ]; then
           NEXT_PHASE_STATE="needs_reverification"
         else
           NEXT_PHASE_STATE="needs_uat_remediation"
         fi
-        NEXT_PHASE_PLANS=$(find "$TARGET_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-        NEXT_PHASE_SUMMARIES=$(find "$TARGET_DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
       fi
     else
       ALL_DONE=true
@@ -299,8 +352,8 @@ if [ -d "$PHASES_DIR" ]; then
         fi
 
         # Count PLAN and SUMMARY files
-        P_COUNT=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-        S_COUNT=$(find "$DIR" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+        P_COUNT=$(count_phase_plans "$DIR")
+        S_COUNT=$(count_complete_summaries "$DIR")
 
         if [ "$P_COUNT" -eq 0 ]; then
           # Check if discussion is required before planning
@@ -367,11 +420,11 @@ if [ ${#PHASE_DIRS[@]} -gt 0 ]; then
   for _uv_dir in ${PHASE_DIRS[@]+"${PHASE_DIRS[@]}"}; do
     [ -d "$_uv_dir" ] || continue
     # Count plans and summaries to confirm phase is fully built
-    _uv_plans=$(find "$_uv_dir" -maxdepth 1 -name '[0-9]*-PLAN.md' ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')
+    _uv_plans=$(count_phase_plans "$_uv_dir")
     [ "$_uv_plans" -gt 0 ] || continue
-    _uv_sums=$(find "$_uv_dir" -maxdepth 1 -name '[0-9]*-SUMMARY.md' ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')
+    _uv_sums=$(count_complete_summaries "$_uv_dir")
     [ "$_uv_sums" -ge "$_uv_plans" ] || continue
-    _uv_uat=$(latest_non_source_uat "$_uv_dir")
+    _uv_uat=$(current_uat "$_uv_dir")
     _uv_is_unverified=false
     if [ -z "$_uv_uat" ]; then
       _uv_is_unverified=true
@@ -409,6 +462,7 @@ echo "uat_issues_slug=$UAT_ISSUES_SLUG"
 echo "uat_issues_major_or_higher=$UAT_ISSUES_MAJOR_OR_HIGHER"
 echo "uat_issues_phases=$UAT_ISSUES_PHASES"
 echo "uat_issues_count=$UAT_ISSUES_COUNT"
+echo "uat_round_count=$UAT_ROUND_COUNT"
 
 # --- Misnamed plan file diagnostic ---
 # Detect type-first naming (PLAN-01.md instead of 01-PLAN.md) for actionable warnings.
@@ -444,7 +498,7 @@ if [ -d "$PHASES_DIR" ] && [ ${#PHASE_DIRS[@]} -gt 0 ]; then
     _rx_src_ph=$(awk '/^source_phase:/{gsub(/^source_phase:[[:space:]]*/,""); gsub(/[[:space:]]*$/,""); print; exit}' "$_rx_ctx" 2>/dev/null || true)
     if [ -n "$_rx_src_ms" ] && [ -n "$_rx_src_ph" ]; then
       _rx_resolved="$PLANNING_DIR/milestones/$_rx_src_ms/phases/$_rx_src_ph"
-      REMEDIATED_MS_PATHS="${REMEDIATED_MS_PATHS:+${REMEDIATED_MS_PATHS}|}$_rx_resolved"
+      REMEDIATED_MS_PATHS="${REMEDIATED_MS_PATHS:+${REMEDIATED_MS_PATHS}$'\n'}$_rx_resolved"
     fi
   done
 fi
@@ -486,9 +540,9 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
     for _ms_phase_dir in "${MS_PHASE_DIRS[@]}"; do
       [ -d "$_ms_phase_dir" ] || continue
       _ms_dirname=$(basename "$_ms_phase_dir")
-      _ms_num=$(echo "$_ms_dirname" | sed 's/^\([0-9]*\).*/\1/')
+      _ms_num=$(resolve_phase_number_from_phase_dir "$_ms_phase_dir")
 
-      # Skip non-canonical dirs whose basename doesn't start with digits
+      # Skip dirs with no recoverable phase identity from basename or artifacts.
       if [ -z "$_ms_num" ] || ! echo "$_ms_num" | grep -qE '^[0-9]+$'; then
         continue
       fi
@@ -498,18 +552,18 @@ if [ "$UAT_ISSUES_PHASE" = "none" ] && { [ "$NEXT_PHASE_STATE" = "all_done" ] ||
 
       # Skip phases covered by active remediation (brownfield: no .remediated marker)
       _ms_phase_canonical="${_ms_phase_dir%/}"
-      if [ -n "$REMEDIATED_MS_PATHS" ] && echo "$REMEDIATED_MS_PATHS" | grep -qF "$_ms_phase_canonical"; then
+      if [ -n "$REMEDIATED_MS_PATHS" ] && printf '%s\n' "$REMEDIATED_MS_PATHS" | grep -Fqx -- "$_ms_phase_canonical"; then
         continue
       fi
 
       # Skip phases without execution artifacts
-      _ms_plans=$(find "$_ms_phase_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-      _ms_summaries=$(find "$_ms_phase_dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+      _ms_plans=$(count_phase_plans "$_ms_phase_dir")
+      _ms_summaries=$(count_complete_summaries "$_ms_phase_dir")
       if [ "$_ms_plans" -eq 0 ] || [ "$_ms_summaries" -lt "$_ms_plans" ]; then
         continue
       fi
 
-      _ms_uat=$(latest_non_source_uat "$_ms_phase_dir")
+      _ms_uat=$(current_uat "$_ms_phase_dir")
       if [ -f "$_ms_uat" ]; then
         _ms_uat_status=$(extract_status_value "$_ms_uat")
         if [ "$_ms_uat_status" = "issues_found" ]; then
@@ -565,7 +619,7 @@ CFG_AUTO_COMMIT="true"
 CFG_PLANNING_TRACKING="manual"
 CFG_AUTO_PUSH="never"
 CFG_VERIFICATION_TIER="standard"
-CFG_PREFER_TEAMS="always"
+CFG_PREFER_TEAMS="auto"
 CFG_MAX_TASKS="5"
 CFG_COMPACTION="130000"
 CFG_CONTEXT_COMPILER="true"
@@ -580,7 +634,7 @@ if [ "$JQ_AVAILABLE" = true ] && [ -f "$CONFIG_FILE" ]; then
     "CFG_PLANNING_TRACKING=\(.planning_tracking // "manual")",
     "CFG_AUTO_PUSH=\(.auto_push // "never")",
     "CFG_VERIFICATION_TIER=\(.verification_tier // "standard")",
-    "CFG_PREFER_TEAMS=\(.prefer_teams // "always")",
+    "CFG_PREFER_TEAMS=\(.prefer_teams // "auto")",
     "CFG_MAX_TASKS=\(.max_tasks_per_plan // 5)",
     "CFG_CONTEXT_COMPILER=\(if .context_compiler == null then true else .context_compiler end)",
     "CFG_COMPACTION=\(.compaction_threshold // 130000)",

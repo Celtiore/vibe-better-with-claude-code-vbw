@@ -4,7 +4,7 @@ set -u
 # Writes stripped agent name to .vbw-planning/.active-agent
 
 INPUT=$(cat)
-PLANNING_DIR=".vbw-planning"
+PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
 [ ! -d "$PLANNING_DIR" ] && exit 0
 
 AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // .agent_name // .name // ""' 2>/dev/null)
@@ -40,6 +40,10 @@ normalize_agent_role() {
       ;;
     vbw-architect|vbw-architect-[0-9]*|architect|architect-[0-9]*|team-architect|team-architect-[0-9]*)
       printf 'architect'
+      return 0
+      ;;
+    vbw-docs|vbw-docs-[0-9]*|docs|docs-[0-9]*|team-docs|team-docs-[0-9]*)
+      printf 'docs'
       return 0
       ;;
   esac

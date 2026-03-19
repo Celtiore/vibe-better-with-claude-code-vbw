@@ -74,9 +74,11 @@ EOF
     '.execution-state.json'
     '.execution-state.json.tmp'
     '.context-*.md'
+    '.context-usage'
     '.contracts/'
     '.locks/'
     '.token-state/'
+    '.vbw-context'
     '.vbw-session'
     '.active-agent'
     '.active-agent-count'
@@ -91,6 +93,7 @@ EOF
     '.event-log.jsonl'
     '.snapshots/'
     '.hook-errors.log'
+    '.hook-debug.log'
     '.compaction-marker'
     '.session-log.jsonl'
     '.session-log.jsonl.tmp'
@@ -99,6 +102,7 @@ EOF
     '.watchdog.log'
     '.claude-md-migrated'
     '.tmux-mode-patched'
+    '.delegated-workflow.json'
     '.baselines/'
     'codebase/'
   )
@@ -129,6 +133,7 @@ EOF
 
   # Create transient runtime files that should be excluded
   echo "12345" > .vbw-planning/.agent-pids
+  echo "1" > .vbw-planning/.vbw-context
   echo "session-abc" > .vbw-planning/.vbw-session
   echo "lead" > .vbw-planning/.active-agent
   echo "migrated" > .vbw-planning/.claude-md-migrated
@@ -154,6 +159,7 @@ EOF
   # Transient files should NOT be committed
   transient_paths=(
     '.agent-pids'
+    '.vbw-context'
     '.vbw-session'
     '.active-agent'
     '.claude-md-migrated'

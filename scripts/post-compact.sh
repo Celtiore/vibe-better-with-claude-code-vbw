@@ -5,10 +5,46 @@ set -u
 
 INPUT=$(cat)
 
+# Resolve VBW workspace root (issue #258: bare .vbw-planning/ fails in monorepo submodules)
+# shellcheck source=lib/vbw-config-root.sh
+. "$(dirname "$0")/lib/vbw-config-root.sh"
+find_vbw_root
+
 # Clean up cost tracking files and compaction marker (stale after compaction)
 # Preserve .active-agent and .active-agent-count — agents may still be running
 # after compaction. These are cleaned up by agent-stop.sh and session-stop.sh.
-rm -f .vbw-planning/.cost-ledger.json .vbw-planning/.compaction-marker 2>/dev/null
+rm -f "$VBW_PLANNING_DIR/.cost-ledger.json" "$VBW_PLANNING_DIR/.compaction-marker" "$VBW_PLANNING_DIR/.vbw-context" "$VBW_PLANNING_DIR/.context-usage" 2>/dev/null
+
+# Clean up per-agent compaction marker (this agent completed compaction successfully)
+if [ -d "$VBW_PLANNING_DIR/.compacting" ]; then
+  # Find our PID by walking parent chain (same as compaction-instructions.sh)
+  _cleanup_pid="$PPID"
+  PANE_MAP="$VBW_PLANNING_DIR/.agent-panes"
+  if [ -f "$PANE_MAP" ]; then
+    _cpid="$_cleanup_pid"
+    while [ -n "$_cpid" ] && [ "$_cpid" != "0" ] && [ "$_cpid" != "1" ]; do
+      if awk -v p="$_cpid" '$1 == p { found=1; exit } END { exit !found }' "$PANE_MAP" 2>/dev/null; then
+        _cleanup_pid="$_cpid"
+        break
+      fi
+      _cpid=$(ps -o ppid= -p "$_cpid" 2>/dev/null | tr -d ' ')
+    done
+  fi
+  rm -f "$VBW_PLANNING_DIR/.compacting/${_cleanup_pid}.json" 2>/dev/null || true
+
+  # Also clean stale markers for dead PIDs or invalid schema
+  for _marker in "$VBW_PLANNING_DIR"/.compacting/*.json; do
+    [ ! -f "$_marker" ] && continue
+    _mpid=$(jq -r '.pid // ""' "$_marker" 2>/dev/null)
+    _mts=$(jq -r '.started_at // ""' "$_marker" 2>/dev/null)
+    # Full schema validation: PID and started_at must be sane positive integers (max 10 digits)
+    if ! echo "$_mpid" | grep -Eq '^[1-9][0-9]{0,9}$' \
+       || ! echo "$_mts" | grep -Eq '^[1-9][0-9]{0,9}$' \
+       || ! kill -0 "$_mpid" 2>/dev/null; then
+      rm -f "$_marker" 2>/dev/null || true
+    fi
+  done
+fi
 
 # Try to identify agent role from input context
 ROLE=""
@@ -60,8 +96,8 @@ esac
 # --- Restore agent state snapshot ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SNAPSHOT_CONTEXT=""
-if [ -f ".vbw-planning/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-resume.sh" ]; then
-  SNAP_PHASE=$(jq -r '.phase // ""' ".vbw-planning/.execution-state.json" 2>/dev/null)
+if [ -f "$VBW_PLANNING_DIR/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-resume.sh" ]; then
+  SNAP_PHASE=$(jq -r '.phase // ""' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)
   if [ -n "$SNAP_PHASE" ]; then
     SNAP_PATH=$(bash "$SCRIPT_DIR/snapshot-resume.sh" restore "$SNAP_PHASE" "${ROLE:-}" 2>/dev/null) || SNAP_PATH=""
     if [ -n "$SNAP_PATH" ] && [ -f "$SNAP_PATH" ]; then
@@ -87,18 +123,18 @@ if [ -f ".vbw-planning/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-re
       SNAP_IN_PROGRESS_TASK=$(jq -r '.execution_state.current_task_id // ""' "$SNAP_PATH" 2>/dev/null)
       SNAP_LAST_COMPLETED_TASK=""
       SNAP_NEXT_TASK=""
-      if [ -n "$SNAP_PLAN" ] && [ "$SNAP_PLAN" != "unknown" ] && [ -f ".vbw-planning/.events/event-log.jsonl" ] && command -v jq >/dev/null 2>&1; then
+      if [ -n "$SNAP_PLAN" ] && [ "$SNAP_PLAN" != "unknown" ] && [ -f "$VBW_PLANNING_DIR/.events/event-log.jsonl" ] && command -v jq >/dev/null 2>&1; then
         PLAN_NUM=$(plan_id_to_num "$SNAP_PLAN")
         if [ -n "$PLAN_NUM" ] && [[ "$PLAN_NUM" =~ ^[0-9]+$ ]] && [ "$PLAN_NUM" -gt 0 ]; then
           LAST_STARTED_TASK=$(jq -r --argjson phase "$SNAP_PHASE" --argjson plan "$PLAN_NUM" '
             select(.event == "task_started" and .phase == $phase and (.plan // 0) == $plan)
             | .data.task_id // empty
-          ' ".vbw-planning/.events/event-log.jsonl" 2>/dev/null | tail -1)
+          ' "$VBW_PLANNING_DIR/.events/event-log.jsonl" 2>/dev/null | tail -1)
 
           LAST_COMPLETED_TASK=$(jq -r --argjson phase "$SNAP_PHASE" --argjson plan "$PLAN_NUM" '
             select(.event == "task_completed_confirmed" and .phase == $phase and (.plan // 0) == $plan)
             | .data.task_id // empty
-          ' ".vbw-planning/.events/event-log.jsonl" 2>/dev/null | tail -1)
+          ' "$VBW_PLANNING_DIR/.events/event-log.jsonl" 2>/dev/null | tail -1)
 
           if [ -z "$SNAP_IN_PROGRESS_TASK" ] && [ -n "$LAST_STARTED_TASK" ] && [ "$LAST_STARTED_TASK" != "$LAST_COMPLETED_TASK" ]; then
             SNAP_IN_PROGRESS_TASK="$LAST_STARTED_TASK"
@@ -124,7 +160,7 @@ if [ -f ".vbw-planning/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-re
         SNAPSHOT_CONTEXT="${SNAPSHOT_CONTEXT} Recent commits: ${SNAP_COMMITS}."
       fi
       TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%d %H:%M:%S")
-      echo "[$TIMESTAMP] Snapshot restored: $SNAP_PATH phase=$SNAP_PHASE" >> ".vbw-planning/.hook-errors.log" 2>/dev/null || true
+      echo "[$TIMESTAMP] Snapshot restored: $SNAP_PATH phase=$SNAP_PHASE" >> "$VBW_PLANNING_DIR/.hook-errors.log" 2>/dev/null || true
     fi
   fi
 fi
@@ -134,7 +170,7 @@ WORKTREE_CONTEXT=""
 if echo "$ROLE" | grep -q "vbw-dev\|vbw-debugger"; then
   AGENT_NAME_COMPACT=$(echo "$INPUT" | jq -r '.agent_name // .agentName // ""' 2>/dev/null) || AGENT_NAME_COMPACT=""
   AGENT_NAME_SHORT=$(echo "$AGENT_NAME_COMPACT" | sed 's/.*vbw-//')
-  WORKTREE_MAP_FILE=".vbw-planning/.agent-worktrees/${AGENT_NAME_SHORT}.json"
+  WORKTREE_MAP_FILE="$VBW_PLANNING_DIR/.agent-worktrees/${AGENT_NAME_SHORT}.json"
   if [ -f "$WORKTREE_MAP_FILE" ]; then
     WT_PATH=$(jq -r '.worktree_path // ""' "$WORKTREE_MAP_FILE" 2>/dev/null) || WT_PATH=""
     if [ -n "$WT_PATH" ]; then
@@ -151,10 +187,79 @@ fi
 
 MUNINN_HINT=" After re-reading files, read muninndb_vault from .vbw-planning/config.json, call muninn_guide(vault) for vault-aware instructions, then call muninn_activate(vault, context: your current task context) to recover cognitive memory from MuninnDB (prior decisions, patterns, conventions)."
 
-jq -n --arg role "${ROLE:-unknown}" --arg files "$FILES" --arg snap "${SNAPSHOT_CONTEXT:-}" --arg taskhint "${TASK_HINT:-}" --arg worktree "${WORKTREE_CONTEXT:-}" --arg muninn "$MUNINN_HINT" '{
+# --- Orchestrator resume hint (non-agent sessions only) ---
+# When the orchestrator (ROLE="" or "unknown") compacts mid-command, it loses
+# the vibe.md instructions and may try Skill('vbw:vibe') which is blocked by
+# disable-model-invocation. Detect active mode from disk state and emit a
+# targeted resume instruction with the exact file path and mode section.
+ORCH_RESUME=""
+if [ -z "$ROLE" ] || [ "$ROLE" = "unknown" ]; then
+  VIBE_CMD_PATH="$SCRIPT_DIR/../commands/vibe.md"
+  if [ -f "$VIBE_CMD_PATH" ]; then
+    VIBE_CANONICAL=$(cd "$(dirname "$VIBE_CMD_PATH")" && echo "$(pwd)/$(basename "$VIBE_CMD_PATH")") || VIBE_CANONICAL=""
+    [ -n "$VIBE_CANONICAL" ] && VIBE_CMD_PATH="$VIBE_CANONICAL"
+  fi
+
+  ACTIVE_MODE=""
+  PD_AUTONOMY=""
+  # Detect from execution state first (most specific)
+  if [ -f "$VBW_PLANNING_DIR/.execution-state.json" ] && command -v jq &>/dev/null; then
+    EXEC_STATUS=$(jq -r '.status // ""' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)
+    EXEC_PHASE=$(jq -r '.phase // ""' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)
+    case "$EXEC_STATUS" in
+      running)  ACTIVE_MODE="Execute" ;;
+      *)        ACTIVE_MODE=""; EXEC_PHASE="" ;; # clear both, fall through to phase-detect
+    esac
+  fi
+
+  # Fall back to phase-detect for non-execution modes
+  if [ -z "$ACTIVE_MODE" ] && [ -f "$SCRIPT_DIR/phase-detect.sh" ]; then
+    PD_OUT=$(bash "$SCRIPT_DIR/phase-detect.sh" 2>/dev/null) || PD_OUT=""
+    if [ -n "$PD_OUT" ]; then
+      PD_STATE=$(echo "$PD_OUT" | grep -m1 '^next_phase_state=' | sed 's/^[^=]*=//')
+      PD_PHASE=$(echo "$PD_OUT" | grep -m1 '^next_phase=' | sed 's/^[^=]*=//')
+      PD_PROJECT=$(echo "$PD_OUT" | grep -m1 '^project_exists=' | sed 's/^[^=]*=//')
+      PD_MS_UAT=$(echo "$PD_OUT" | grep -m1 '^milestone_uat_issues=' | sed 's/^[^=]*=//')
+      PD_AUTONOMY=$(echo "$PD_OUT" | grep -m1 '^config_autonomy=' | sed 's/^[^=]*=//')
+      case "$PD_STATE" in
+        needs_uat_remediation)   ACTIVE_MODE="UAT Remediation" ;;
+        needs_reverification)    ACTIVE_MODE="Verify" ;;
+        needs_discussion)        ACTIVE_MODE="Discuss" ;;
+        needs_plan_and_execute)  ACTIVE_MODE="Plan" ;;
+        needs_execute)           ACTIVE_MODE="Execute" ;;
+        all_done)
+          if [ "$PD_MS_UAT" = "true" ]; then
+            ACTIVE_MODE="Milestone UAT Recovery"
+          else
+            ACTIVE_MODE="Archive"
+          fi
+          ;;
+        no_phases)
+          if [ "$PD_PROJECT" = "false" ]; then
+            ACTIVE_MODE="Bootstrap"
+          elif [ "$PD_MS_UAT" = "true" ]; then
+            ACTIVE_MODE="Milestone UAT Recovery"
+          else
+            ACTIVE_MODE="Scope"
+          fi
+          ;;
+      esac
+      : "${EXEC_PHASE:=$PD_PHASE}"
+    fi
+  fi
+
+  # Filter sentinel values from phase display
+  case "${EXEC_PHASE:-}" in none|"") EXEC_PHASE="" ;; esac
+
+  if [ -n "$ACTIVE_MODE" ] && [ -f "$VIBE_CMD_PATH" ]; then
+    ORCH_RESUME=" ORCHESTRATOR RESUME: You were executing /vbw:vibe ${ACTIVE_MODE} mode${EXEC_PHASE:+ for Phase ${EXEC_PHASE}}. Do NOT call Skill('vbw:vibe') or any Skill('vbw:*') — it will fail (disable-model-invocation). Instead, use the Read tool to re-read ${VIBE_CMD_PATH} and jump directly to the '### Mode: ${ACTIVE_MODE}' section. Resume from where you left off using your compacted summary context.${PD_AUTONOMY:+ Autonomy: ${PD_AUTONOMY}.}"
+  fi
+fi
+
+jq -n --arg role "${ROLE:-unknown}" --arg files "$FILES" --arg snap "${SNAPSHOT_CONTEXT:-}" --arg taskhint "${TASK_HINT:-}" --arg worktree "${WORKTREE_CONTEXT:-}" --arg muninn "$MUNINN_HINT" --arg orchresume "${ORCH_RESUME:-}" '{
   "hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": ("Context was compacted. Agent role: " + $role + ". Re-read these key files from disk: " + $files + $snap + $taskhint + $worktree + $muninn)
+    "additionalContext": ("Context was compacted. Agent role: " + $role + ". Re-read these key files from disk: " + $files + $snap + $taskhint + $worktree + $muninn + $orchresume)
   }
 }'
 

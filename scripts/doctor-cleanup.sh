@@ -17,6 +17,7 @@ LOG_FILE="$PLANNING_DIR/.hook-errors.log"
 . "$SCRIPT_DIR/resolve-claude-dir.sh"
 
 TEAMS_DIR="$CLAUDE_DIR/teams"
+TASKS_DIR="$CLAUDE_DIR/tasks"
 STALE_THRESHOLD_SECONDS=7200  # 2 hours
 
 # Platform-specific stat command for modification time
@@ -49,6 +50,20 @@ scan_stale_teams() {
 
     local team_name
     team_name=$(basename "$team_dir")
+
+    # Check for orphaned/configless team directories (no config.json = corrupted residual)
+    # Only report VBW-owned teams — non-VBW configless dirs may belong to other plugins
+    if [ ! -f "$team_dir/config.json" ]; then
+      case "$team_name" in vbw-*)
+        echo "orphaned_team|$team_name|no config.json (ghost team residual)"
+        [ -d "$TASKS_DIR/$team_name" ] && echo "orphaned_tasks|$team_name|paired tasks dir (will be removed with team)"
+      ;; esac
+      continue
+    fi
+
+    # Only scan VBW-owned teams for staleness — consistent with cleanup scope
+    case "$team_name" in vbw-*) ;; *) continue ;; esac
+
     local inbox_dir="$team_dir/inboxes"
 
     [ ! -d "$inbox_dir" ] && continue
@@ -70,6 +85,7 @@ scan_stale_teams() {
     local hours=$((age / 3600))
     local minutes=$(((age % 3600) / 60))
     echo "stale_team|$team_name|age: ${hours}h ${minutes}m"
+    [ -d "$TASKS_DIR/$team_name" ] && echo "stale_tasks|$team_name|paired tasks dir (will be removed with team)"
   done
 }
 

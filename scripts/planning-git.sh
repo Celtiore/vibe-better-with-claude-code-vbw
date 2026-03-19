@@ -39,11 +39,13 @@ ensure_transient_ignore() {
 .execution-state.json
 .execution-state.json.tmp
 .context-*.md
+.context-usage
 .contracts/
 .locks/
 .token-state/
 
 # Session & agent tracking
+.vbw-context
 .vbw-session
 .active-agent
 .active-agent-count
@@ -68,6 +70,7 @@ ensure_transient_ignore() {
 
 # Logging & markers
 .hook-errors.log
+.hook-debug.log
 .compaction-marker
 .session-log.jsonl
 .session-log.jsonl.tmp
@@ -76,6 +79,7 @@ ensure_transient_ignore() {
 .watchdog.log
 .claude-md-migrated
 .tmux-mode-patched
+.delegated-workflow.json
 
 # Baselines
 .baselines/

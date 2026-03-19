@@ -242,7 +242,7 @@ PAUL uses BDD-style AC in PLAN.md and reports pass/fail in SUMMARY.md. VBW uses 
 | **Hard gates** | `hard-gate.sh` runs `protected_file` checks before each task, `contract_compliance` checks, and `artifact_persistence` checks after |
 | **`security-filter.sh`** | Blocks access to `.env`, credentials, `.pem`, `.key` files |
 | **`bash-guard.sh`** | Intercepts destructive bash commands (40+ patterns) before they reach the shell |
-| **Agent tool permissions** | Platform-enforced `disallowedTools` — Scout and QA literally cannot write files |
+| **Agent tool permissions** | Platform-enforced `disallowedTools` — Scout cannot write files; QA restricted to persistence via `write-verification.sh` (Write/Edit disallowed) |
 
 PAUL relies on instructions (DO NOT CHANGE declarations) that the model is expected to respect. CARL adds dynamic rule injection, but rules are still instruction-level — nothing prevents the model from violating them during compaction or context overflow.
 
@@ -262,11 +262,11 @@ VBW uses hooks that execute **before** tool invocations reach the model. `file-g
 |---|---|
 | **Stack detection** | `/vbw:init` scans project, identifies tech stack, recommends skills from curated `stack-mappings.json` |
 | **Skills.sh integration** | `/vbw:skills` browses and installs community skills from the open-source registry |
-| **Skill bundling in context** | `compile-context.sh` reads `skills_used` from plan frontmatter and bundles SKILL.md content into agent context |
+| **Plan-driven skill activation** | Agents read `skills_used` from plan frontmatter and call `Skill(skill-name)` to activate each relevant skill at execution time |
 | **PLAN.md `skills_used`** | Frontmatter field declaring which skills a plan requires |
 | **Verified in CLAUDE.md** | Installed skills tracked in the `Installed Skills` section |
 
-VBW's approach is broader than PAUL's — PAUL tracks whether required skills were invoked; VBW detects skills from the stack, installs them, bundles them into agent context, and verifies conventions they define via QA.
+VBW's approach is broader than PAUL's — PAUL tracks whether required skills were invoked; VBW detects skills from the stack, installs them, activates them via plan-driven `Skill()` calls at execution time, and verifies conventions they define via QA.
 
 **Verdict:** VBW exceeds PAUL. Ecosystem integration vs manual declaration.
 

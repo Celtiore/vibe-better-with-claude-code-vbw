@@ -4,8 +4,20 @@ set -u
 # Exit 2 = block (keep working), Exit 0 = allow idle
 # Exit 0 on ANY error (fail-open: never block legitimate work)
 
+PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
+
 # Only apply to VBW contexts
-[ ! -d ".vbw-planning" ] && exit 0
+[ ! -d "$PLANNING_DIR" ] && exit 0
+
+# Source shared summary-status helpers
+_QG_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$_QG_SCRIPT_DIR/summary-utils.sh" ]; then
+  # shellcheck source=summary-utils.sh
+  . "$_QG_SCRIPT_DIR/summary-utils.sh"
+else
+  # Safe default: treat no summaries as complete when helpers unavailable
+  count_complete_summaries() { echo "0"; }
+fi
 
 # Read stdin to consume task context
 cat >/dev/null 2>&1 || exit 0
@@ -17,10 +29,10 @@ SUMMARY_OK=false
 PLANS_TOTAL=0
 SUMMARIES_TOTAL=0
 
-for phase_dir in .vbw-planning/phases/*/; do
+for phase_dir in "$PLANNING_DIR/phases"/*/; do
   [ -d "$phase_dir" ] || continue
   PLANS=$(ls -1 "$phase_dir"*-PLAN.md 2>/dev/null | wc -l | tr -d ' ')
-  SUMMARIES=$(ls -1 "$phase_dir"*-SUMMARY.md 2>/dev/null | wc -l | tr -d ' ')
+  SUMMARIES=$(count_complete_summaries "$phase_dir")
   PLANS_TOTAL=$(( PLANS_TOTAL + PLANS ))
   SUMMARIES_TOTAL=$(( SUMMARIES_TOTAL + SUMMARIES ))
 done
@@ -33,8 +45,8 @@ fi
 NOW=$(date +%s 2>/dev/null) || exit 0
 # Configurable commit recency window (default: 2 hours)
 TWO_HOURS=7200
-if command -v jq &>/dev/null && [ -f ".vbw-planning/config.json" ]; then
-  _window=$(jq -r '.qa_commit_window_seconds // 7200' .vbw-planning/config.json 2>/dev/null)
+if command -v jq &>/dev/null && [ -f "$PLANNING_DIR/config.json" ]; then
+  _window=$(jq -r '.qa_commit_window_seconds // 7200' "$PLANNING_DIR/config.json" 2>/dev/null)
   [ "${_window:-0}" -gt 0 ] 2>/dev/null && TWO_HOURS="$_window"
 fi
 

@@ -11,7 +11,7 @@ set -u
 #   mode: execute|plan|verify|qa|discuss
 #
 # Reads:
-#   .vbw-planning/.context-usage   — "used_pct|context_window_size" (cached by statusline)
+#   .vbw-planning/.context-usage   — "session_id|used_pct|context_window_size" (cached by statusline; legacy 2-field "used_pct|context_window_size" also accepted)
 #   .vbw-planning/config.json      — compaction_threshold, autonomy, effort
 #   Plugin root reference files     — measured per mode
 #   .vbw-planning/ project files    — measured per mode
@@ -21,8 +21,18 @@ set -u
 
 MODE="${1:-execute}"
 
-PLANNING_DIR=".vbw-planning"
+PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
 USAGE_FILE="$PLANNING_DIR/.context-usage"
+
+# Source shared summary-status helpers for status-aware SUMMARY detection
+_SC_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$_SC_SCRIPT_DIR/summary-utils.sh" ]; then
+  # shellcheck source=summary-utils.sh
+  . "$_SC_SCRIPT_DIR/summary-utils.sh"
+else
+  # Safe default: report zero completions when helpers unavailable
+  count_complete_summaries() { echo "0"; }
+fi
 
 # Resolve plugin root (same pattern as command templates)
 # shellcheck source=resolve-claude-dir.sh
@@ -104,7 +114,7 @@ detect_phase_dir() {
     last_dir="$d"
     local plans summaries
     plans=$(find "$d" -maxdepth 1 -name '*-PLAN.md' -type f 2>/dev/null | wc -l | tr -d ' ')
-    summaries=$(find "$d" -maxdepth 1 -name '*-SUMMARY.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+    summaries=$(count_complete_summaries "$d")
     if [ "$plans" -gt 0 ] && [ "$summaries" -lt "$plans" ]; then
       echo "$d"
       return
@@ -248,10 +258,25 @@ if [ ! -f "$USAGE_FILE" ]; then
   exit 0
 fi
 
-IFS='|' read -r USED_PCT CTX_SIZE < "$USAGE_FILE" 2>/dev/null || exit 0
+IFS='|' read -r FIELD1 FIELD2 FIELD3 < "$USAGE_FILE" 2>/dev/null || exit 0
 
-# Validate
-if ! [[ "${USED_PCT:-}" =~ ^[0-9]+$ ]] || ! [[ "${CTX_SIZE:-}" =~ ^[0-9]+$ ]]; then
+# Parse format: new 3-field "SESSION_ID|PCT|CTX_SIZE" or legacy 2-field "PCT|CTX_SIZE"
+if [ -n "${FIELD3:-}" ] && [[ "${FIELD2:-}" =~ ^[0-9]+$ ]] && [[ "${FIELD3:-}" =~ ^[0-9]+$ ]]; then
+  # 3-field format: validate session freshness
+  FILE_SID="$FIELD1"
+  USED_PCT="$FIELD2"
+  CTX_SIZE="$FIELD3"
+  CURRENT_SID="${CLAUDE_SESSION_ID:-unknown}"
+  if [ "$FILE_SID" != "$CURRENT_SID" ]; then
+    # Stale data from a different session — skip guard (#238)
+    exit 0
+  fi
+elif [[ "${FIELD1:-}" =~ ^[0-9]+$ ]] && [[ "${FIELD2:-}" =~ ^[0-9]+$ ]] && [ -z "${FIELD3:-}" ]; then
+  # Legacy 2-field format: no session check (backward compat)
+  USED_PCT="$FIELD1"
+  CTX_SIZE="$FIELD2"
+else
+  # Unrecognized format
   exit 0
 fi
 

@@ -97,6 +97,122 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
+@test "worktree-cleanup: removes residual worktree directory" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .vbw-worktrees/01-01/.vbw-planning
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees/01-01" ]
+}
+
+@test "worktree-cleanup: removes empty parent .vbw-worktrees directory" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .vbw-worktrees/01-01/.vbw-planning
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees" ]
+}
+
+@test "worktree-cleanup: removes parent .vbw-worktrees even with .DS_Store" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .vbw-worktrees/01-01/.vbw-planning
+  touch .vbw-worktrees/.DS_Store
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees" ]
+}
+
+@test "worktree-cleanup: removes parent .vbw-worktrees with mixed hidden files" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .vbw-worktrees/01-01/.vbw-planning
+  touch .vbw-worktrees/.DS_Store
+  touch .vbw-worktrees/.localized
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees" ]
+}
+
+@test "worktree-cleanup: keeps .vbw-worktrees when other worktrees exist" {
+  cd "$TEST_TEMP_DIR"
+  mkdir -p .vbw-worktrees/01-01/.vbw-planning
+  mkdir -p .vbw-worktrees/02-01
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees/01-01" ]
+  [ -d ".vbw-worktrees/02-01" ]
+  [ -d ".vbw-worktrees" ]
+}
+
+@test "worktree-cleanup: deregisters real git worktree and prunes metadata" {
+  cd "$TEST_TEMP_DIR"
+  git init -q
+  git config user.name "VBW Test"
+  git config user.email "vbw-test@example.com"
+  echo "seed" > README.md
+  git add README.md
+  git commit -q -m "chore(init): seed"
+
+  git worktree add -b vbw/01-01 .vbw-worktrees/01-01 HEAD 2>/dev/null
+  # Confirm worktree is registered
+  run git worktree list
+  [[ "$output" == *"01-01"* ]]
+
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees/01-01" ]
+
+  # Verify git worktree metadata is cleaned up
+  run git worktree list
+  [[ "$output" != *"01-01"* ]]
+}
+
+@test "worktree-cleanup: cleans locked worktree and its branch" {
+  cd "$TEST_TEMP_DIR"
+  git init -q
+  git config user.name "VBW Test"
+  git config user.email "vbw-test@example.com"
+  echo "seed" > README.md
+  git add README.md
+  git commit -q -m "chore(init): seed"
+
+  git worktree add -b vbw/01-01 .vbw-worktrees/01-01 HEAD 2>/dev/null
+  git worktree lock .vbw-worktrees/01-01
+
+  # Confirm locked
+  run git worktree list
+  [[ "$output" == *"01-01"* ]]
+
+  run bash "$SCRIPTS_DIR/worktree-cleanup.sh" 01 01
+  [ "$status" -eq 0 ]
+  [ ! -d ".vbw-worktrees/01-01" ]
+
+  # Verify git worktree metadata is fully cleaned
+  run git worktree list
+  [[ "$output" != *"01-01"* ]]
+
+  # Verify no admin dir references our worktree path
+  GIT_DIR="$(git rev-parse --git-dir)"
+  if [ -d "$GIT_DIR/worktrees" ]; then
+    for gf in "$GIT_DIR/worktrees"/*/gitdir; do
+      [ -f "$gf" ] || continue
+      ! grep -q "01-01" "$gf"
+    done
+  fi
+
+  # Verify branch is deleted (not blocked by stale worktree ref)
+  run git branch --list "vbw/01-01"
+  [ -z "$output" ]
+
+  # Verify the worktree can be cleanly recreated after cleanup
+  run git worktree add -b vbw/01-01 .vbw-worktrees/01-01 HEAD
+  [ "$status" -eq 0 ]
+  [ -d ".vbw-worktrees/01-01" ]
+
+  # Clean up the recreated worktree
+  git worktree remove .vbw-worktrees/01-01 --force 2>/dev/null || true
+  git branch -d vbw/01-01 2>/dev/null || true
+}
+
 @test "worktree-cleanup: clears agent-worktree JSON matching phase-plan" {
   cd "$TEST_TEMP_DIR"
   mkdir -p .vbw-planning/.agent-worktrees

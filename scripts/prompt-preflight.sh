@@ -2,7 +2,11 @@
 set -u
 # UserPromptSubmit: Pre-flight validation for VBW commands (non-blocking, exit 0)
 
-PLANNING_DIR=".vbw-planning"
+# Resolve VBW workspace root (issue #258: bare .vbw-planning/ fails in monorepo submodules)
+# shellcheck source=lib/vbw-config-root.sh
+. "$(dirname "$0")/lib/vbw-config-root.sh"
+find_vbw_root
+PLANNING_DIR="$VBW_PLANNING_DIR"
 [ -d "$PLANNING_DIR" ] || exit 0
 
 INPUT=$(cat)
@@ -66,6 +70,13 @@ is_archive_vibe_prompt() {
 
   return 1
 }
+
+# VBW context marker: signal statusline that VBW context is active in this session.
+# Created on any VBW command; cleared by session-start.sh (new session) and
+# post-compact.sh (compaction degrades context reliability).
+if echo "$PROMPT" | grep -qi '^/vbw:' || is_expanded_vbw_prompt "$PROMPT"; then
+  echo "1" > "$PLANNING_DIR/.vbw-context" 2>/dev/null || true
+fi
 
 # GSD Isolation: create .vbw-session marker on VBW command invocation.
 # Detection covers raw slash commands (/vbw:*) and expanded command content

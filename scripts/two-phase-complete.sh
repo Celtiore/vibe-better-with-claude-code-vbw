@@ -10,7 +10,7 @@ set -u
 # Exit: 0 on confirmed, 2 on rejected, 0 when flag off
 
 # shellcheck disable=SC2034 # PLANNING_DIR used by convention across VBW scripts
-PLANNING_DIR=".vbw-planning"
+PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ $# -lt 4 ]; then
@@ -25,7 +25,7 @@ CONTRACT_PATH="$4"
 shift 4
 
 # Check two_phase_completion flag — if disabled, skip
-CONFIG_PATH=".vbw-planning/config.json"
+CONFIG_PATH="$PLANNING_DIR/config.json"
 if [ -f "$CONFIG_PATH" ] && command -v jq &>/dev/null; then
   TWO_PHASE=$(jq -r 'if .two_phase_completion != null then .two_phase_completion elif .v2_two_phase_completion != null then .v2_two_phase_completion else true end' "$CONFIG_PATH" 2>/dev/null || echo "true")
   if [ "$TWO_PHASE" != "true" ]; then

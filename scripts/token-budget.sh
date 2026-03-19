@@ -15,7 +15,7 @@ set -u
 # Exit: 0 always (budget enforcement must never block).
 
 # shellcheck disable=SC2034 # PLANNING_DIR used by convention across VBW scripts
-PLANNING_DIR=".vbw-planning"
+PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUDGETS_PATH="${SCRIPT_DIR}/../config/token-budgets.json"
 
@@ -42,7 +42,7 @@ CONTRACT_PATH="${1:-}"
 
 # Check token_budgets flag — if disabled, pass through
 # Legacy fallback: honor v2_token_budgets if unprefixed key missing (pre-migration brownfield)
-CONFIG_PATH=".vbw-planning/config.json"
+CONFIG_PATH="$PLANNING_DIR/config.json"
 if [ -f "$CONFIG_PATH" ] && command -v jq &>/dev/null; then
   TOKEN_BUDGETS=$(jq -r 'if .token_budgets != null then .token_budgets elif .v2_token_budgets != null then .v2_token_budgets else true end' "$CONFIG_PATH" 2>/dev/null || echo "true")
   if [ "$TOKEN_BUDGETS" != "true" ]; then

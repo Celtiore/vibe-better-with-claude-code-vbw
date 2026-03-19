@@ -12,7 +12,7 @@ fi
 
 # If SUMMARY.md doesn't exist, check for crash recovery fallback
 if [ ! -f "$FILE_PATH" ]; then
-  PLANNING_DIR=".vbw-planning"
+  PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
   LAST_WORDS_DIR="$PLANNING_DIR/.agent-last-words"
 
   # Look for recent .agent-last-words files (within last 60 seconds)
@@ -65,6 +65,28 @@ MISSING=""
 # YAML frontmatter required (compact format relies on it)
 if ! head -1 "$FILE_PATH" | grep -q '^---$'; then
   MISSING="Missing YAML frontmatter. "
+fi
+
+# Validate status value (must be complete|partial|failed per SUMMARY.md contract)
+_VS_STATUS=$(sed -n '/^---$/,/^---$/{ /^status:/{ s/^status:[[:space:]]*//; s/["'"'"']//g; p; }; }' "$FILE_PATH" 2>/dev/null | head -1 | tr -d '[:space:]')
+if [ -n "$_VS_STATUS" ]; then
+  case "$_VS_STATUS" in
+    complete|partial|failed) ;;  # valid terminal statuses
+    completed)
+      MISSING="${MISSING}Status 'completed' should be 'complete' (canonical form). "
+      ;;
+    pending|in_progress)
+      MISSING="${MISSING}Invalid status '${_VS_STATUS}' -- SUMMARY.md must only be created at plan completion (status: complete|partial|failed). "
+      ;;
+    *)
+      MISSING="${MISSING}Invalid status '${_VS_STATUS}' (must be complete|partial|failed). "
+      ;;
+  esac
+else
+  # Status field missing from frontmatter -- required for completion detection
+  if head -1 "$FILE_PATH" | grep -q '^---$'; then
+    MISSING="${MISSING}Missing 'status' field in frontmatter (must be complete|partial|failed). "
+  fi
 fi
 
 if ! grep -q "## What Was Built" "$FILE_PATH"; then

@@ -3,7 +3,7 @@ name: vbw:doctor
 category: supporting
 disable-model-invocation: true
 description: Run health checks on VBW installation and project setup.
-allowed-tools: Read, Bash, Glob, Grep
+allowed-tools: Read, Bash, Glob, Grep, LSP
 ---
 
 # VBW Doctor
@@ -95,6 +95,16 @@ PASS if alive or not in tmux. WARN if dead watchdog in tmux.
   - WARN if vault missing: "Vault '{name}' not found. Re-run /vbw:init."
   - PASS if vault exists.
 
+### 17. CLAUDE.md sections
+If `.vbw-planning/` exists (project initialized):
+- Run `bash scripts/check-claude-md-staleness.sh --json 2>/dev/null`
+- Parse JSON output: `stale`, `missing_sections`, `version_mismatch`, `installed_version`, `marker_version`
+- PASS if `stale` is false
+- WARN if `stale` is true — show missing sections and/or version mismatch detail
+- SKIP if no `.vbw-planning/` directory (not bootstrapped)
+
+If user invoked with `--cleanup`: run `bash scripts/check-claude-md-staleness.sh --fix 2>&1` and report result. The fix must refresh only VBW-owned sections in place, preserve all other `CLAUDE.md` content verbatim, and add `## Code Intelligence` only when no Code Intelligence heading/guidance already exists.
+
 ## Output Format
 
 ```
@@ -116,19 +126,21 @@ VBW Doctor v{version}
  14. Stale markers        {PASS|WARN} {markers}
  15. Watchdog status      {PASS|WARN}
  16. MuninnDB health      {PASS|FAIL|WARN} {detail}
+ 17. CLAUDE.md sections   {PASS|WARN|SKIP}
 
-Result: {N}/16 passed, {W} warnings, {F} failures
+Result: {N}/17 passed, {W} warnings, {F} failures
 ```
 
 Use checkmark for PASS, warning triangle for WARN, X for FAIL.
 
 ### Cleanup
 
-If any WARN from checks 11-14:
+If any WARN from checks 11-14, 16, or 17:
 - Show cleanup preview listing all findings
 - Display: "Run `/vbw:doctor --cleanup` to apply cleanup"
 
 If user invoked with `--cleanup` (check for this in the command arguments):
-- Run `bash scripts/doctor-cleanup.sh cleanup 2>&1`
+- Run `bash scripts/doctor-cleanup.sh cleanup 2>&1` for runtime findings
+- Run `bash scripts/check-claude-md-staleness.sh --fix 2>&1` for stale CLAUDE.md (non-destructive in-place refresh of VBW-owned sections only)
 - Report what was cleaned
 - Show updated counts

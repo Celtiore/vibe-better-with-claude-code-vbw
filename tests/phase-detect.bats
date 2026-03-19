@@ -68,7 +68,7 @@ teardown() {
 @test "detects all phases done" {
   mkdir -p .vbw-planning/phases/01-test/
   touch .vbw-planning/phases/01-test/01-01-PLAN.md
-  touch .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
   run bash "$SCRIPTS_DIR/phase-detect.sh"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "next_phase_state=all_done"
@@ -84,7 +84,7 @@ teardown() {
 @test "detects unresolved UAT issues as next-phase remediation" {
   mkdir -p .vbw-planning/phases/01-test/
   touch .vbw-planning/phases/01-test/01-01-PLAN.md
-  touch .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-test/01-UAT.md <<'EOF'
 ---
 phase: 01
@@ -111,7 +111,7 @@ EOF
 @test "minor-only UAT issues set major-or-higher flag false" {
   mkdir -p .vbw-planning/phases/01-test/
   touch .vbw-planning/phases/01-test/01-01-PLAN.md
-  touch .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-test/01-UAT.md <<'EOF'
 ---
 phase: 01
@@ -136,7 +136,7 @@ EOF
 @test "detects bold-markdown severity format as major" {
   mkdir -p .vbw-planning/phases/01-test/
   touch .vbw-planning/phases/01-test/01-01-PLAN.md
-  touch .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-test/01-UAT.md <<'EOF'
 ---
 phase: 01
@@ -161,7 +161,7 @@ EOF
 @test "re-verified UAT with status complete clears remediation state" {
   mkdir -p .vbw-planning/phases/01-test/
   touch .vbw-planning/phases/01-test/01-01-PLAN.md
-  touch .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
 
   # UAT was re-run after fixes; now passes
   cat > .vbw-planning/phases/01-test/01-UAT.md <<'EOF'
@@ -202,7 +202,7 @@ EOF
   # 2 plans, only 1 summary — still mid-execution
   touch .vbw-planning/phases/01-partial/01-01-PLAN.md
   touch .vbw-planning/phases/01-partial/01-02-PLAN.md
-  touch .vbw-planning/phases/01-partial/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-partial/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-partial/01-UAT.md <<'EOF'
 ---
 phase: 01
@@ -233,10 +233,29 @@ EOF
   echo "$output" | grep -q "next_phase_plans=1"
 }
 
+@test "legacy PLAN.md and SUMMARY.md support UAT remediation detection" {
+  mkdir -p .vbw-planning/phases/01-legacy/
+  touch .vbw-planning/phases/01-legacy/PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-legacy/SUMMARY.md
+  cat > .vbw-planning/phases/01-legacy/01-UAT.md <<'EOF'
+---
+phase: 01
+status: issues_found
+---
+- Severity: major
+EOF
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
+  echo "$output" | grep -q "next_phase=01"
+  echo "$output" | grep -q "uat_issues_phase=01"
+}
+
 @test "dotfile PLAN files are not counted as plan artifacts" {
   mkdir -p .vbw-planning/phases/01-test/
   touch .vbw-planning/phases/01-test/01-01-PLAN.md
-  touch .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
   # Dotfile — should NOT count (ls glob ignores dotfiles)
   touch ".vbw-planning/phases/01-test/.01-02-PLAN.md"
 
@@ -310,7 +329,7 @@ EOF
       100) dir=".vbw-planning/phases/100-hundred/" ;;
     esac
     touch "${dir}${p}-01-PLAN.md"
-    touch "${dir}${p}-01-SUMMARY.md"
+    printf '%s\n' '---' 'status: complete' '---' 'Done.' > "${dir}${p}-01-SUMMARY.md"
     cat > "${dir}${p}-UAT.md" <<EOF
 ---
 phase: $p
@@ -398,7 +417,7 @@ EOF
   # Phase 1 is fully done
   touch .vbw-planning/phases/01-first/01-CONTEXT.md
   touch .vbw-planning/phases/01-first/01-01-PLAN.md
-  touch .vbw-planning/phases/01-first/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-first/01-01-SUMMARY.md
   # Phase 2 has no context
 
   run bash "$SCRIPTS_DIR/phase-detect.sh"
@@ -416,12 +435,12 @@ EOF
   mkdir -p .vbw-planning/phases/01-done/
   touch .vbw-planning/phases/01-done/01-CONTEXT.md
   touch .vbw-planning/phases/01-done/01-01-PLAN.md
-  touch .vbw-planning/phases/01-done/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-done/01-01-SUMMARY.md
   # Shipped milestone with UAT issues
   mkdir -p .vbw-planning/milestones/v1/phases/01-shipped/
   echo "# Shipped" > .vbw-planning/milestones/v1/SHIPPED.md
   touch .vbw-planning/milestones/v1/phases/01-shipped/01-01-PLAN.md
-  touch .vbw-planning/milestones/v1/phases/01-shipped/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/milestones/v1/phases/01-shipped/01-01-SUMMARY.md
   cat > .vbw-planning/milestones/v1/phases/01-shipped/01-UAT.md <<'EOF'
 ---
 phase: 01
@@ -485,7 +504,7 @@ EOF
   mkdir -p .vbw-planning/phases/01-remediate-test/
   touch .vbw-planning/phases/01-remediate-test/01-CONTEXT.md
   touch .vbw-planning/phases/01-remediate-test/01-01-PLAN.md
-  touch .vbw-planning/phases/01-remediate-test/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-remediate-test/01-01-SUMMARY.md
   # SOURCE-UAT is a reference copy — should NOT trigger remediation
   cat > .vbw-planning/phases/01-remediate-test/01-SOURCE-UAT.md <<'EOF'
 ---
@@ -505,7 +524,7 @@ EOF
   # Phase 01: completed remediation with SOURCE-UAT (should be ignored)
   mkdir -p .vbw-planning/phases/01-remediate-first/
   touch .vbw-planning/phases/01-remediate-first/01-01-PLAN.md
-  touch .vbw-planning/phases/01-remediate-first/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-remediate-first/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-remediate-first/01-SOURCE-UAT.md <<'EOF'
 ---
 phase: 01
@@ -517,7 +536,7 @@ EOF
   # Phase 02: has real UAT issues
   mkdir -p .vbw-planning/phases/02-executed/
   touch .vbw-planning/phases/02-executed/02-01-PLAN.md
-  touch .vbw-planning/phases/02-executed/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-executed/02-01-SUMMARY.md
   cat > .vbw-planning/phases/02-executed/02-UAT.md <<'EOF'
 ---
 phase: 02
@@ -547,7 +566,7 @@ EOF
   # Phase 02: completed remediation with SOURCE-UAT only
   mkdir -p .vbw-planning/phases/02-remediate-done/
   touch .vbw-planning/phases/02-remediate-done/02-01-PLAN.md
-  touch .vbw-planning/phases/02-remediate-done/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-remediate-done/02-01-SUMMARY.md
   cat > .vbw-planning/phases/02-remediate-done/02-SOURCE-UAT.md <<'EOF'
 ---
 phase: 02
@@ -568,12 +587,12 @@ EOF
 @test "SOURCE-UAT.md in milestone phases is excluded from milestone UAT scan" {
   mkdir -p .vbw-planning/phases/01-done/
   touch .vbw-planning/phases/01-done/01-01-PLAN.md
-  touch .vbw-planning/phases/01-done/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-done/01-01-SUMMARY.md
 
   mkdir -p .vbw-planning/milestones/v1/phases/01-shipped/
   echo "# Shipped" > .vbw-planning/milestones/v1/SHIPPED.md
   touch .vbw-planning/milestones/v1/phases/01-shipped/01-01-PLAN.md
-  touch .vbw-planning/milestones/v1/phases/01-shipped/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/milestones/v1/phases/01-shipped/01-01-SUMMARY.md
   # Only SOURCE-UAT — should NOT trigger milestone recovery
   cat > .vbw-planning/milestones/v1/phases/01-shipped/01-SOURCE-UAT.md <<'EOF'
 ---
@@ -594,7 +613,7 @@ EOF
   # Active remediation phase with CONTEXT referencing the milestone phase
   mkdir -p .vbw-planning/phases/01-remediate-v1-setup/
   touch .vbw-planning/phases/01-remediate-v1-setup/01-01-PLAN.md
-  touch .vbw-planning/phases/01-remediate-v1-setup/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-remediate-v1-setup/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-remediate-v1-setup/01-CONTEXT.md <<'EOF'
 ---
 phase: 01
@@ -608,7 +627,7 @@ EOF
   mkdir -p .vbw-planning/milestones/v1/phases/01-setup/
   echo "# Shipped" > .vbw-planning/milestones/v1/SHIPPED.md
   touch .vbw-planning/milestones/v1/phases/01-setup/01-01-PLAN.md
-  touch .vbw-planning/milestones/v1/phases/01-setup/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/milestones/v1/phases/01-setup/01-01-SUMMARY.md
   cat > .vbw-planning/milestones/v1/phases/01-setup/01-UAT.md <<'EOF'
 ---
 phase: 01
@@ -627,13 +646,13 @@ EOF
   # Active phase complete but NOT a remediation (no source_milestone in CONTEXT)
   mkdir -p .vbw-planning/phases/01-feature/
   touch .vbw-planning/phases/01-feature/01-01-PLAN.md
-  touch .vbw-planning/phases/01-feature/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-feature/01-01-SUMMARY.md
 
   # Shipped milestone with UAT issues — no active remediation covers it
   mkdir -p .vbw-planning/milestones/v1/phases/01-setup/
   echo "# Shipped" > .vbw-planning/milestones/v1/SHIPPED.md
   touch .vbw-planning/milestones/v1/phases/01-setup/01-01-PLAN.md
-  touch .vbw-planning/milestones/v1/phases/01-setup/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/milestones/v1/phases/01-setup/01-01-SUMMARY.md
   cat > .vbw-planning/milestones/v1/phases/01-setup/01-UAT.md <<'EOF'
 ---
 phase: 01
@@ -651,7 +670,7 @@ EOF
 @test "multiple phases with UAT issues are all reported in uat_issues_phases" {
   mkdir -p .vbw-planning/phases/01-first/
   touch .vbw-planning/phases/01-first/01-01-PLAN.md
-  touch .vbw-planning/phases/01-first/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-first/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-first/01-UAT.md <<'EOF'
 ---
 status: complete
@@ -661,7 +680,7 @@ EOF
 
   mkdir -p .vbw-planning/phases/02-second/
   touch .vbw-planning/phases/02-second/02-01-PLAN.md
-  touch .vbw-planning/phases/02-second/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-second/02-01-SUMMARY.md
   cat > .vbw-planning/phases/02-second/02-UAT.md <<'EOF'
 ---
 status: issues_found
@@ -671,7 +690,7 @@ EOF
 
   mkdir -p .vbw-planning/phases/03-third/
   touch .vbw-planning/phases/03-third/03-01-PLAN.md
-  touch .vbw-planning/phases/03-third/03-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/03-third/03-01-SUMMARY.md
   cat > .vbw-planning/phases/03-third/03-UAT.md <<'EOF'
 ---
 status: issues_found
@@ -693,7 +712,7 @@ EOF
 @test "single phase with UAT issues reports count=1 and phases list" {
   mkdir -p .vbw-planning/phases/01-only/
   touch .vbw-planning/phases/01-only/01-01-PLAN.md
-  touch .vbw-planning/phases/01-only/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-only/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-only/01-UAT.md <<'EOF'
 ---
 status: issues_found
@@ -711,7 +730,7 @@ EOF
 @test "no UAT issues reports empty phases list and count=0" {
   mkdir -p .vbw-planning/phases/01-clean/
   touch .vbw-planning/phases/01-clean/01-01-PLAN.md
-  touch .vbw-planning/phases/01-clean/01-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-clean/01-01-SUMMARY.md
   cat > .vbw-planning/phases/01-clean/01-UAT.md <<'EOF'
 ---
 status: complete
@@ -732,7 +751,7 @@ EOF
   # Phase 02: mid-remediation — original plan done, remediation plan created but not executed
   mkdir -p .vbw-planning/phases/02-feature/
   touch .vbw-planning/phases/02-feature/02-01-PLAN.md
-  touch .vbw-planning/phases/02-feature/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-feature/02-01-SUMMARY.md
   touch .vbw-planning/phases/02-feature/02-02-PLAN.md
   # No 02-02-SUMMARY.md — remediation plan not yet executed
   echo "execute" > .vbw-planning/phases/02-feature/.uat-remediation-stage
@@ -747,7 +766,7 @@ EOF
   # Phase 03: fully complete but has UAT issues
   mkdir -p .vbw-planning/phases/03-polish/
   touch .vbw-planning/phases/03-polish/03-01-PLAN.md
-  touch .vbw-planning/phases/03-polish/03-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/03-polish/03-01-SUMMARY.md
   cat > .vbw-planning/phases/03-polish/03-UAT.md <<'EOF'
 ---
 phase: 03
@@ -772,7 +791,7 @@ EOF
   # Phase 02: fully complete with UAT issues
   mkdir -p .vbw-planning/phases/02-feature/
   touch .vbw-planning/phases/02-feature/02-01-PLAN.md
-  touch .vbw-planning/phases/02-feature/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-feature/02-01-SUMMARY.md
   cat > .vbw-planning/phases/02-feature/02-UAT.md <<'EOF'
 ---
 phase: 02
@@ -792,14 +811,14 @@ EOF
   # Phase 02: mid-execution (no .uat-remediation-stage, just incomplete plans)
   mkdir -p .vbw-planning/phases/02-feature/
   touch .vbw-planning/phases/02-feature/02-01-PLAN.md
-  touch .vbw-planning/phases/02-feature/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-feature/02-01-SUMMARY.md
   touch .vbw-planning/phases/02-feature/02-02-PLAN.md
   # No 02-02-SUMMARY.md — task 2 not yet executed
 
   # Phase 03: fully complete with UAT issues
   mkdir -p .vbw-planning/phases/03-polish/
   touch .vbw-planning/phases/03-polish/03-01-PLAN.md
-  touch .vbw-planning/phases/03-polish/03-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/03-polish/03-01-SUMMARY.md
   cat > .vbw-planning/phases/03-polish/03-UAT.md <<'EOF'
 ---
 phase: 03
@@ -827,7 +846,7 @@ EOF
   # Phase 02: fully complete with UAT issues
   mkdir -p .vbw-planning/phases/02-feature/
   touch .vbw-planning/phases/02-feature/02-01-PLAN.md
-  touch .vbw-planning/phases/02-feature/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-feature/02-01-SUMMARY.md
   cat > .vbw-planning/phases/02-feature/02-UAT.md <<'EOF'
 ---
 phase: 02
@@ -854,7 +873,7 @@ EOF
   # Phase 02: fully complete with UAT issues
   mkdir -p .vbw-planning/phases/02-feature/
   touch .vbw-planning/phases/02-feature/02-01-PLAN.md
-  touch .vbw-planning/phases/02-feature/02-01-SUMMARY.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/02-feature/02-01-SUMMARY.md
   cat > .vbw-planning/phases/02-feature/02-UAT.md <<'EOF'
 ---
 phase: 02
@@ -868,4 +887,107 @@ EOF
   # Discussion done (CONTEXT exists) — should route to needs_plan_and_execute
   echo "$output" | grep -q "next_phase=01"
   echo "$output" | grep -q "next_phase_state=needs_plan_and_execute"
+}
+
+# --- UAT round count tracking tests ---
+
+@test "uat_round_count=0 when no round files exist" {
+  mkdir -p .vbw-planning/phases/01-test/
+  touch .vbw-planning/phases/01-test/01-01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  cat > .vbw-planning/phases/01-test/01-UAT.md <<'EOF'
+---
+phase: 01
+status: issues_found
+---
+- Severity: major
+EOF
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "uat_round_count=0"
+}
+
+@test "uat_round_count=5 when five round files exist" {
+  mkdir -p .vbw-planning/phases/03-feature/
+  touch .vbw-planning/phases/03-feature/03-01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/03-feature/03-01-SUMMARY.md
+
+  # Create 5 archived round files
+  for i in 01 02 03 04 05; do
+    printf 'round %s\n' "$i" > ".vbw-planning/phases/03-feature/03-UAT-round-${i}.md"
+  done
+
+  # Active UAT with issues
+  cat > .vbw-planning/phases/03-feature/03-UAT.md <<'EOF'
+---
+phase: 03
+status: issues_found
+---
+- Severity: major
+EOF
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "uat_round_count=5"
+}
+
+@test "uat_round_count=0 when no planning directory" {
+  rm -rf .vbw-planning
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "uat_round_count=0"
+}
+
+@test "uat_round_count=0 when UAT issues resolved (no routing target)" {
+  mkdir -p .vbw-planning/phases/01-test/
+  touch .vbw-planning/phases/01-test/01-01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-test/01-01-SUMMARY.md
+  cat > .vbw-planning/phases/01-test/01-UAT.md <<'EOF'
+---
+phase: 01
+status: complete
+---
+All tests passed.
+EOF
+  # Round files exist from previous remediation cycles
+  printf 'round 1\n' > .vbw-planning/phases/01-test/01-UAT-round-01.md
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  # No active UAT issues → round count stays 0 (no routing target)
+  echo "$output" | grep -q "uat_round_count=0"
+}
+
+@test "auto-advance scoped to current round: previous-round summary does not trigger advance" {
+  # Round 02, stage=execute. Round 01 has plan+summary, round 02 has plan only.
+  # Auto-advance should NOT trigger because the current round (02) has no summary.
+  # Phase-root plan+summary required so the UAT scan picks up this phase.
+  mkdir -p .vbw-planning/phases/01-feature/remediation/round-01
+  mkdir -p .vbw-planning/phases/01-feature/remediation/round-02
+  touch .vbw-planning/phases/01-feature/01-01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-feature/01-01-SUMMARY.md
+  printf 'stage=execute\nround=02\nlayout=round-dir\n' > .vbw-planning/phases/01-feature/remediation/.uat-remediation-stage
+  touch .vbw-planning/phases/01-feature/remediation/round-01/R01-PLAN.md
+  printf '%s\n' '---' 'status: complete' '---' 'Done.' > .vbw-planning/phases/01-feature/remediation/round-01/R01-SUMMARY.md
+  touch .vbw-planning/phases/01-feature/remediation/round-02/R02-PLAN.md
+  # No R02-SUMMARY.md — execution not complete for round 02
+
+  # Round 01 UAT with issues (needed to route into UAT remediation path)
+  cat > .vbw-planning/phases/01-feature/remediation/round-01/R01-UAT.md <<'EOF'
+---
+phase: 01
+status: issues_found
+---
+- Severity: major
+EOF
+
+  create_test_config
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+
+  # Stage must NOT advance to done — should remain needs_uat_remediation (execute)
+  echo "$output" | grep -q "next_phase_state=needs_uat_remediation"
+  # Confirm the state file was NOT rewritten to done
+  grep -q "^stage=execute$" .vbw-planning/phases/01-feature/remediation/.uat-remediation-stage
 }

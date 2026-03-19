@@ -41,5 +41,10 @@
   "auto_uat": false,
   "muninndb_vault": "",
   "muninndb_port_mcp": 8750,
-  "muninndb_port_rest": 8475
+  "muninndb_port_rest": 8475,
+  "statusline_hide_limits": false,
+  "statusline_hide_limits_for_api_key": false,
+  "statusline_hide_agent_in_tmux": false,
+  "statusline_collapse_agent_in_tmux": false,
+  "debug_logging": false
 }

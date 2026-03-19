@@ -99,9 +99,9 @@ Most Claude Code plugins were built for the subagent era, one main session spawn
 
 - **Agent Teams for real parallelism.** `/vbw:vibe` creates a team of Dev teammates that execute tasks concurrently, each in their own context window. `/vbw:map` runs 4 Scout teammates in parallel to analyze your codebase. This isn't "spawn a subagent and wait" -- it's coordinated teamwork with a shared task list and direct inter-agent communication. Agent health monitoring tracks lifecycle events, detects orphaned teammates, and recovers stuck agents via circuit breakers.
 
-- **Native hooks for continuous verification.** 21 hooks across 11 event types run automatically -- validating SUMMARY.md structure, checking commit format, validating frontmatter descriptions, gating task completion, blocking sensitive file access, enforcing plan file boundaries, managing session lifecycle, tracking agent health and cost attribution, tracking session metrics, pre-flight prompt validation, and post-compaction context verification. No more spawning a QA agent after every task. The platform enforces it, not the prompt.
+- **Native hooks for continuous verification.** 22 hooks across 11 event types run automatically -- validating SUMMARY.md structure, checking commit format, validating frontmatter descriptions, gating task completion, blocking sensitive file access, enforcing plan file boundaries, managing session lifecycle, tracking agent health and cost attribution, tracking session metrics, pre-flight prompt validation, and post-compaction context verification. No more spawning a QA agent after every task. The platform enforces it, not the prompt.
 
-- **Platform-enforced tool permissions.** Each agent has `tools`/`disallowedTools` in their YAML frontmatter -- 4 of 7 agents have platform-enforced deny lists. Scout and QA literally cannot write files. Sensitive file access (`.env`, credentials) is intercepted by the `security-filter` hook. `disallowedTools` is enforced by Claude Code itself, not by instructions an agent might ignore during compaction.
+- **Platform-enforced tool permissions.** Each agent has `tools`/`disallowedTools` in their YAML frontmatter -- 4 of 7 agents have platform-enforced deny lists. Scout literally cannot write files; QA can only persist VERIFICATION.md through the deterministic `write-verification.sh` script (Write/Edit tools are disallowed). Sensitive file access (`.env`, credentials) is intercepted by the `security-filter` hook. `disallowedTools` is enforced by Claude Code itself, not by instructions an agent might ignore during compaction.
 
 - **Database safety guard.** A PreToolUse hook (`bash-guard.sh`) intercepts every Bash command before it reaches the shell and blocks known destructive patterns -- `migrate:fresh`, `db:drop`, `TRUNCATE TABLE`, `FLUSHALL`, and 40+ patterns across Laravel, Rails, Django, Prisma, Knex, Sequelize, TypeORM, Drizzle, Diesel, SQLx, Ecto, raw SQL clients, Redis, MongoDB, and Docker volumes. All five agents with Bash access (Dev, QA, Lead, Debugger, Docs) are filtered equally. Override with `VBW_ALLOW_DESTRUCTIVE=1` env var or `bash_guard=false` in config. Extend with `.vbw-planning/destructive-commands.local.txt` for project-specific patterns. See **[Database Safety Guard](docs/database-safety-guard.md)** for the full design, flowchart, and pattern list.
 
@@ -115,7 +115,7 @@ Agent Teams are [experimental with known limitations](https://code.claude.com/do
 
 - **Task status lag.** Teammates sometimes forget to mark tasks complete. VBW's `TaskCompleted` hook verifies task-related commits exist via keyword matching, with a circuit breaker that allows completion after a repeated false-positive block (prevents infinite hook loops). The `TeammateIdle` hook runs a tiered SUMMARY.md gate — all summaries present passes immediately, conventional commit format only grants a 1-plan grace period, and 2+ missing summaries block regardless.
 
-- **Shutdown coordination.** VBW defines `shutdown_request`/`shutdown_response` schemas in the typed communication protocol. After phase work completes, the orchestrator sends `shutdown_request` to every teammate, waits for acknowledgment, then calls `TeamDelete`. All 7 team-participating agents (Dev, QA, Scout, Lead, Debugger, Docs, Architect) have explicit shutdown handlers — respond, finish in-progress work, stop. No lingering agents consuming API credits in tmux panes.
+- **Shutdown coordination.** VBW defines `shutdown_request`/`shutdown_response` schemas in the typed communication protocol. After phase work completes, the orchestrator sends `shutdown_request` to every teammate, waits for acknowledgment, then calls `TeamDelete`. All 6 team-participating agents (Dev, QA, Scout, Lead, Debugger, Docs) have explicit shutdown handlers with mechanical SendMessage tool-call instructions. Architect is planning-only and excluded from the shutdown protocol. If shutdown stalls or agents linger, `/vbw:doctor --cleanup` detects and cleans stale teams, orphan processes, and dangling PIDs.
 
 - **File conflicts.** Plans decompose work into tasks with explicit file ownership. Dev teammates operate on disjoint file sets by design, enforced at runtime by the `file-guard.sh` hook that blocks writes to files not declared in the active plan.
 
@@ -136,6 +136,8 @@ VBW integrates with [Skills.sh](https://skills.sh), the open-source skill regist
 ![VBW statusline example](assets/statusline.png)
 
 Five or six lines of pure situational awareness, rendered after every response. Phase progress, plan completion, effort profile, QA status... everything a senior engineer would track on a whiteboard, except the whiteboard has been replaced by a terminal and the senior engineer has been replaced by you.
+
+Four config switches let you trim what the statusline shows — hide the Limits line entirely, suppress it only for API-key sessions, hide agent progress in tmux, or collapse the full statusline to a single line in tmux worktree panes. See [Display](#display) for details.
 
 ---
 
@@ -177,7 +179,7 @@ Claude Code will ask permission before file writes, bash commands, etc. You appr
 claude --dangerously-skip-permissions
 ```
 
-No permission prompts. No interruptions. Agents run uninterrupted until the work is done or your API budget isn't. VBW's built-in security controls (read-only agents can't write, `security-filter.sh` blocks `.env` and credentials, QA gates on every task) still apply. The platform just stops asking "are you sure?" every time an agent wants to create a file.
+No permission prompts. No interruptions. Agents run uninterrupted until the work is done or your API budget isn't. VBW's built-in security controls (Scout is fully read-only, QA can only persist via a deterministic writer script, `security-filter.sh` blocks `.env` and credentials, QA gates on every task) still apply. The platform just stops asking "are you sure?" every time an agent wants to create a file.
 
 This is how most vibe coders run it. The agents work longer, the flow stays unbroken, and you get to pretend you're supervising while scrolling Twitter.
 
@@ -447,11 +449,11 @@ VBW uses 7 specialized agents, each with native tool permissions enforced via YA
 | **Architect** | Creates roadmaps and phase structure. Writes plans, not code. | Read, Glob, Grep, Write | Edit, WebFetch, Bash | `acceptEdits` |
 | **Lead** | Merges research + planning + self-review. The one who actually makes decisions. | Read, Glob, Grep, Write, Bash, WebFetch | Edit | `acceptEdits` |
 | **Dev** | Writes code, makes commits, builds things. Handle with care. | Full access | -- | `acceptEdits` |
-| **QA** | Goal-backward verification. Trusts nothing. Can run commands but cannot write files. | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit | `plan` |
+| **QA** | Goal-backward verification. Trusts nothing. Persists VERIFICATION.md via write-verification.sh; Write/Edit tools disallowed. | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit | `plan` |
 | **Debugger** | Scientific method bug investigation. One issue, one session. | Full access | -- | `acceptEdits` |
 | **Docs** | Documentation specialist. READMEs, changelogs, API docs, guides. | Read, Grep, Glob, Bash, Write, Edit | -- | `acceptEdits` |
 
-**Denied** = `disallowedTools` -- platform-enforced denial. These tools are blocked by Claude Code itself, not by instructions an agent might ignore during compaction. **Mode** = `permissionMode` -- `plan` means read-only exploration (Scout, QA), `acceptEdits` means the agent can propose and apply changes.
+**Denied** = `disallowedTools` -- platform-enforced denial. These tools are blocked by Claude Code itself, not by instructions an agent might ignore during compaction. **Mode** = `permissionMode` -- `plan` means no interactive edits — Scout is fully read-only; QA can only persist VERIFICATION.md via `write-verification.sh`, `acceptEdits` means the agent can propose and apply changes.
 
 Here's when each one shows up to work:
 
@@ -509,7 +511,7 @@ Here's when each one shows up to work:
   │  PERMISSION MODEL                                                             │
   │                                                                               │
   │  Scout ─────────── True read-only (plan mode). Can look, can't touch.         │
-  │  QA ───────────── Read + Bash. Can verify, can't write. The auditor.          │
+  │  QA ───────────── Read + Bash. Persists only via write-verification.sh.        │
   │  Architect ─────── Edit/Bash blocked by platform. Write limited to plans      │
   │                    by instruction. Writes roadmaps, not code. Mostly.         │
   │  Lead ─────────── Read, Write, Bash, WebFetch. The middle manager.            │
@@ -567,6 +569,11 @@ Quick reference for every key in `config/defaults.json`, in order. Click the sec
 | `require_phase_discussion` | `false` | [Agent behavior](#agent-behavior) |
 | `auto_uat` | `false` | [Autonomy levels](#autonomy-levels) |
 | `muninndb_vault` | `""` | [MuninnDB](#muninndb) |
+| `statusline_hide_limits` | `false` | [Display](#display) |
+| `statusline_hide_limits_for_api_key` | `false` | [Display](#display) |
+| `statusline_hide_agent_in_tmux` | `false` | [Display](#display) |
+| `statusline_collapse_agent_in_tmux` | `false` | [Display](#display) |
+| `debug_logging` | `false` | [Runtime features](#runtime-features) |
 | `bash_guard` | `true`* | [Safety](#safety) |
 
 *`bash_guard` is not in `defaults.json` — it's read directly from project config with a default of `true` when absent.
@@ -873,6 +880,7 @@ These flags control optional runtime subsystems — execution integrity, observa
 | `validation_gates` | boolean | `true` | `true` / `false` |
 | `snapshot_resume` | boolean | `true` | `true` / `false` |
 | `monorepo_routing` | boolean | `true` | `true` / `false` |
+| `debug_logging` | boolean | `false` | `true` / `false` |
 
 - **`token_budgets`** — When `true`, enforces per-role character budgets on context passed to agents (defined in `config/token-budgets.json`). The control plane truncates compiled context to the role's `max_chars` limit before injection, preventing context window overflows. When `false`, context passes through untruncated.
 - **`two_phase_completion`** — When `true`, after each task commit the Dev agent runs a two-phase verification: the artifact registry tracks all files written during the task, then `two-phase-complete.sh` confirms the task's contract was fulfilled before marking it complete. Rejected tasks trigger auto-repair. When `false`, tasks complete immediately after commit.
@@ -880,6 +888,7 @@ These flags control optional runtime subsystems — execution integrity, observa
 - **`smart_routing`** — When `true`, the execute protocol skips unnecessary agents based on effort level: Scout is skipped for turbo/fast (no research needed), Architect is skipped for non-thorough effort (architecture review only at thorough). Reduces token spend on simpler phases. When `false`, all agents are always included.
 - **`validation_gates`** — When `true`, the execute protocol runs per-plan risk assessment (`assess-plan-risk.sh`) and resolves a dynamic gate policy (`resolve-gate-policy.sh`) that overrides static effort-based tables for QA tier, plan approval, and teammate communication level. When `false`, static effort-based tables are used (see [Execution Model](#execution-model)).
 - **`snapshot_resume`** — When `true`, VBW saves execution state snapshots to `.vbw-planning/.snapshots/` at key lifecycle points (phase start, compaction, agent completion). On crash recovery, `/vbw:resume` can restore from the latest snapshot. Max 10 snapshots per phase, oldest pruned automatically. When `false`, no snapshots are saved.
+- **`debug_logging`** — When `true`, hook-wrapper writes verbose diagnostic logs to `.vbw-planning/.debug/` for every hook invocation. Also activatable via the `VBW_DEBUG=1` environment variable. When `false`, no debug logs are written. Useful for troubleshooting hook or agent misbehavior.
 - **`monorepo_routing`** — When `true`, VBW detects monorepo structure (sub-packages with `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`) and maps plan file paths to relevant package roots. This scoping is used by `/vbw:map` for per-package analysis and by the context compiler to limit agent context to relevant packages. When `false`, the entire repo is treated as a single project.
 
 ### Display
@@ -888,9 +897,17 @@ These flags control optional runtime subsystems — execution integrity, observa
 | :--- | :--- | :--- | :--- |
 | `visual_format` | string | `unicode` | `unicode` / `ascii` |
 | `branch_per_milestone` | boolean | `false` | `true` / `false` |
+| `statusline_hide_limits` | boolean | `false` | `true` / `false` |
+| `statusline_hide_limits_for_api_key` | boolean | `false` | `true` / `false` |
+| `statusline_hide_agent_in_tmux` | boolean | `false` | `true` / `false` |
+| `statusline_collapse_agent_in_tmux` | boolean | `false` | `true` / `false` |
 
 - **`visual_format`** — Intended to switch between Unicode symbols (✓ ✗ ◆ ○ ⚡ ➜, box-drawing characters) and ASCII equivalents. Currently declared but not yet wired into agent output — agents always use Unicode.
 - **`branch_per_milestone`** — Intended to auto-create a git branch per milestone during Bootstrap. Currently declared but not yet implemented — has no runtime effect.
+- **`statusline_hide_limits`** — Suppress the Limits line unconditionally. Use when you never want to see token-limit information in the statusline.
+- **`statusline_hide_limits_for_api_key`** — Suppress the Limits line only when authenticated via an API key (not via Claude.ai OAuth). No effect when `statusline_hide_limits` is also `true`.
+- **`statusline_hide_agent_in_tmux`** — Suppress the Build/agent progress line while inside a tmux session. No effect outside tmux or when no build is running.
+- **`statusline_collapse_agent_in_tmux`** — Collapse the full multi-line statusline into a single summary line in agent/worktree tmux panes. Only applies inside tmux in a git worktree; no effect in the main repo pane.
 
 ### Staged rollout
 

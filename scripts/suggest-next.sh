@@ -23,14 +23,32 @@ set -eo pipefail
 CMD="${1:-}"
 RESULT="${2:-}"
 TARGET_PHASE_ARG="${3:-}"
-PLANNING_DIR=".vbw-planning"
+PLANNING_DIR="${VBW_PLANNING_DIR:-.vbw-planning}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Source shared UAT helpers (extract_status_value → aliased as read_status_field, latest_non_source_uat)
+# Source shared UAT helpers (extract_status_value → aliased as read_status_field, current_uat, latest_non_source_uat)
 # shellcheck source=uat-utils.sh
 . "$SCRIPT_DIR/uat-utils.sh"
 # Alias for backward compat within this script
 read_status_field() { extract_status_value "$@"; }
+
+# Source shared summary-status helpers for status-aware SUMMARY detection
+if [ -f "$SCRIPT_DIR/summary-utils.sh" ]; then
+  # shellcheck source=summary-utils.sh
+  . "$SCRIPT_DIR/summary-utils.sh"
+else
+  # Safe default: report zero completions when helpers unavailable
+  count_complete_summaries() { echo "0"; }
+fi
+if [ -f "$SCRIPT_DIR/phase-state-utils.sh" ]; then
+  # shellcheck source=phase-state-utils.sh
+  . "$SCRIPT_DIR/phase-state-utils.sh"
+else
+  count_phase_plans() {
+    local dir="$1"
+    find "$dir" -maxdepth 1 ! -name '.*' \( -name '[0-9]*-PLAN.md' -o -name 'PLAN.md' \) 2>/dev/null | wc -l | tr -d ' '
+  }
+fi
 
 list_child_dirs_sorted() {
   local parent="$1"
@@ -72,6 +90,7 @@ current_uat_issues_phase=""
 current_uat_issues_slug=""
 current_uat_issues_label=""
 current_uat_major_or_higher=false
+current_uat_round_count=0
 cfg_require_phase_discussion=false
 next_undiscussed=""
 next_preseeded=""
@@ -138,19 +157,26 @@ if [ -d "$PLANNING_DIR" ]; then
     _pd_uat_phase=$(echo "$_pd_out" | grep -m1 '^uat_issues_phase=' | sed 's/^[^=]*=//' || true)
     _pd_uat_slug=$(echo "$_pd_out" | grep -m1 '^uat_issues_slug=' | sed 's/^[^=]*=//' || true)
     _pd_uat_major=$(echo "$_pd_out" | grep -m1 '^uat_issues_major_or_higher=' | sed 's/^[^=]*=//' || true)
+    _pd_uat_round_count=$(echo "$_pd_out" | grep -m1 '^uat_round_count=' | sed 's/^[^=]*=//' || true)
     if [ -n "${_pd_uat_phase:-}" ] && [ "$_pd_uat_phase" != "none" ]; then
       current_uat_issues_phase="$_pd_uat_phase"
       current_uat_issues_slug="${_pd_uat_slug:-}"
       [ "${_pd_uat_major:-}" = "true" ] && current_uat_major_or_higher=true
+      [ -n "${_pd_uat_round_count:-}" ] && current_uat_round_count="$_pd_uat_round_count"
     fi
 
     # Build human-readable phase label: "Phase N (slug-name)" or just "Phase N"
+    # Append "— Round Y" when archived round files exist (Y = count + 1)
     if [ -n "$current_uat_issues_phase" ] && [ -n "$current_uat_issues_slug" ]; then
       current_uat_issues_label="Phase $current_uat_issues_phase ($current_uat_issues_slug)"
     elif [ -n "$current_uat_issues_phase" ]; then
       current_uat_issues_label="Phase $current_uat_issues_phase"
     else
       current_uat_issues_label=""
+    fi
+    if [ -n "$current_uat_issues_label" ] && [ "$current_uat_round_count" -gt 0 ] 2>/dev/null; then
+      _display_round=$((current_uat_round_count + 1))
+      current_uat_issues_label="$current_uat_issues_label — Round $_display_round"
     fi
   fi
 
@@ -202,8 +228,8 @@ if [ -d "$PLANNING_DIR" ]; then
       phase_count=$((phase_count + 1))
       phase_slug=$(basename "$dir" | sed 's/^[0-9]*-//')
 
-      plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-      summaries=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+      plans=$(count_phase_plans "$dir")
+      summaries=$(count_complete_summaries "$dir")
 
       if [ "$plans" -eq 0 ] && [ -z "$next_unplanned" ]; then
         # Track first undiscussed phase (for require_phase_discussion suggestions)
@@ -275,7 +301,7 @@ if [ -d "$PLANNING_DIR" ]; then
 
     # Count deviations and find failing plans in active phase
     if [ -n "$active_phase_dir" ] && [ -d "$active_phase_dir" ]; then
-      for sf in "$active_phase_dir"/*-SUMMARY.md; do
+      for sf in "$active_phase_dir"/*-SUMMARY.md "$active_phase_dir"/SUMMARY.md; do
         [ -f "$sf" ] || continue
         # Extract deviations count from frontmatter
         d=$(read_deviations_field "$sf")
@@ -303,6 +329,16 @@ if [ -d "$PLANNING_DIR" ]; then
           has_uat=true
         fi
       done
+      # Round-dir fallback: check remediation round UATs
+      if [ "$has_uat" != true ]; then
+        for uf in "$active_phase_dir"/remediation/round-*/R*-UAT.md; do
+          [ -f "$uf" ] || continue
+          us=$(read_status_field "$uf")
+          if [ "$us" = "complete" ] || [ "$us" = "passed" ]; then
+            has_uat=true
+          fi
+        done
+      fi
     fi
   fi
 
@@ -362,12 +398,12 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
     for dir in ${SN_VERIFY_DIRS[@]+"${SN_VERIFY_DIRS[@]}"}; do
       [ -d "$dir" ] || continue
       # Guard: skip phases without execution artifacts (matching phase-detect.sh)
-      _plans=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-PLAN.md' 2>/dev/null | wc -l | tr -d ' ')
-      _summaries=$(find "$dir" -maxdepth 1 ! -name '.*' -name '[0-9]*-SUMMARY.md' 2>/dev/null | wc -l | tr -d ' ')
+      _plans=$(count_phase_plans "$dir")
+      _summaries=$(count_complete_summaries "$dir")
       if [ "$_plans" -eq 0 ] || [ "$_summaries" -lt "$_plans" ]; then
         continue
       fi
-      _uat=$(latest_non_source_uat "$dir")
+      _uat=$(current_uat "$dir")
       if [ -f "$_uat" ]; then
         _us=$(read_status_field "$_uat")
         if [ "$_us" = "issues_found" ]; then
@@ -383,7 +419,7 @@ if [ "$CMD" = "verify" ] && [ "$effective_result" = "issues_found" ] && [ -d "${
   fi
 
   if [ -n "$verify_target_phase_dir" ]; then
-    verify_target_uat=$(latest_non_source_uat "$verify_target_phase_dir")
+    verify_target_uat=$(current_uat "$verify_target_phase_dir")
   fi
 
   if [ -f "$verify_target_uat" ]; then

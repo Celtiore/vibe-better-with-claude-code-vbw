@@ -136,6 +136,19 @@ EOF
   [ "$(grep -cF '/vbw:verify' <<< "$output")" -eq 0 ]
 }
 
+@test "suggest-next qa pass honors legacy PLAN.md and SUMMARY.md artifacts" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  rm -f "$dir/01-01-PLAN.md" "$dir/01-01-SUMMARY.md" "$dir/01-VERIFICATION.md"
+  printf -- '---\nphase: 01\nplan: 01-legacy\ntitle: Setup\n---\n' > "$dir/PLAN.md"
+  printf -- '---\nstatus: complete\ndeviations: 0\n---\nDone.\n' > "$dir/SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/suggest-next.sh" qa pass
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/vbw:verify"* ]]
+}
+
 # --- phase-detect auto_uat + has_unverified_phases tests ---
 
 @test "phase-detect outputs config_auto_uat=true when set" {
@@ -584,8 +597,8 @@ EOF
   cd "$TEST_TEMP_DIR"
   local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
   printf -- '---\nphase: 01\nstatus: issues_found\n---\n- Severity: major\n' > "$dir/01-UAT.md"
-  # Remediation in progress
-  printf 'execute' > "$dir/.uat-remediation-stage"
+  # Remediation in progress (plan stage — creating plans, not yet executing)
+  printf 'plan' > "$dir/.uat-remediation-stage"
 
   run bash "$SCRIPTS_DIR/phase-detect.sh"
   [ "$status" -eq 0 ]
@@ -658,8 +671,11 @@ EOF
   [ ! -f "$dir/01-UAT.md" ]
   # Round file should exist
   [ -f "$dir/01-UAT-round-01.md" ]
-  # Remediation stage should be removed
+  # Legacy state file should be removed
   [ ! -f "$dir/.uat-remediation-stage" ]
+  # New-location state file should persist with advanced round
+  [ -f "$dir/remediation/.uat-remediation-stage" ]
+  grep -q 'round=02' "$dir/remediation/.uat-remediation-stage"
   # Output should confirm
   [[ "$output" == *"archived=01-UAT.md"* ]]
   [[ "$output" == *"round_file=01-UAT-round-01.md"* ]]
@@ -679,6 +695,9 @@ EOF
   [ "$status" -eq 0 ]
   [ -f "$dir/01-UAT-round-03.md" ]
   [[ "$output" == *"round_file=01-UAT-round-03.md"* ]]
+  # State file should show advanced round (from legacy round=01 to round=02)
+  [ -f "$dir/remediation/.uat-remediation-stage" ]
+  grep -q 'stage=research' "$dir/remediation/.uat-remediation-stage"
 }
 
 @test "prepare-reverification is idempotent when no UAT exists (already archived)" {
@@ -729,8 +748,10 @@ EOF
   # Round file should be staged for addition
   run git diff --cached --name-only --diff-filter=A
   [[ "$output" == *"01-UAT-round-01.md"* ]]
+  # New-location state file should be staged for addition (persists with updated round)
+  [[ "$output" == *"remediation/.uat-remediation-stage"* ]]
 
-  # .uat-remediation-stage should be staged for deletion
+  # Legacy .uat-remediation-stage should be staged for deletion
   run git diff --cached --name-only --diff-filter=D
   [[ "$output" == *".uat-remediation-stage"* ]]
 }
@@ -861,6 +882,9 @@ EOF
   [ ! -f "$dir/01-UAT.md" ]
   # Round file should exist
   ls "$dir"/01-UAT-round-*.md 2>/dev/null | grep -q .
+  # New-location state file should persist with advanced round
+  [ -f "$dir/remediation/.uat-remediation-stage" ]
+  grep -q 'stage=research' "$dir/remediation/.uat-remediation-stage"
 }
 
 # --- QA round 6: body-fallback tightening (finding #1) ---
@@ -946,4 +970,98 @@ EOF
   [[ "$output" == *"has_unverified_phases=true"* ]]
   # The target phase should be 01-setup (reverification target), not 02-feature
   [[ "$output" == *"next_phase_slug=01-setup"* ]]
+}
+
+# --- Round archival consistency (phase-detect + prepare-reverification agree) ---
+
+@test "prepare-reverification and phase-detect agree on round count" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+
+  # Create 3 archived round files
+  printf 'round 1\n' > "$dir/01-UAT-round-01.md"
+  printf 'round 2\n' > "$dir/01-UAT-round-02.md"
+  printf 'round 3\n' > "$dir/01-UAT-round-03.md"
+
+  # Active UAT with issues + remediation done
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\nIssues.\n' > "$dir/01-UAT.md"
+  printf 'done' > "$dir/.uat-remediation-stage"
+
+  # phase-detect should report count=3
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uat_round_count=3"* ]]
+
+  # prepare-reverification should create round-04 (3 + 1)
+  run bash "$SCRIPTS_DIR/prepare-reverification.sh" "$dir"
+  [ "$status" -eq 0 ]
+  [ -f "$dir/01-UAT-round-04.md" ]
+  [[ "$output" == *"round_file=01-UAT-round-04.md"* ]]
+}
+
+# --- QA round 1 #255: in-progress remediation summary must not auto-advance ---
+
+@test "phase-detect does not auto-advance when remediation summary is in-progress" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  # UAT with issues triggers remediation path
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\n- Severity: major\n' > "$dir/01-UAT.md"
+  # Remediation round-01 in execute stage with round-dir layout
+  mkdir -p "$dir/remediation"
+  printf 'stage=execute\nround=01\nlayout=round-dir\n' > "$dir/remediation/.uat-remediation-stage"
+  # Round-01 has PLAN and an in-progress SUMMARY (not terminal)
+  mkdir -p "$dir/remediation/round-01"
+  printf -- '---\nphase: 1\nround: 01\ntitle: Fix bugs\ntype: remediation\n---\n' > "$dir/remediation/round-01/R01-PLAN.md"
+  printf -- '---\nstatus: in-progress\ntasks_completed: 1\ntasks_total: 5\n---\n\n## Task 1: Done\n' > "$dir/remediation/round-01/R01-SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  # Must NOT advance to needs_reverification — summary is not terminal
+  [[ "$output" == *"next_phase_state=needs_uat_remediation"* ]]
+}
+
+@test "phase-detect auto-advances when remediation summary has terminal status" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\n- Severity: major\n' > "$dir/01-UAT.md"
+  mkdir -p "$dir/remediation"
+  printf 'stage=execute\nround=01\nlayout=round-dir\n' > "$dir/remediation/.uat-remediation-stage"
+  mkdir -p "$dir/remediation/round-01"
+  printf -- '---\nphase: 1\nround: 01\ntitle: Fix bugs\ntype: remediation\n---\n' > "$dir/remediation/round-01/R01-PLAN.md"
+  printf -- '---\nstatus: complete\ntasks_completed: 5\ntasks_total: 5\n---\n\nAll done.\n' > "$dir/remediation/round-01/R01-SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  # Terminal status — should advance
+  [[ "$output" == *"next_phase_state=needs_reverification"* ]]
+}
+
+@test "phase-detect auto-advances when remediation summary has partial status" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\n- Severity: major\n' > "$dir/01-UAT.md"
+  mkdir -p "$dir/remediation"
+  printf 'stage=execute\nround=01\nlayout=round-dir\n' > "$dir/remediation/.uat-remediation-stage"
+  mkdir -p "$dir/remediation/round-01"
+  printf -- '---\nphase: 1\nround: 01\ntitle: Fix bugs\ntype: remediation\n---\n' > "$dir/remediation/round-01/R01-PLAN.md"
+  printf -- '---\nstatus: partial\ntasks_completed: 3\ntasks_total: 5\n---\n\nPartial.\n' > "$dir/remediation/round-01/R01-SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"next_phase_state=needs_reverification"* ]]
+}
+
+@test "phase-detect auto-advances when remediation summary has failed status" {
+  cd "$TEST_TEMP_DIR"
+  local dir="$TEST_TEMP_DIR/.vbw-planning/phases/01-setup"
+  printf -- '---\nphase: 01\nstatus: issues_found\n---\n- Severity: major\n' > "$dir/01-UAT.md"
+  mkdir -p "$dir/remediation"
+  printf 'stage=execute\nround=01\nlayout=round-dir\n' > "$dir/remediation/.uat-remediation-stage"
+  mkdir -p "$dir/remediation/round-01"
+  printf -- '---\nphase: 1\nround: 01\ntitle: Fix bugs\ntype: remediation\n---\n' > "$dir/remediation/round-01/R01-PLAN.md"
+  printf -- '---\nstatus: failed\ntasks_completed: 0\ntasks_total: 5\n---\n\nFailed.\n' > "$dir/remediation/round-01/R01-SUMMARY.md"
+
+  run bash "$SCRIPTS_DIR/phase-detect.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"next_phase_state=needs_reverification"* ]]
 }

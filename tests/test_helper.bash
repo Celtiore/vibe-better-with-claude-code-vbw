@@ -33,7 +33,7 @@ create_test_config() {
   "discovery_questions": true,
   "visual_format": "unicode",
   "max_tasks_per_plan": 5,
-  "prefer_teams": "always",
+  "prefer_teams": "auto",
   "branch_per_milestone": false,
   "plain_summary": true,
   "qa_skip_agents": ["docs"],
@@ -64,7 +64,12 @@ create_test_config() {
   "auto_uat": false,
   "muninndb_vault": "test-vault",
   "muninndb_port_mcp": 8750,
-  "muninndb_port_rest": 8475
+  "muninndb_port_rest": 8475,
+  "debug_logging": false,
+  "statusline_hide_limits": false,
+  "statusline_hide_limits_for_api_key": false,
+  "statusline_hide_agent_in_tmux": false,
+  "statusline_collapse_agent_in_tmux": false
 }
 CONF
 }
