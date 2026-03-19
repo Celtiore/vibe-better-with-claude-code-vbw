@@ -5,16 +5,21 @@ set -u
 
 INPUT=$(cat)
 
+# Resolve VBW workspace root (issue #258: bare .vbw-planning/ fails in monorepo submodules)
+# shellcheck source=lib/vbw-config-root.sh
+. "$(dirname "$0")/lib/vbw-config-root.sh"
+find_vbw_root
+
 # Clean up cost tracking files and compaction marker (stale after compaction)
 # Preserve .active-agent and .active-agent-count — agents may still be running
 # after compaction. These are cleaned up by agent-stop.sh and session-stop.sh.
-rm -f .vbw-planning/.cost-ledger.json .vbw-planning/.compaction-marker .vbw-planning/.vbw-context .vbw-planning/.context-usage 2>/dev/null
+rm -f "$VBW_PLANNING_DIR/.cost-ledger.json" "$VBW_PLANNING_DIR/.compaction-marker" "$VBW_PLANNING_DIR/.vbw-context" "$VBW_PLANNING_DIR/.context-usage" 2>/dev/null
 
 # Clean up per-agent compaction marker (this agent completed compaction successfully)
-if [ -d ".vbw-planning/.compacting" ]; then
+if [ -d "$VBW_PLANNING_DIR/.compacting" ]; then
   # Find our PID by walking parent chain (same as compaction-instructions.sh)
   _cleanup_pid="$PPID"
-  PANE_MAP=".vbw-planning/.agent-panes"
+  PANE_MAP="$VBW_PLANNING_DIR/.agent-panes"
   if [ -f "$PANE_MAP" ]; then
     _cpid="$_cleanup_pid"
     while [ -n "$_cpid" ] && [ "$_cpid" != "0" ] && [ "$_cpid" != "1" ]; do
@@ -25,10 +30,10 @@ if [ -d ".vbw-planning/.compacting" ]; then
       _cpid=$(ps -o ppid= -p "$_cpid" 2>/dev/null | tr -d ' ')
     done
   fi
-  rm -f ".vbw-planning/.compacting/${_cleanup_pid}.json" 2>/dev/null || true
+  rm -f "$VBW_PLANNING_DIR/.compacting/${_cleanup_pid}.json" 2>/dev/null || true
 
   # Also clean stale markers for dead PIDs or invalid schema
-  for _marker in .vbw-planning/.compacting/*.json; do
+  for _marker in "$VBW_PLANNING_DIR"/.compacting/*.json; do
     [ ! -f "$_marker" ] && continue
     _mpid=$(jq -r '.pid // ""' "$_marker" 2>/dev/null)
     _mts=$(jq -r '.started_at // ""' "$_marker" 2>/dev/null)
@@ -91,8 +96,8 @@ esac
 # --- Restore agent state snapshot ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SNAPSHOT_CONTEXT=""
-if [ -f ".vbw-planning/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-resume.sh" ]; then
-  SNAP_PHASE=$(jq -r '.phase // ""' ".vbw-planning/.execution-state.json" 2>/dev/null)
+if [ -f "$VBW_PLANNING_DIR/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-resume.sh" ]; then
+  SNAP_PHASE=$(jq -r '.phase // ""' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)
   if [ -n "$SNAP_PHASE" ]; then
     SNAP_PATH=$(bash "$SCRIPT_DIR/snapshot-resume.sh" restore "$SNAP_PHASE" "${ROLE:-}" 2>/dev/null) || SNAP_PATH=""
     if [ -n "$SNAP_PATH" ] && [ -f "$SNAP_PATH" ]; then
@@ -118,18 +123,18 @@ if [ -f ".vbw-planning/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-re
       SNAP_IN_PROGRESS_TASK=$(jq -r '.execution_state.current_task_id // ""' "$SNAP_PATH" 2>/dev/null)
       SNAP_LAST_COMPLETED_TASK=""
       SNAP_NEXT_TASK=""
-      if [ -n "$SNAP_PLAN" ] && [ "$SNAP_PLAN" != "unknown" ] && [ -f ".vbw-planning/.events/event-log.jsonl" ] && command -v jq >/dev/null 2>&1; then
+      if [ -n "$SNAP_PLAN" ] && [ "$SNAP_PLAN" != "unknown" ] && [ -f "$VBW_PLANNING_DIR/.events/event-log.jsonl" ] && command -v jq >/dev/null 2>&1; then
         PLAN_NUM=$(plan_id_to_num "$SNAP_PLAN")
         if [ -n "$PLAN_NUM" ] && [[ "$PLAN_NUM" =~ ^[0-9]+$ ]] && [ "$PLAN_NUM" -gt 0 ]; then
           LAST_STARTED_TASK=$(jq -r --argjson phase "$SNAP_PHASE" --argjson plan "$PLAN_NUM" '
             select(.event == "task_started" and .phase == $phase and (.plan // 0) == $plan)
             | .data.task_id // empty
-          ' ".vbw-planning/.events/event-log.jsonl" 2>/dev/null | tail -1)
+          ' "$VBW_PLANNING_DIR/.events/event-log.jsonl" 2>/dev/null | tail -1)
 
           LAST_COMPLETED_TASK=$(jq -r --argjson phase "$SNAP_PHASE" --argjson plan "$PLAN_NUM" '
             select(.event == "task_completed_confirmed" and .phase == $phase and (.plan // 0) == $plan)
             | .data.task_id // empty
-          ' ".vbw-planning/.events/event-log.jsonl" 2>/dev/null | tail -1)
+          ' "$VBW_PLANNING_DIR/.events/event-log.jsonl" 2>/dev/null | tail -1)
 
           if [ -z "$SNAP_IN_PROGRESS_TASK" ] && [ -n "$LAST_STARTED_TASK" ] && [ "$LAST_STARTED_TASK" != "$LAST_COMPLETED_TASK" ]; then
             SNAP_IN_PROGRESS_TASK="$LAST_STARTED_TASK"
@@ -155,7 +160,7 @@ if [ -f ".vbw-planning/.execution-state.json" ] && [ -f "$SCRIPT_DIR/snapshot-re
         SNAPSHOT_CONTEXT="${SNAPSHOT_CONTEXT} Recent commits: ${SNAP_COMMITS}."
       fi
       TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%d %H:%M:%S")
-      echo "[$TIMESTAMP] Snapshot restored: $SNAP_PATH phase=$SNAP_PHASE" >> ".vbw-planning/.hook-errors.log" 2>/dev/null || true
+      echo "[$TIMESTAMP] Snapshot restored: $SNAP_PATH phase=$SNAP_PHASE" >> "$VBW_PLANNING_DIR/.hook-errors.log" 2>/dev/null || true
     fi
   fi
 fi
@@ -165,7 +170,7 @@ WORKTREE_CONTEXT=""
 if echo "$ROLE" | grep -q "vbw-dev\|vbw-debugger"; then
   AGENT_NAME_COMPACT=$(echo "$INPUT" | jq -r '.agent_name // .agentName // ""' 2>/dev/null) || AGENT_NAME_COMPACT=""
   AGENT_NAME_SHORT=$(echo "$AGENT_NAME_COMPACT" | sed 's/.*vbw-//')
-  WORKTREE_MAP_FILE=".vbw-planning/.agent-worktrees/${AGENT_NAME_SHORT}.json"
+  WORKTREE_MAP_FILE="$VBW_PLANNING_DIR/.agent-worktrees/${AGENT_NAME_SHORT}.json"
   if [ -f "$WORKTREE_MAP_FILE" ]; then
     WT_PATH=$(jq -r '.worktree_path // ""' "$WORKTREE_MAP_FILE" 2>/dev/null) || WT_PATH=""
     if [ -n "$WT_PATH" ]; then
@@ -196,9 +201,9 @@ if [ -z "$ROLE" ] || [ "$ROLE" = "unknown" ]; then
   ACTIVE_MODE=""
   PD_AUTONOMY=""
   # Detect from execution state first (most specific)
-  if [ -f ".vbw-planning/.execution-state.json" ] && command -v jq &>/dev/null; then
-    EXEC_STATUS=$(jq -r '.status // ""' ".vbw-planning/.execution-state.json" 2>/dev/null)
-    EXEC_PHASE=$(jq -r '.phase // ""' ".vbw-planning/.execution-state.json" 2>/dev/null)
+  if [ -f "$VBW_PLANNING_DIR/.execution-state.json" ] && command -v jq &>/dev/null; then
+    EXEC_STATUS=$(jq -r '.status // ""' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)
+    EXEC_PHASE=$(jq -r '.phase // ""' "$VBW_PLANNING_DIR/.execution-state.json" 2>/dev/null)
     case "$EXEC_STATUS" in
       running)  ACTIVE_MODE="Execute" ;;
       *)        ACTIVE_MODE=""; EXEC_PHASE="" ;; # clear both, fall through to phase-detect

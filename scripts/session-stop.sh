@@ -3,7 +3,11 @@ set -u
 # Stop hook: Log session metrics to .vbw-planning/.session-log.jsonl
 # Non-blocking, fail-open (always exit 0)
 
-PLANNING_DIR=".vbw-planning"
+# Resolve VBW workspace root (issue #258: bare .vbw-planning/ fails in monorepo submodules)
+# shellcheck source=lib/vbw-config-root.sh
+. "$(dirname "$0")/lib/vbw-config-root.sh"
+find_vbw_root
+PLANNING_DIR="$VBW_PLANNING_DIR"
 
 # Guard: only log if planning directory exists
 if [ ! -d "$PLANNING_DIR" ]; then
@@ -62,7 +66,7 @@ rm -rf "$PLANNING_DIR/.compacting" 2>/dev/null || true
 
 # Clean up stale worktrees (>2 hours) — fail-silent
 SCRIPT_DIR_STOP="$(cd "$(dirname "$0")" && pwd)"
-WORKTREES_DIR="$(pwd)/.vbw-worktrees"
+WORKTREES_DIR="$VBW_CONFIG_ROOT/.vbw-worktrees"
 if [ -d "$WORKTREES_DIR" ] && [ -f "$SCRIPT_DIR_STOP/worktree-cleanup.sh" ]; then
   NOW_STOP=$(date +%s)
   STALE_SECS=7200
