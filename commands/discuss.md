@@ -38,6 +38,20 @@ Phase state:
 2. If the target phase has a `*-CONTEXT.md` file with `pre_seeded: true` in its YAML frontmatter (remediation phase): WARN the user that this phase has pre-seeded UAT context and ask whether they want to re-discuss (which overwrites the pre-seeded content) or skip discussion and proceed to planning.
 3. Otherwise auto-detect: find the first phase directory without a `*-CONTEXT.md` file. If all phases already have context: STOP "All phases discussed."
 
+## MuninnDB recall (if vault configured)
+
+Before starting the discussion engine, read `muninndb_vault` from `.vbw-planning/config.json`. If non-empty:
+1. Read the phase name/goal from ROADMAP.md for the target phase.
+2. Call `muninn_activate(vault: {vault}, context: "{phase name} {phase goal} architecture decisions", limit: 5)` to recall prior decisions, patterns, and conventions relevant to this phase.
+3. For each result with score > 0.5: present it as "Prior context from MuninnDB" before starting the discussion, so the user knows what has already been decided.
+4. If MuninnDB is unavailable: skip silently.
+
 ## Execute
 
 Read ``!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/references/discussion-engine.md` and follow its protocol for the target phase.
+
+**MuninnDB store (after discussion completes):**
+If `muninndb_vault` is non-empty and the discussion produced non-obvious insights or decisions:
+- For each key decision captured in CONTEXT.md: `muninn_decide(vault, decision: "{decision}", rationale: "{rationale}")`
+- For each non-obvious insight: `muninn_remember(vault, concept: "Discussion insight: {topic}", content: "{insight}", tags: [discuss, phase:{N}], type: Observation)`
+If MuninnDB is unavailable: skip silently.

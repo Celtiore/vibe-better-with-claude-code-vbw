@@ -48,7 +48,16 @@ Pre-computed state (via phase-detect.sh):
 
 ## Steps
 
-1. **Read ground truth (top-level only):** Read these files from `.vbw-planning/` (NOT from `milestones/` — those are archived):
+### 0. MuninnDB cognitive recall (if vault configured)
+
+Read `muninndb_vault` from `.vbw-planning/config.json`. If non-empty:
+1. Call `muninn_where_left_off(vault: {vault})` to retrieve the last session's cognitive context (what was being worked on, pending decisions, unfinished threads).
+2. If results are returned, include them in the dashboard output under a "Cognitive Context (MuninnDB)" section showing the last session's key points.
+3. If MuninnDB is unavailable or vault is empty: skip silently, proceed without cognitive context.
+
+### 1. Read ground truth (top-level only)
+
+Read these files from `.vbw-planning/` (NOT from `milestones/` — those are archived):
    - `.vbw-planning/PROJECT.md` — name, core value
    - `.vbw-planning/STATE.md` — decisions, todos, blockers
    - `.vbw-planning/ROADMAP.md` — phases overview
@@ -57,9 +66,9 @@ Pre-computed state (via phase-detect.sh):
    - Glob `.vbw-planning/phases/**/*-PLAN.md` and `.vbw-planning/phases/**/*-SUMMARY.md` — plan/completion counts
    - Most recent SUMMARY.md from `.vbw-planning/phases/` — last work
    - Skip missing files. **Never read from `.vbw-planning/milestones/`.**
-2. **Compute progress from phase-detect.sh output:** Use the pre-computed `phase_count`, `next_phase`, `next_phase_state`, `next_phase_plans`, `next_phase_summaries`, `uat_issues_phase`, `uat_issues_slug`, `uat_issues_phases`, and `uat_issues_count` values. Map `next_phase_state` to display: `needs_uat_remediation` → "⚠ Needs remediation", `needs_plan_and_execute` → "not started", `needs_execute` → "in progress", `all_done` → "complete". **Per-phase status:** any phase whose number appears in the comma-separated `uat_issues_phases` list has unresolved UAT issues — mark it "⚠ Needs remediation". Only mark a phase as "✓ Done" if its number is NOT in `uat_issues_phases` and it has completed execution (SUMMARY count ≥ PLAN count). Phases not yet executed are "not started".
-3. **Detect interrupted builds:** If `.execution-state.json` status="running": all SUMMARYs present = completed since last session; some missing = interrupted.
-4. **Present dashboard:** Phase Banner "Context Restored / {project name}" with: core value, phase/progress, overall progress bar, key decisions, todos, blockers (⚠), last completed, build status (✓ completed / ⚠ interrupted), session notes. Run `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/suggest-next.sh resume`.
+### 2. Compute progress from phase-detect.sh output Use the pre-computed `phase_count`, `next_phase`, `next_phase_state`, `next_phase_plans`, `next_phase_summaries`, `uat_issues_phase`, `uat_issues_slug`, `uat_issues_phases`, and `uat_issues_count` values. Map `next_phase_state` to display: `needs_uat_remediation` → "⚠ Needs remediation", `needs_plan_and_execute` → "not started", `needs_execute` → "in progress", `all_done` → "complete". **Per-phase status:** any phase whose number appears in the comma-separated `uat_issues_phases` list has unresolved UAT issues — mark it "⚠ Needs remediation". Only mark a phase as "✓ Done" if its number is NOT in `uat_issues_phases` and it has completed execution (SUMMARY count ≥ PLAN count). Phases not yet executed are "not started".
+### 3. Detect interrupted builds If `.execution-state.json` status="running": all SUMMARYs present = completed since last session; some missing = interrupted.
+### 4. Present dashboard Phase Banner "Context Restored / {project name}" with: core value, phase/progress, overall progress bar, key decisions, todos, blockers (⚠), last completed, build status (✓ completed / ⚠ interrupted), session notes. Run `bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/suggest-next.sh resume`.
 
 ## Output Format
 

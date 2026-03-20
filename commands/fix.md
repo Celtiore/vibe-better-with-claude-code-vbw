@@ -29,12 +29,18 @@ Config: Pre-injected by SessionStart hook.
 
 2. **State:** Use `.vbw-planning/STATE.md`.
 
-3. **Set delegation marker:** Before spawning Dev, activate the delegation guard so the orchestrator cannot accidentally write product files directly:
+3. **MuninnDB recall (if vault configured):**
+   Read `muninndb_vault` from `.vbw-planning/config.json`. If non-empty:
+   1. Call `muninn_activate(vault: {vault}, context: "{fix description}", limit: 5)` to check if a similar bug was already fixed or if relevant patterns exist.
+   2. For each result with score > 0.5: include as context in the Dev agent prompt (e.g., "Prior fix: {concept} — {content}").
+   3. If MuninnDB is unavailable: skip silently, proceed without recall.
+
+4. **Set delegation marker:** Before spawning Dev, activate the delegation guard so the orchestrator cannot accidentally write product files directly:
     ```bash
     bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/delegated-workflow.sh set fix turbo
     ```
 
-4. **Spawn Dev:** Resolve model first:
+5. **Spawn Dev:** Resolve model first:
     ```bash
     DEV_MODEL=$(bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/resolve-agent-model.sh dev .vbw-planning/config.json `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/config/model-profiles.json)
     DEV_MAX_TURNS=$(bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/resolve-agent-max-turns.sh dev .vbw-planning/config.json turbo)
@@ -54,11 +60,17 @@ Config: Pre-injected by SessionStart hook.
     If ambiguous or requires architectural decisions, STOP and report back.
     ```
 
-5. **Clear delegation marker + Verify + present:** Clear the marker first, then check results:
+6. **Clear delegation marker + Verify + present:** Clear the marker first, then check results:
     ```bash
     bash `!`echo /tmp/.vbw-plugin-root-link-${CLAUDE_SESSION_ID:-default}`/scripts/delegated-workflow.sh clear
     ```
     Check `git log --oneline -1`. Check Dev response for pre-existing issues.
+
+    **MuninnDB store (if vault configured and fix was non-trivial):**
+    If `muninndb_vault` is non-empty and the fix involved a real bug (not just a typo/formatting):
+    - `muninn_remember(vault, concept: "Fix: {brief description}", content: "{what was wrong and how it was fixed}", tags: [fix], type: Issue)`
+    If MuninnDB is unavailable: skip silently.
+
     Committed, no discovered issues:
 
     ```text
